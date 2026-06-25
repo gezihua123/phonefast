@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "phonefast": {
+      "command": "INSTALL_PATH/phonefast",
+      "args": ["serve", "--transport", "stdio"]
+    }
+  }
+}

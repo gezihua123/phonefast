@@ -1,0 +1,36 @@
+{
+  "name": "phonefast",
+  "version": "1.0.0",
+  "description": "Fast Android device control via MCP — screenshot, UI dump, tap, swipe, type, app launch over scrcpy video stream.",
+  "vendor": "phonefast",
+  "license": "MIT",
+  "runtime": "go",
+  "entry": {
+    "stdio": {
+      "command": "phonefast",
+      "args": ["serve", "--transport", "stdio"]
+    },
+    "sse": {
+      "url": "http://localhost:8019/Phone/sse"
+    }
+  },
+  "tools": [
+    {"name": "screenshot",      "description": "Capture device screen as base64 PNG."},
+    {"name": "get_ui_elements", "description": "Get interactive UI elements with bounds, text, and clickability."},
+    {"name": "observe",         "description": "Screenshot + UI elements in one call."},
+    {"name": "tap",             "description": "Tap at (x, y) coordinates.",            "inputSchema": {"x":"int","y":"int"}},
+    {"name": "tap_element",     "description": "Tap element by index=N or text='…'.",   "inputSchema": {"index":"int?","text":"string?"}},
+    {"name": "swipe",           "description": "Swipe gesture with duration.",           "inputSchema": {"start_x":"int","start_y":"int","end_x":"int","end_y":"int","duration_ms":"int?"}},
+    {"name": "type_text",       "description": "Type text into focused field.",          "inputSchema": {"text":"string"}},
+    {"name": "back",            "description": "Press back button."},
+    {"name": "home",            "description": "Press home button."},
+    {"name": "press_key",       "description": "Send key event by name or keycode.",    "inputSchema": {"key":"string?","keycode":"int?"}},
+    {"name": "launch_app",      "description": "Launch app by package name.",            "inputSchema": {"app":"string","package":"string?"}},
+    {"name": "wait",            "description": "Wait N milliseconds.",                   "inputSchema": {"duration_ms":"int"}},
+    {"name": "list_devices",    "description": "List connected Android devices."}
+  ],
+  "prerequisites": [
+    "Android device connected via ADB",
+    "ffmpeg (for screenshot decoding)"
+  ]
+}

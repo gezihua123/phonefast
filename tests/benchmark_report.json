@@ -1,0 +1,211 @@
+{
+  "transport": "stdio",
+  "rounds": 10,
+  "cold_start_ms": 18.980026245117188,
+  "started_at": "2026-06-15 19:18:30",
+  "finished_at": "2026-06-15 19:18:40",
+  "throughput": {
+    "observe": 8.617145608884814,
+    "screenshot": 16.83695196492468,
+    "get_ui_elements": 74.65652158683528,
+    "back": 13463.480400837821,
+    "tap": 90.49403508213396
+  },
+  "tools": {
+    "list_devices": {
+      "category": "sensor",
+      "latency": {
+        "count": 10,
+        "avg": 9.1,
+        "min": 7.7,
+        "max": 10.4,
+        "p50": 9.4,
+        "p95": 10.3,
+        "p99": 10.4,
+        "std": 1.0
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "screenshot": {
+      "category": "sensor",
+      "latency": {
+        "count": 10,
+        "avg": 63.3,
+        "min": 52.0,
+        "max": 80.9,
+        "p50": 63.5,
+        "p95": 75.1,
+        "p99": 79.7,
+        "std": 7.8
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0,
+      "avg_data_bytes": 55514
+    },
+    "get_ui_elements": {
+      "category": "sensor",
+      "latency": {
+        "count": 10,
+        "avg": 12.3,
+        "min": 8.8,
+        "max": 23.3,
+        "p50": 10.8,
+        "p95": 20.1,
+        "p99": 22.7,
+        "std": 4.3
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0,
+      "avg_data_bytes": 1202
+    },
+    "observe": {
+      "category": "sensor",
+      "latency": {
+        "count": 10,
+        "avg": 90.3,
+        "min": 72.8,
+        "max": 117.3,
+        "p50": 88.4,
+        "p95": 111.2,
+        "p99": 116.1,
+        "std": 13.3
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0,
+      "avg_data_bytes": 56803
+    },
+    "tap": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 11.1,
+        "min": 10.4,
+        "max": 11.3,
+        "p50": 11.2,
+        "p95": 11.3,
+        "p99": 11.3,
+        "std": 0.3
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "swipe": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 210.6,
+        "min": 209.1,
+        "max": 213.7,
+        "p50": 210.2,
+        "p95": 212.6,
+        "p99": 213.4,
+        "std": 1.3
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "type_text": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 0.3,
+        "min": 0.2,
+        "max": 0.5,
+        "p50": 0.2,
+        "p95": 0.5,
+        "p99": 0.5,
+        "std": 0.1
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "back": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 0.3,
+        "min": 0.2,
+        "max": 0.7,
+        "p50": 0.2,
+        "p95": 0.6,
+        "p99": 0.7,
+        "std": 0.2
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "home": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 11.2,
+        "min": 10.9,
+        "max": 11.5,
+        "p50": 11.2,
+        "p95": 11.4,
+        "p99": 11.5,
+        "std": 0.1
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "press_key": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 11.2,
+        "min": 10.9,
+        "max": 11.5,
+        "p50": 11.2,
+        "p95": 11.4,
+        "p99": 11.5,
+        "std": 0.2
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "launch_app": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 0.1,
+        "min": 0.1,
+        "max": 0.3,
+        "p50": 0.1,
+        "p95": 0.2,
+        "p99": 0.3,
+        "std": 0.1
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    },
+    "wait": {
+      "category": "action",
+      "latency": {
+        "count": 10,
+        "avg": 51.6,
+        "min": 50.7,
+        "max": 53.0,
+        "p50": 51.6,
+        "p95": 52.5,
+        "p99": 52.9,
+        "std": 0.6
+      },
+      "errors": 0,
+      "total_calls": 10,
+      "success_rate": 100.0
+    }
+  }
+}

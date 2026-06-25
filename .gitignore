@@ -1,0 +1,61 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Dependency directories
+/vendor/
+/node_modules/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Output of the go coverage tool
+*.coverprofile
+coverage.html
+coverage.out
+
+# Build output
+/build/
+/dist/
+/bin/
+/out/
+
+# Application specific config
+.env
+*.local.yaml
+*.local.yml
+config.local.*
+application-local.yaml
+
+# Logs
+*.log
+/logs/
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+/tmp/
+/temp/
+
+# Project specific
+*.pid
+*.seed
+*.pid.lock
+./docs

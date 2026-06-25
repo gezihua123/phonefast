@@ -1,0 +1,28 @@
+# Patch for scrcpy Server.java to integrate UISocketHandler
+#
+# Apply manually or review the three insertion points below.
+#
+# Location: ~/Desktop/code/scrcpy/server/src/main/java/com/genymobile/scrcpy/Server.java
+
+--- a/server/src/main/java/com/genymobile/scrcpy/Server.java
++++ b/server/src/main/java/com/genymobile/scrcpy/Server.java
+
+# INSERT 1: Add import (near other control imports, around line 7)
++import com.genymobile.scrcpy.control.UISocketHandler;
+
+# INSERT 2: Add field and initialization (in scrcpy() method, after Controller init, around line 115)
++        // phonefast: UI hierarchy socket
++        UISocketHandler uiSocketHandler = new UISocketHandler(scid);
++        uiSocketHandler.start();
++
++        // Pass UiAutomation to the UI socket handler if available
++        // (UiAutomation is obtained via Instrumentation in ControlChannel/Controller)
+
+# INSERT 3: Add cleanup (in the finally block, after asyncProcessor cleanup, around line 178)
++            uiSocketHandler.stop();
+
+# INSERT 4: In Controller constructor or post-init, set UiAutomation on UISocketHandler
+#   (This requires exposing UiAutomation from Controller or passing it during init)
+#   In Controller.java, add a getter:
+#   public UiAutomation getUiAutomation() { return this.uiAutomation; }
+#   (UiAutomation is typically obtained via: Instrumentation.getUiAutomation())
