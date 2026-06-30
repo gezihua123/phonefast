@@ -1,71 +1,71 @@
 # phonefast — Fast Android Device Control
 
-phonefast 是一个快速 Android 设备控制命令行工具，结合 scrcpy 视频流与手机友好的操作语义，支持 MCP 协议集成与本地 CLI 两种使用方式。
+phonefast is a fast Android device control CLI that combines scrcpy video streaming with phone-friendly operation semantics, supporting both MCP protocol integration and local CLI usage.
 
-**核心特性：**
-- 🚀 **Daemon 模式** — 后台常驻进程，Unix Socket JSON-RPC，命令即时响应
-- 📱 **直接模式** — 无 daemon，每次新建连接，适合临时操作
-- 🔌 **MCP 协议** — SSE / STDIO 双传输，AI 助手可直接控制手机
-- 💓 **三层保活** — TCP Keepalive + 应用心跳 + 写触发，断线 10 秒内自动重连
-- 📝 **异步日志** — 协程式文件写入，记录所有关键操作与函数上下文
+**Core features:**
+- 🚀 **Daemon mode** — Background persistent process, Unix Socket JSON-RPC, instant command response
+- 📱 **Direct mode** — No daemon, creates a new connection each time, suitable for ad-hoc operations
+- 🔌 **MCP protocol** — SSE / STDIO dual transport, AI assistants can control the phone directly
+- 💓 **Three-level keepalive** — TCP Keepalive + application heartbeat + write-triggered recovery, auto-reconnect within 10 seconds
+- 📝 **Async logging** — Coroutine-based file writes, recording all critical operations and function context
 
 ---
 
-## 安装
+## Installation
 
-**前置依赖：**
+**Prerequisites:**
 - Go 1.21+
-- `adb` 在 PATH 中
-- `ffmpeg`（截图功能需要）
-- `git`（版本信息自动注入）
-- `upx`（可选，压缩二进制体积）
+- `adb` in PATH
+- `ffmpeg` (required for screenshots)
+- `git` (automatic version injection)
+- `upx` (optional, to compress binary size)
 
-### 构建脚本
+### Build Script
 
-使用统一的构建脚本 `scripts/build.sh`：
+Use the unified build script `scripts/build.sh`:
 
 ```bash
-# 全平台构建 + 打包（默认）
+# Cross-platform build + packaging (default)
 bash scripts/build.sh --all
 
-# 当前平台构建（仅二进制）
+# Current platform build (binary only)
 bash scripts/build.sh
 
-# 指定平台
+# Specific platform
 bash scripts/build.sh --macos       # macOS amd64 + arm64
 bash scripts/build.sh --linux       # Linux amd64 + arm64
 bash scripts/build.sh --windows     # Windows amd64
 
-# 指定版本号（默认从 git tag 读取，无 tag 则为 "dev"）
+# Specify version number (default reads from git tag, or "dev" if no tag)
 bash scripts/build.sh --all --version 1.0.0
 ```
 
-### 产物结构
+### Output Structure
 
 ```
 dist/<version>/
 ├── <platform>/
-│   ├── phonefast              # CLI 二进制
+│   ├── phonefast              # CLI binary
 │   ├── phonefast.exe          # (Windows)
-│   ├── scrcpy-server.jar      # scrcpy 服务器 (Android 端)
-│   ├── scrcpy-server.version  # 版本标记文件
-│   ├── README.md              # 操作文档
-│   └── docs/                  # 详细文档
+│   ├── scrcpy-server.jar      # scrcpy server (Android side)
+│   ├── scrcpy-server.version  # version marker file
+│   ├── README.md              # usage documentation
+│   └── docs/                  # detailed docs
 └── <platform>/
-    └── phonefast-<version>-<os>-<arch>.tar.gz   # 发布包（--all / --macos / --linux / --windows）
+    └── phonefast-<version>-<os>-<arch>.tar.gz   # release package (--all / --macos / --linux / --windows)
 ```
 
-### 构建流程
+### Build Process
 
-脚本自动执行以下步骤：
+The script automatically performs the following steps:
 
-1. **版本检测** — 优先级：`--version` 参数 → `git describe --tags` → `"dev"`
-2. **前置检查** — 确认 Go 工具链 + `android/scrcpy-server.jar` 存在
-3. **Go 构建** — 交叉编译，注入版本/构建时间/commit hash 到 `-ldflags`
-4. **产物组装** — 复制 `scrcpy-server.jar`、`scrcpy-server.version`、`README.md`、`docs/`
-5. **压缩打包** — 生成 `.tar.gz`（macOS/Linux）或 `.zip`（Windows）发布包
+1. **Version detection** — Priority: `--version` flag → `git describe --tags` → `"dev"`
+2. **Prerequisite check** — Verify Go toolchain + `android/scrcpy-server.jar` exists
+3. **Go build** — Cross-compile, inject version/build time/commit hash via `-ldflags`
+4. **Artifact assembly** — Copy `scrcpy-server.jar`, `scrcpy-server.version`, `README.md`, `docs/`
+5. **Archive packaging** — Generate `.tar.gz` (macOS/Linux) or `.zip` (Windows) release package
 
-### 手动安装到系统（可选）
+### Manual System Install (Optional)
 
 ```bash
 cp dist/<version>/darwin_arm64/phonefast /usr/local/bin/
@@ -76,154 +76,154 @@ cp dist/<version>/darwin_arm64/scrcpy-server.version /usr/local/share/phonefast/
 
 ---
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 查看连接的设备
+# List connected devices
 phonefast devices
 
-# 启动 daemon（首次自动启动，也可手动启动）
+# Start daemon (automatically starts on first use, also manual)
 phonefast daemon
 
-# 默认走 daemon — 即时响应（<10ms）
+# Default daemon mode — instant response (<10ms)
 phonefast back
 phonefast tap 540 960
 phonefast screenshot /tmp/screen.png
 
-# 直接模式 — 每次新建连接（~2.5s），加 --foreground
+# Direct mode — new connection each time (~2.5s), add --foreground
 phonefast --foreground back
 phonefast --foreground tap 540 960
 
-# 启动 MCP 服务器（供 AI 助手使用）
+# Start MCP server (for AI assistants)
 phonefast serve
 ```
 
 ---
 
-## 命令参考
+## Command Reference
 
-### 格式说明
+### Format
 
 ```bash
 phonefast [--foreground|--daemon] <command> [args...]
 ```
 
-- 默认使用 daemon 模式（自动启动 daemon），延迟 <10ms。
-- `--foreground` / `--direct` — 直接模式，每次新建 scrcpy 连接，~2.5s。
-- `--daemon` — 显式指定 daemon 模式（与默认行为相同，保留用于兼容）。
+- Default uses daemon mode (auto-starts daemon), latency <10ms.
+- `--foreground` / `--direct` — Direct mode, creates a new scrcpy connection each time, ~2.5s.
+- `--daemon` — Explicitly specify daemon mode (same as default, kept for compatibility).
 
 ---
 
-### 触摸操作
+### Touch Operations
 
-#### `tap` — 点击坐标
+#### `tap` — Tap at coordinates
 
 ```bash
 phonefast [--foreground|--daemon] tap <x> <y>
 ```
 
-| 参数 | 描述 |
-|------|------|
-| `x` | X 坐标（像素） |
-| `y` | Y 坐标（像素） |
+| Parameter | Description |
+|-----------|-------------|
+| `x` | X coordinate (pixels) |
+| `y` | Y coordinate (pixels) |
 
 ```bash
-phonefast tap 540 960                 # 点击屏幕中心
-phonefast --foreground tap 100 200    # 直接模式
+phonefast tap 540 960                 # Tap screen center
+phonefast --foreground tap 100 200    # Direct mode
 ```
 
-#### `tap_element` — 点击 UI 元素
+#### `tap_element` — Tap UI element
 
 ```bash
 phonefast [--foreground|--daemon] tap_element <index|text>
 ```
 
-| 参数 | 描述 |
-|------|------|
-| `index` | UI 元素索引（来自 `ui` 命令） |
-| `text` | UI 元素文本或描述（模糊搜索） |
+| Parameter | Description |
+|-----------|-------------|
+| `index` | UI element index (from `ui` command) |
+| `text` | UI element text or description (fuzzy search) |
 
 ```bash
-phonefast tap_element 5              # 点击第 5 个 UI 元素
-phonefast tap_element "Settings"    # 点击文本含 "Settings" 的元素
+phonefast tap_element 5              # Tap the 5th UI element
+phonefast tap_element "Settings"    # Tap element containing "Settings" text
 ```
 
-#### `swipe` — 滑动手势
+#### `swipe` — Swipe gesture
 
 ```bash
 phonefast [--foreground|--daemon] swipe <x1> <y1> <x2> <y2> [duration_ms]
 ```
 
-| 参数 | 描述 | 默认值 |
-|------|------|--------|
-| `x1` `y1` | 起始坐标 | — |
-| `x2` `y2` | 终点坐标 | — |
-| `duration_ms` | 滑动时长（毫秒） | 500 |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `x1` `y1` | Start coordinates | — |
+| `x2` `y2` | End coordinates | — |
+| `duration_ms` | Swipe duration (milliseconds) | 500 |
 
 ```bash
-phonefast swipe 540 1600 540 400 500   # 向上滑动
-phonefast swipe 200 500 800 500 300    # 向右滑动 300ms
+phonefast swipe 540 1600 540 400 500   # Swipe up
+phonefast swipe 200 500 800 500 300    # Swipe right 300ms
 ```
 
 ---
 
-### 文本输入
+### Text Input
 
-#### `type` — 输入文本
+#### `type` — Input text
 
 ```bash
 phonefast [--foreground|--daemon] type <text>
 ```
 
-在当前焦点输入框中输入文本。
+Inputs text into the current focused input field.
 
 ```bash
 phonefast type "Hello World"
-phonefast type "搜索关键词"
+phonefast type "Search keyword"
 ```
 
 ---
 
-### 按键操作
+### Key Operations
 
-#### `back` — 返回键
+#### `back` — Back key
 
 ```bash
 phonefast [--foreground|--daemon] back
 ```
 
-#### `home` — Home 键
+#### `home` — Home key
 
 ```bash
 phonefast [--foreground|--daemon] home
 ```
 
-#### `key` — 发送按键
+#### `key` — Send key event
 
 ```bash
 phonefast [--foreground|--daemon] key <keyname|keycode>
 ```
 
-**支持的键名：**
+**Supported key names:**
 
-| 键名 | 说明 |
-|------|------|
-| `enter` | 回车 |
-| `tab` | Tab 键 |
-| `delete` / `backspace` | 删除 |
-| `space` | 空格 |
-| `escape` / `esc` | Esc 键 |
-| `volume_up` / `volume_down` | 音量+/- |
-| `volume_mute` | 静音 |
-| `power` | 电源键 |
-| `menu` | 菜单键 |
-| `search` | 搜索键 |
-| `camera` | 相机键 |
-| `back` | 返回（同 back 命令） |
-| `home` | Home（同 home 命令） |
-| `dpad_up` / `dpad_down` / `dpad_left` / `dpad_right` / `dpad_center` | 方向键 |
-| `page_up` / `page_down` | 翻页 |
-| `media_play_pause` / `media_stop` / `media_next` / `media_previous` | 媒体控制 |
+| Key Name | Description |
+|----------|-------------|
+| `enter` | Enter |
+| `tab` | Tab key |
+| `delete` / `backspace` | Delete |
+| `space` | Space |
+| `escape` / `esc` | Escape key |
+| `volume_up` / `volume_down` | Volume +/- |
+| `volume_mute` | Mute |
+| `power` | Power button |
+| `menu` | Menu key |
+| `search` | Search key |
+| `camera` | Camera key |
+| `back` | Back (same as back command) |
+| `home` | Home (same as home command) |
+| `dpad_up` / `dpad_down` / `dpad_left` / `dpad_right` / `dpad_center` | D-pad keys |
+| `page_up` / `page_down` | Page up/down |
+| `media_play_pause` / `media_stop` / `media_next` / `media_previous` | Media controls |
 
 ```bash
 phonefast key enter
@@ -232,7 +232,7 @@ phonefast key volume_up
 phonefast key power
 phonefast key dpad_down
 
-# 也可以直接用键码
+# Can also use keycodes directly
 phonefast key 4       # BACK
 phonefast key 3       # HOME
 phonefast key 66      # ENTER
@@ -240,111 +240,111 @@ phonefast key 66      # ENTER
 
 ---
 
-### 应用操作
+### App Operations
 
-#### `launch` — 启动应用
+#### `launch` — Launch app
 
 ```bash
 phonefast [--foreground|--daemon] launch <package>
 ```
 
-需要通过 Android 包名指定（不支持应用显示名，如 "设置"、"Chrome"）。
+Uses Android package name (display names like "Settings" or "Chrome" are not supported).
 
 ```bash
-phonefast launch com.android.settings     # 设置
+phonefast launch com.android.settings     # Settings
 phonefast launch com.android.chrome        # Chrome
-phonefast launch com.tencent.mm             # 微信
+phonefast launch com.tencent.mm             # WeChat
 ```
 
 ---
 
-### 屏幕捕获与分析
+### Screen Capture & Analysis
 
-#### `screenshot` — 截图
+#### `screenshot` — Take screenshot
 
 ```bash
 phonefast [--foreground|--daemon] screenshot [file]
 ```
 
-| 参数 | 描述 | 默认值 |
-|------|------|--------|
-| `file` | 保存路径 | stdout（base64） |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `file` | Save path | stdout (base64) |
 
 ```bash
-phonefast screenshot /tmp/screen.png       # 保存为 PNG
-phonefast screenshot                        # 输出 base64
+phonefast screenshot /tmp/screen.png       # Save as PNG
+phonefast screenshot                        # Output base64
 ```
 
-#### `ui` — UI 元素列表
+#### `ui` — UI element list
 
 ```bash
 phonefast [--foreground|--daemon] ui
 ```
 
-输出当前屏幕所有可交互 UI 元素（最多显示 50 个），包括索引、文本、资源 ID、类名、可点击状态。
+Outputs all interactive UI elements on the current screen (max 50), including index, text, resource ID, class name, and clickable state.
 
 ```
 [0] id="content" (FrameLayout)
 [1] id="webView" (FrameLayout)
-[2] text="搜索" (EditText) [clickable]
-[3] text="设置" id="settings_btn" (Button) [clickable]
+[2] text="Search" (EditText) [clickable]
+[3] text="Settings" id="settings_btn" (Button) [clickable]
 ```
 
-#### `observe` — 截图 + UI
+#### `observe` — Screenshot + UI
 
 ```bash
 phonefast [--foreground|--daemon] observe
 ```
 
-并行使截图与 UI 采集，一次调用获取完整屏幕状态。
+Concurrently captures screenshot and UI data in a single call for a complete screen state snapshot.
 
 ---
 
-### 工具命令
+### Utility Commands
 
-#### `wait` — 等待
+#### `wait` — Wait
 
 ```bash
 phonefast [--foreground|--daemon] wait <ms>
 ```
 
-| 参数 | 描述 | 默认值 |
-|------|------|--------|
-| `ms` | 等待毫秒数 | 1000 |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ms` | Milliseconds to wait | 1000 |
 
-#### `status` — Daemon 状态
+#### `status` — Daemon status
 
 ```bash
 phonefast [--foreground|--daemon] status
 ```
 
 ```bash
-# 示例输出
+# Example output
 daemon running (pid 60977)
   device:    13709314CF044927 (488x1080)
   control:   true
   ui:        true
 ```
 
-#### `devices` — 设备列表
+#### `devices` — List devices
 
 ```bash
 phonefast devices
 ```
 
 ```bash
-# 示例输出
+# Example output
 Connected devices:
   13709314CF044927  device  [TECNO_KL8h]
 ```
 
-#### `run` — JSON 单次操作
+#### `run` — JSON single operation
 
 ```bash
 phonefast [--foreground|--daemon] run '<json>'
 ```
 
-适用于脚本自动化调用。
+Suitable for script automation.
 
 ```bash
 phonefast run '{"action":"tap","args":{"x":540,"y":960}}'
@@ -353,62 +353,62 @@ phonefast run '{"action":"back"}'
 phonefast run '{"action":"list_devices"}'
 ```
 
-支持的 action：`tap`, `tap_element`, `swipe`, `back`, `home`, `type_text`, `press_key`, `launch_app`, `screenshot`, `get_ui_elements`, `observe`, `list_devices`, `wait`。
+Supported actions: `tap`, `tap_element`, `swipe`, `back`, `home`, `type_text`, `press_key`, `launch_app`, `screenshot`, `get_ui_elements`, `observe`, `list_devices`, `wait`.
 
 ---
 
-## Daemon 管理
+## Daemon Management
 
-Daemon 是一个后台常驻进程，持有设备的长连接，通过 Unix Socket 接收 JSON-RPC 请求。
+The daemon is a background persistent process that holds long-lived device connections and receives JSON-RPC requests via Unix Socket.
 
 ```bash
-# 启动 daemon（后台运行）
+# Start daemon (background)
 phonefast daemon
 
-# 前台运行（查看实时日志）
+# Foreground mode (view real-time logs)
 phonefast daemon --foreground
 
-# 指定设备序列号
+# Specify device serial
 phonefast daemon --serial 13709314CF044927
 
-# 自定义 socket/PID 文件路径
+# Custom socket/PID file paths
 phonefast daemon --socket /tmp/my-phone.sock
 
-# 查看 daemon 状态
+# Check daemon status
 phonefast daemon --status
 
-# 停止 daemon
+# Stop daemon
 phonefast daemon --stop
 ```
 
-**自动管理：**
-- 使用 `--daemon` 标志执行命令时，如果 daemon 未运行，会自动在后台启动
-- 如果 daemon 进程存在但无响应，会自动杀死并重启
-- 多次调用 `phonefast daemon` 不会重复启动（已运行则退出）
+**Auto-management:**
+- When executing commands with `--daemon` flag, the daemon auto-starts in the background if not already running
+- If the daemon process exists but is unresponsive, it is automatically killed and restarted
+- Calling `phonefast daemon` multiple times will not start duplicate instances (exits if already running)
 
 ---
 
-## MCP 服务器
+## MCP Server
 
-phonefast 可作为 MCP (Model Context Protocol) 服务器，供 Claude Desktop 等 AI 助手直接控制手机。
+phonefast can serve as an MCP (Model Context Protocol) server, allowing AI assistants like Claude Desktop to control the phone directly.
 
 ```bash
-# SSE 模式（默认端口 8019）
+# SSE mode (default port 8019)
 phonefast serve
 
-# 自定义端口
+# Custom port
 phonefast serve --port 8080
 
-# 自定义路径
+# Custom path
 phonefast serve --path /mcp
 
-# STDIO 模式（Claude Desktop 集成）
+# STDIO mode (Claude Desktop integration)
 phonefast serve --transport stdio
 ```
 
-### 客户端配置
+### Client Configuration
 
-**SSE 模式：**
+**SSE mode:**
 ```json
 {
   "mcpServers": {
@@ -419,7 +419,7 @@ phonefast serve --transport stdio
 }
 ```
 
-**STDIO 模式：**
+**STDIO mode:**
 ```json
 {
   "mcpServers": {
@@ -431,56 +431,56 @@ phonefast serve --transport stdio
 }
 ```
 
-### MCP 工具列表
+### MCP Tool List
 
-| 工具 | 参数 | 说明 |
-|------|------|------|
-| `list_devices` | — | 列出已连接的 Android 设备 |
-| `screenshot` | — | 截取当前屏幕（base64 PNG） |
-| `get_ui_elements` | — | 获取可交互 UI 元素 |
-| `observe` | — | 截图 + UI 元素（一次调用） |
-| `tap` | `x`, `y` | 点击坐标 |
-| `tap_element` | `index` 或 `text` | 点击 UI 元素 |
-| `swipe` | `start_x`, `start_y`, `end_x`, `end_y`, `duration_ms` | 滑动手势 |
-| `type_text` | `text` | 输入文本 |
-| `back` | — | 返回键 |
-| `home` | — | Home 键 |
-| `press_key` | `keycode` 或 `key` | 发送按键 |
-| `launch_app` | `package` | 启动应用（仅包名，如 `com.android.settings`） |
-| `wait` | `duration_ms` | 等待 N 毫秒 |
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `list_devices` | — | List connected Android devices |
+| `screenshot` | — | Capture current screen (base64 PNG) |
+| `get_ui_elements` | — | Get interactive UI elements |
+| `observe` | — | Screenshot + UI elements (single call) |
+| `tap` | `x`, `y` | Tap at coordinates |
+| `tap_element` | `index` or `text` | Tap UI element |
+| `swipe` | `start_x`, `start_y`, `end_x`, `end_y`, `duration_ms` | Swipe gesture |
+| `type_text` | `text` | Input text |
+| `back` | — | Back key |
+| `home` | — | Home key |
+| `press_key` | `keycode` or `key` | Send key event |
+| `launch_app` | `package` | Launch app (package name only, e.g. `com.android.settings`) |
+| `wait` | `duration_ms` | Wait for N milliseconds |
 
 ---
 
-## 架构
+## Architecture
 
 ```
 phonefast CLI
     │
-    ├── --daemon 模式 ──→ Unix Socket ──→ daemon 进程 ──→ TCP ──→ scrcpy server（设备）
-    │                    JSON-RPC          持有长连接        控制+视频+UI
-    │
-    └── 直接模式 ──→ 每次新建 session ──→ TCP ──→ scrcpy server（设备）
-                     部署+启动+连接+关闭
+    ├── --daemon mode ──→ Unix Socket ──→ daemon process ──→ TCP ──→ scrcpy server (device)
+    │                    JSON-RPC          holds persistent      control+video+UI
+    │                                      connections
+    └── direct mode ──→ new session each time ──→ TCP ──→ scrcpy server (device)
+                         deploy+start+connect+close
 
-内部结构:
+Internal structure:
   internal/
-  ├── adb/       ADB 设备发现、scrcpy 部署与生命周期
-  ├── daemon/    守护进程、JSON-RPC 分发、健康检查
-  ├── log/       异步文件日志
-  ├── mcp/       MCP 服务器（基于 mcp-go）、工具注册
-  ├── session/   设备会话：视频流、控制、UI 采集、截图
+  ├── adb/       ADB device discovery, scrcpy deployment & lifecycle
+  ├── daemon/    Daemon process, JSON-RPC dispatch, health checks
+  ├── log/       Async file logging
+  ├── mcp/       MCP server (based on mcp-go), tool registration
+  ├── session/   Device session: video stream, control, UI capture, screenshot
   pkg/
-  ├── h264/      H.264 AnnexB 解析、关键帧提取
-  └── protocol/  scrcpy 协议编码与控制消息
+  ├── h264/      H.264 AnnexB parsing, keyframe extraction
+  └── protocol/  scrcpy protocol encoding & control messages
 ```
 
 ---
 
-## 日志
+## Logging
 
-异步写入 `/tmp/phonefast-{uid}.log`，记录所有关键操作与调用上下文。
+Writes asynchronously to `/tmp/phonefast-{uid}.log`, recording all critical operations and calling context.
 
-**日志格式：**
+**Log format:**
 ```
 2026-06-16 09:13:56.879 [session.go:139 Connect()] connected: 488x1080  control=true
 2026-06-16 09:13:59.602 [rpc.go:115 Dispatch()] rpc back
@@ -491,33 +491,33 @@ phonefast CLI
 2026-06-16 09:14:29.000 [daemon.go:298 reconnect()] reconnected: 13709314CF044927 (488x1080)
 ```
 
-**覆盖范围：** daemon 生命周期、设备连接、RPC 分发、控制操作、心跳检测、断线重连。
+**Coverage:** daemon lifecycle, device connection, RPC dispatch, control operations, heartbeat detection, reconnection.
 
 ---
 
-## 断线恢复
+## Reconnection
 
-三级保活机制：
+Three-level keepalive mechanism:
 
-| 层级 | 机制 | 间隔 | 说明 |
-|------|------|------|------|
-| OS 级 | TCP Keepalive | 视频 30s / 控制 15s | 操作系统检测死连接 |
-| 应用级 | `healthLoop` 协程 | 10s | 检测视频+控制连接是否存活，自动重连 |
-| 写触发 | `markControlBroken` | 即时 | 写入失败立刻标记，下次请求重连并重试 |
+| Level | Mechanism | Interval | Description |
+|-------|-----------|----------|-------------|
+| OS level | TCP Keepalive | Video 30s / Control 15s | OS detects dead connections |
+| App level | `healthLoop` goroutine | 10s | Checks video + control connection liveness, auto-reconnect |
+| Write-triggered | `markControlBroken` | Instant | Immediately marks on write failure, reconnects and retries on next request |
 
-当设备 USB 断开或 scrcpy 被 kill 时，daemon 在 10 秒内自动检测并恢复。
+When the device USB disconnects or scrcpy is killed, the daemon auto-detects and recovers within 10 seconds.
 
 ---
 
-## 两种模式对比
+## Mode Comparison
 
-| | Daemon 模式 | 直接模式 |
-|------|-------------|----------|
-| 命令格式 | `phonefast <cmd>`（默认） | `phonefast --foreground <cmd>` |
-| 响应速度 | <10ms | ~2.5s |
-| 资源占用 | 后台常驻一个 daemon 进程 | 每次新建/销毁连接 |
-| 适用场景 | 批量操作、脚本自动化 | 临时单次操作 |
-| 自动管理 | 自动启动/重启/恢复 | 无状态 |
+| | Daemon Mode | Direct Mode |
+|------|-------------|-------------|
+| Command format | `phonefast <cmd>` (default) | `phonefast --foreground <cmd>` |
+| Response speed | <10ms | ~2.5s |
+| Resource usage | Single daemon process in background | Creates/destroys connection each time |
+| Use case | Batch operations, script automation | Ad-hoc single operations |
+| Auto-management | Auto-start/restart/recovery | Stateless |
 
 ---
 
