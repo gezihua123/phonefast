@@ -1,61 +1,52 @@
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-
-# Dependency directories
-/vendor/
-/node_modules/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# IDE and editor files
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Output of the go coverage tool
-*.coverprofile
-coverage.html
-coverage.out
-
-# Build output
-/build/
-/dist/
-/bin/
-/out/
 
 # Application specific config
-.env
+# Binaries
+# Build output
+# Dependency directories
+# Go workspace file
+# IDE and editor files
+# Logs
+# OS generated files
+# Output of the go coverage tool
+# Project specific
+# Temporary files
+*.coverprofile
+*.dll
+*.dylib
+*.exe
+*.exe~
 *.local.yaml
 *.local.yml
-config.local.*
-application-local.yaml
-
-# Logs
 *.log
-/logs/
-
-# OS generated files
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Temporary files
-/tmp/
-/temp/
-
-# Project specific
+*.out
 *.pid
-*.seed
 *.pid.lock
-./docs
+*.seed
+*.so
+*.swo
+*.swp
+*.test
+*~
+./docsphonefast
+.DS_Store
+.env
+.idea/
+.vscode/
+/bin/
+/build/
+/dist/
+/logs/
+/node_modules/
+/out/
+/temp/
+/tmp/
+/vendor/
+Desktop.ini
+Thumbs.db
+application-local.yaml
+config.local.*
+coverage.html
+coverage.out
+ehthumbs.db
+go.work
+go.work.sum
