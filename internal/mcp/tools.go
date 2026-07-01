@@ -38,6 +38,9 @@ func (s *Server) registerTools() {
 	s.mcpServer.AddTool(
 		mcp.NewTool("get_ui_elements",
 			mcp.WithDescription("Get interactive UI elements from the current screen."),
+				mcp.WithNumber("max_elements",
+					mcp.Description("Max number of elements to show (default: 100, -1 for all)."),
+				),
 		),
 		s.handleGetUIElements,
 	)
@@ -170,6 +173,12 @@ func (s *Server) registerTools() {
 	s.mcpServer.AddTool(
 		mcp.NewTool("observe",
 			mcp.WithDescription("Capture screenshot and UI elements in one call (fast)."),
+			mcp.WithNumber("max_elements",
+				mcp.Description("Max number of elements to show (default: 100, -1 for all)."),
+			),
+			mcp.WithBoolean("summary",
+				mcp.Description("If true, filter out layout containers, return only meaningful elements (default: false)."),
+			),
 		),
 		s.handleObserve,
 	)
@@ -229,15 +238,26 @@ func (s *Server) handleGetUIElements(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	elements, err := sess.GetUIElements()
+	maxShow := getMaxElements(req, 100)
+	collectMax := maxShow
+	if collectMax < 0 || collectMax > 500 {
+		collectMax = 0 // server default (500 for full, 100 for summary)
+	}
+	isSummary := getSummary(req)
+	var elements []protocol.UIElement
+	if isSummary {
+		elements, err = sess.GetUISummary(collectMax)
+	} else {
+		elements, err = sess.GetUIElements(collectMax)
+	}
 	if err != nil {
-		elements, err = sess.GetUIElementsFallbackADB()
+		elements, err = sess.GetUIElementsFallbackADB(collectMax)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 	}
 
-	formatted := formatElementsForLLM(elements)
+	formatted := formatElementsForLLM(elements, maxShow, isSummary)
 	return mcp.NewToolResultText(formatted), nil
 }
 
@@ -266,10 +286,10 @@ func (s *Server) handleTapElement(ctx context.Context, req mcp.CallToolRequest) 
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	elements, fastErr := sess.GetUIElements()
+	elements, fastErr := sess.GetUIElements(0) // collect all elements (server default 500)
 	if fastErr != nil {
 		var fallbackErr error
-		elements, fallbackErr = sess.GetUIElementsFallbackADB()
+		elements, fallbackErr = sess.GetUIElementsFallbackADB(0)
 		if fallbackErr != nil {
 			return mcp.NewToolResultError(fmt.Sprintf(
 				"ui dump failed: %v; adb fallback: %v", fastErr, fallbackErr)), nil
@@ -458,7 +478,13 @@ func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	pngData, elements, err := sess.Observe()
+	maxShow := getMaxElements(req, 100)
+	collectMax := maxShow
+	if collectMax < 0 || collectMax > 500 {
+		collectMax = 0 // server default (500 for full, 100 for summary)
+	}
+	isSummary := getSummary(req)
+	pngData, elements, err := sess.Observe(collectMax, isSummary)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -475,7 +501,7 @@ func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*m
 	)
 	result.Content = append(result.Content, mcp.TextContent{
 		Type: mcp.ContentTypeText,
-		Text: formatElementsForLLM(elements),
+		Text: formatElementsForLLM(elements, maxShow, isSummary),
 	})
 	return result, nil
 }
@@ -581,12 +607,15 @@ func mcpResultToToolResult(r *mcp.CallToolResult) *ToolResult {
 
 // ── Formatting helpers ──
 
-func formatElementsForLLM(elements []protocol.UIElement) string {
+func formatElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) string {
 	if len(elements) == 0 {
 		return "No interactive elements found on screen."
 	}
 
-	maxShow := 50
+	if maxShow < 0 || maxShow > len(elements) {
+		maxShow = len(elements)
+	}
+
 	var lines []string
 	lines = append(lines, "Interactive elements on screen:")
 	lines = append(lines, strings.Repeat("=", 50))
@@ -595,6 +624,11 @@ func formatElementsForLLM(elements []protocol.UIElement) string {
 		if i >= maxShow {
 			lines = append(lines, fmt.Sprintf("... and %d more elements", len(elements)-maxShow))
 			break
+		}
+
+		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
+			maxShow++ // don't count this filtered element
+			continue
 		}
 
 		var parts []string
@@ -635,4 +669,30 @@ func formatElementsForLLM(elements []protocol.UIElement) string {
 	lines = append(lines, "Use tap_element with index=N or text='...' to interact.")
 
 	return strings.Join(lines, "\n")
+}
+
+// getMaxElements extracts the max_elements argument from an MCP CallToolRequest.
+// Returns the provided value (clamped to valid range) or the default if not set.
+func getMaxElements(req mcp.CallToolRequest, defaultVal int) int {
+	args := req.GetArguments()
+	if v, ok := args["max_elements"].(float64); ok {
+		n := int(v)
+		if n < 0 {
+			return -1 // show all
+		}
+		if n == 0 {
+			return defaultVal
+		}
+		return n
+	}
+	return defaultVal
+}
+
+// getSummary extracts the summary boolean from an MCP CallToolRequest.
+func getSummary(req mcp.CallToolRequest) bool {
+	args := req.GetArguments()
+	if v, ok := args["summary"].(bool); ok {
+		return v
+	}
+	return false
 }

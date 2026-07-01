@@ -137,9 +137,9 @@ func main() {
 	case "screenshot":
 		screenshotCmd(args)
 	case "ui":
-		uiCmd()
+		uiCmd(args)
 	case "observe":
-		observeCmd()
+		observeCmd(args)
 	case "wait":
 		waitCmd(args)
 	case "status":
@@ -603,9 +603,9 @@ func tapElementCmd(args []string) {
 			printMessage(result)
 		} else {
 			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUIElements()
+				elements, err := sess.GetUIElements(0)
 				if err != nil {
-					elements, err = sess.GetUIElementsFallbackADB()
+					elements, err = sess.GetUIElementsFallbackADB(0)
 					if err != nil {
 						return fmt.Errorf("get ui elements: %v", err)
 					}
@@ -631,9 +631,9 @@ func tapElementCmd(args []string) {
 			printMessage(result)
 		} else {
 			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUIElements()
+				elements, err := sess.GetUIElements(0)
 				if err != nil {
-					elements, err = sess.GetUIElementsFallbackADB()
+					elements, err = sess.GetUIElementsFallbackADB(0)
 					if err != nil {
 						return fmt.Errorf("get ui elements: %v", err)
 					}
@@ -832,9 +832,13 @@ func writeScreenshot(args []string, b64 string) {
 	}
 }
 
-func uiCmd() {
+func uiCmd(args []string) {
+	maxShow, isSummary := parseUIShowArgs(args, 100)
 	if useDaemon {
-		result := daemonCall("get_ui_elements", nil)
+		result := daemonCall("get_ui_elements", map[string]any{
+			"max_elements": maxShow,
+			"summary":      isSummary,
+		})
 		var resp struct {
 			Formatted string `json:"formatted"`
 		}
@@ -842,23 +846,35 @@ func uiCmd() {
 		fmt.Println(resp.Formatted)
 	} else {
 		withSession(func(sess *session.Session) error {
-			elements, err := sess.GetUIElements()
+			collectMax := maxShow
+			if collectMax < 0 || collectMax > 500 { collectMax = 0 }
+			var elements []protocol.UIElement
+			var err error
+			if isSummary {
+				elements, err = sess.GetUISummary(collectMax)
+			} else {
+				elements, err = sess.GetUIElements(collectMax)
+			}
 			if err != nil {
-				elements, err = sess.GetUIElementsFallbackADB()
+				elements, err = sess.GetUIElementsFallbackADB(collectMax)
 				if err != nil {
 					return err
 				}
 			}
 			// Format elements (mirrored from daemon/rpc.go)
-			fmt.Println(formatElements(elements))
+			fmt.Println(formatElements(elements, maxShow, isSummary))
 			return nil
 		})
 	}
 }
 
-func observeCmd() {
+func observeCmd(args []string) {
+	maxShow, isSummary := parseUIShowArgs(args, 100)
 	if useDaemon {
-		result := daemonCall("observe", nil)
+		result := daemonCall("observe", map[string]any{
+			"max_elements": maxShow,
+			"summary":      isSummary,
+		})
 		var resp struct {
 			Text      string `json:"text"`
 			ImageData string `json:"image_data"`
@@ -868,12 +884,14 @@ func observeCmd() {
 		fmt.Println(resp.Text)
 	} else {
 		withSession(func(sess *session.Session) error {
-			_, elements, err := sess.Observe()
+			collectMax := maxShow
+			if collectMax < 0 || collectMax > 500 { collectMax = 0 }
+			_, elements, err := sess.Observe(collectMax, isSummary)
 			if err != nil {
 				return err
 			}
 			fmt.Printf("elements: %d\n", len(elements))
-			fmt.Println(formatElements(elements))
+			fmt.Println(formatElements(elements, maxShow, isSummary))
 			return nil
 		})
 	}
@@ -1133,7 +1151,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		b64 := base64.StdEncoding.EncodeToString(png)
 		fmt.Printf(`{"base64":"%s","width":%d,"height":%d,"format":"png"}`+"\n", b64, w, h)
 	case "get_ui_elements":
-		elements, err := sess.GetUIElements()
+		elements, err := sess.GetUIElements(0)
 		if err != nil {
 			return err
 		}
@@ -1144,7 +1162,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		if err != nil {
 			return err
 		}
-		elements, err := sess.GetUIElements()
+		elements, err := sess.GetUIElements(0)
 		if err != nil {
 			return err
 		}
@@ -1158,9 +1176,9 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		}
 		fmt.Printf("Tapped at (%d, %d)\n", x, y)
 	case "tap_element":
-		elements, err := sess.GetUIElements()
+		elements, err := sess.GetUIElements(0)
 		if err != nil {
-			elements, err = sess.GetUIElementsFallbackADB()
+			elements, err = sess.GetUIElementsFallbackADB(0)
 			if err != nil {
 				return fmt.Errorf("get ui elements: %v", err)
 			}
@@ -1310,11 +1328,13 @@ func devicesCmd() {
 
 // ── Element formatting (for direct mode ui/observe) ──
 
-func formatElements(elements []protocol.UIElement) string {
+func formatElements(elements []protocol.UIElement, maxShow int, isSummary bool) string {
 	if len(elements) == 0 {
 		return "No interactive elements found on screen."
 	}
-	maxShow := 50
+	if maxShow < 0 || maxShow > len(elements) {
+		maxShow = len(elements)
+	}
 	var lines []string
 	lines = append(lines, "Interactive elements on screen:")
 	lines = append(lines, strings.Repeat("=", 50))
@@ -1322,6 +1342,10 @@ func formatElements(elements []protocol.UIElement) string {
 		if i >= maxShow {
 			lines = append(lines, fmt.Sprintf("... and %d more elements", len(elements)-maxShow))
 			break
+		}
+		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
+			maxShow++ // don't count this filtered element
+			continue
 		}
 		line := fmt.Sprintf("[%d]", el.Index)
 		if el.Text != "" {
@@ -1355,6 +1379,31 @@ func formatElements(elements []protocol.UIElement) string {
 }
 
 // ── Helpers ──
+
+func parseUIShowArgs(args []string, defaultVal int) (int, bool) {
+	summary := false
+	filtered := args[:0]
+	for _, a := range args {
+		if a == "--summary" {
+			summary = true
+		} else {
+			filtered = append(filtered, a)
+		}
+	}
+	args = filtered
+	if len(args) >= 1 {
+		n, err := strconv.Atoi(args[0])
+		if err == nil {
+			if n < 0 {
+				return -1, summary // show all
+			}
+			if n > 0 {
+				return n, summary
+			}
+		}
+	}
+	return defaultVal, summary
+}
 
 func printMessage(result json.RawMessage) {
 	var resp struct {

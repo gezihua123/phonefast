@@ -161,7 +161,11 @@ func (s *Session) Scroll(x, y int, hScroll, vScroll float32) error {
 }
 
 // Observe captures both a screenshot and UI hierarchy in parallel.
-func (s *Session) Observe() (screenshot []byte, uiElements []protocol.UIElement, err error) {
+// maxElements controls the collection limit on the device side:
+//   - > 0: request that many elements (capped at 500 by the server)
+//   - <= 0: use server default (500 for full, 100 for summary)
+// summary filters out layout containers, returning only meaningful elements.
+func (s *Session) Observe(maxElements int, summary bool) (screenshot []byte, uiElements []protocol.UIElement, err error) {
 	type result struct {
 		pngData   []byte
 		w, h      int
@@ -177,9 +181,15 @@ func (s *Session) Observe() (screenshot []byte, uiElements []protocol.UIElement,
 		r.pngData, r.w, r.h, r.screenErr = s.Screenshot()
 
 		// Try fast socket UI dump first, fallback to ADB
-		elems, uiErr := s.GetUIElements()
+		var elems []protocol.UIElement
+		var uiErr error
+		if summary {
+			elems, uiErr = s.GetUISummary(maxElements)
+		} else {
+			elems, uiErr = s.GetUIElements(maxElements)
+		}
 		if uiErr != nil {
-			elems, uiErr = s.GetUIElementsFallbackADB()
+			elems, uiErr = s.GetUIElementsFallbackADB(maxElements)
 		}
 		r.elements = elems
 		r.uiErr = uiErr

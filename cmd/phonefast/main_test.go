@@ -144,7 +144,7 @@ func TestNormalizeAction(t *testing.T) {
 // --- formatElements tests (direct-mode variant) ---
 
 func TestFormatElementsEmpty(t *testing.T) {
-	got := formatElements(nil)
+	got := formatElements(nil, 100, false)
 	if got != "No interactive elements found on screen." {
 		t.Errorf("expected empty message, got: %s", got)
 	}
@@ -161,7 +161,7 @@ func TestFormatElementsRendersFields(t *testing.T) {
 			Bounds:     [4]int{0, 100, 200, 200},
 		},
 	}
-	got := formatElements(els)
+	got := formatElements(els, 100, false)
 	for _, want := range []string{"[0]", `"Settings"`, `id="title"`, "(TextView)", "[clickable]", "bounds=[0,100][200,200]"} {
 		if !containsStr(got, want) {
 			t.Errorf("formatElements missing %q in output:\n%s", want, got)

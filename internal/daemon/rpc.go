@@ -242,15 +242,27 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	elements, err := sess.GetUIElements()
+	maxShow := getMaxElementsFromParams(req, 100)
+	collectMax := maxShow
+	if collectMax < 0 || collectMax > 500 {
+		collectMax = 0 // server default (500 for full, 100 for summary)
+	}
+	isSummary := getSummaryFromParams(req)
+	var elements []protocol.UIElement
+	var err error
+	if isSummary {
+		elements, err = sess.GetUISummary(collectMax)
+	} else {
+		elements, err = sess.GetUIElements(collectMax)
+	}
 	if err != nil {
-		elements, err = sess.GetUIElementsFallbackADB()
+		elements, err = sess.GetUIElementsFallbackADB(collectMax)
 		if err != nil {
 			return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("get ui elements: %v", err))
 		}
 	}
 
-	formatted := formatElementsForLLM(elements)
+	formatted := formatElementsForLLM(elements, maxShow, isSummary)
 	return newResultResponse(req.ID, map[string]any{
 		"elements":  elements,
 		"formatted": formatted,
@@ -263,13 +275,19 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	pngData, elements, err := sess.Observe()
+	maxShow := getMaxElementsFromParams(req, 100)
+	collectMax := maxShow
+	if collectMax < 0 || collectMax > 500 {
+		collectMax = 0 // server default (500 for full, 100 for summary)
+	}
+	isSummary := getSummaryFromParams(req)
+	pngData, elements, err := sess.Observe(collectMax, isSummary)
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("observe: %v", err))
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(pngData)
-	formatted := formatElementsForLLM(elements)
+	formatted := formatElementsForLLM(elements, maxShow, isSummary)
 
 	return newResultResponse(req.ID, map[string]any{
 		"text":       formatted,
@@ -317,10 +335,10 @@ func handleTapElement(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	elements, fastErr := sess.GetUIElements()
+	elements, fastErr := sess.GetUIElements(0) // collect all elements (server default 500)
 	if fastErr != nil {
 		var fallbackErr error
-		elements, fallbackErr = sess.GetUIElementsFallbackADB()
+		elements, fallbackErr = sess.GetUIElementsFallbackADB(0)
 		if fallbackErr != nil {
 			return newErrorResponse(req.ID, ErrDevice,
 				fmt.Sprintf("ui dump failed: %v; adb fallback: %v", fastErr, fallbackErr))
@@ -521,12 +539,15 @@ func handleWait(req *Request) *Response {
 
 // ── Formatting helpers (mirrored from internal/mcp/tools.go) ──
 
-func formatElementsForLLM(elements []protocol.UIElement) string {
+func formatElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) string {
 	if len(elements) == 0 {
 		return "No interactive elements found on screen."
 	}
 
-	maxShow := 50
+	if maxShow < 0 || maxShow > len(elements) {
+		maxShow = len(elements)
+	}
+
 	var lines []string
 	lines = append(lines, "Interactive elements on screen:")
 	lines = append(lines, "="+repeatString("=", 49))
@@ -535,6 +556,11 @@ func formatElementsForLLM(elements []protocol.UIElement) string {
 		if i >= maxShow {
 			lines = append(lines, fmt.Sprintf("... and %d more elements", len(elements)-maxShow))
 			break
+		}
+
+		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
+			maxShow++ // don't count this filtered element
+			continue
 		}
 
 		var parts []string
@@ -575,6 +601,33 @@ func formatElementsForLLM(elements []protocol.UIElement) string {
 	lines = append(lines, "Use tap_element with index=N or text='...' to interact.")
 
 	return joinStrings(lines, "\n")
+}
+
+func getMaxElementsFromParams(req *Request, defaultVal int) int {
+	params, err := parseParams(req.Params)
+	if err != nil {
+		return defaultVal
+	}
+	if v, ok := params["max_elements"].(float64); ok {
+		n := int(v)
+		if n < 0 {
+			return -1 // show all
+		}
+		if n == 0 {
+			return defaultVal
+		}
+		return n
+	}
+	return defaultVal
+}
+
+func getSummaryFromParams(req *Request) bool {
+	params, err := parseParams(req.Params)
+	if err != nil {
+		return false
+	}
+	v, ok := params["summary"].(bool)
+	return ok && v
 }
 
 func toLower(s string) string {

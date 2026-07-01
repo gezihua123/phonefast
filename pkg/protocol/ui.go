@@ -5,10 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
-// UIDumpRequest is sent to the ui socket to request a UI hierarchy dump.
-const UIDumpRequest = "dump\x00"
+// UIDumpRequest is the base request string sent to the ui socket.
+// A null byte ('\0') terminates the request on the wire.
+const UIDumpRequest = "dump"
+
+// UISummaryRequest is the summary-mode request prefix.
+// Summary mode filters out layout containers on the server side.
+const UISummaryRequest = "sum"
 
 // UIElement represents a single UI element on screen.
 // Compatible with phone-mcp UIElement format.
@@ -58,7 +64,55 @@ func ReadUIDumpResponse(r io.Reader) (*UIDumpResponse, error) {
 }
 
 // WriteUIDumpRequest sends a dump request on the ui socket.
-func WriteUIDumpRequest(w io.Writer) error {
-	_, err := w.Write([]byte(UIDumpRequest))
+// If maxElements > 0, the request includes a limit: "dump:NNN\0".
+// Otherwise sends the legacy "dump\0" (server uses its default).
+func WriteUIDumpRequest(w io.Writer, maxElements int) error {
+	var req string
+	if maxElements > 0 {
+		req = fmt.Sprintf("%s:%d\x00", UIDumpRequest, maxElements)
+	} else {
+		req = fmt.Sprintf("%s\x00", UIDumpRequest)
+	}
+	_, err := w.Write([]byte(req))
+	return err
+}
+
+// IsLayoutClass checks if a class name (fully qualified or simple) represents
+// a known Android layout container that should be filtered in summary mode.
+func IsLayoutClass(className string) bool {
+	if className == "" {
+		return false
+	}
+	// Extract simple name after last '.'
+	simple := className
+	if idx := len(className) - 1; idx >= 0 {
+		if dot := strings.LastIndexByte(className, '.'); dot >= 0 {
+			simple = className[dot+1:]
+		}
+	}
+
+	switch simple {
+	case "FrameLayout", "LinearLayout", "RelativeLayout", "ConstraintLayout",
+		"AbsoluteLayout", "GridLayout", "TableLayout", "TableRow",
+		"ScrollView", "HorizontalScrollView", "NestedScrollView",
+		"ViewGroup", "ViewStub", "Space", "Spacer",
+		"CoordinatorLayout", "DrawerLayout", "SwipeRefreshLayout":
+		return true
+	}
+	return false
+}
+
+// WriteUISummaryRequest sends a summary-mode dump request on the ui socket.
+// Summary mode filters out layout containers on the server side.
+// If maxElements > 0, the request includes a limit: "sum:NNN\0".
+// Otherwise sends "sum\0" (server uses its default of 100).
+func WriteUISummaryRequest(w io.Writer, maxElements int) error {
+	var req string
+	if maxElements > 0 {
+		req = fmt.Sprintf("%s:%d\x00", UISummaryRequest, maxElements)
+	} else {
+		req = fmt.Sprintf("%s\x00", UISummaryRequest)
+	}
+	_, err := w.Write([]byte(req))
 	return err
 }

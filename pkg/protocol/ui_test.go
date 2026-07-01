@@ -7,15 +7,62 @@ import (
 )
 
 func TestUIDumpRequest(t *testing.T) {
-	var buf bytes.Buffer
-	err := WriteUIDumpRequest(&buf)
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Run("default (no limit)", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUIDumpRequest(&buf, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("dump\x00")) {
+			t.Errorf("expected dump\\0, got %q", buf.String())
+		}
+	})
 
-	if !bytes.Equal(buf.Bytes(), []byte(UIDumpRequest)) {
-		t.Errorf("expected %q, got %q", UIDumpRequest, buf.String())
-	}
+	t.Run("with limit", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUIDumpRequest(&buf, 300)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("dump:300\x00")) {
+			t.Errorf("expected dump:300\\0, got %q", buf.String())
+		}
+	})
+
+	t.Run("negative is treated as default", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUIDumpRequest(&buf, -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("dump\x00")) {
+			t.Errorf("expected dump\\0 for negative, got %q", buf.String())
+		}
+	})
+}
+
+func TestUISummaryRequest(t *testing.T) {
+	t.Run("default summary", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUISummaryRequest(&buf, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("sum\x00")) {
+			t.Errorf("expected sum\\0, got %q", buf.String())
+		}
+	})
+
+	t.Run("summary with limit", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUISummaryRequest(&buf, 80)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("sum:80\x00")) {
+			t.Errorf("expected sum:80\\0, got %q", buf.String())
+		}
+	})
 }
 
 func TestReadUIDumpResponse(t *testing.T) {
