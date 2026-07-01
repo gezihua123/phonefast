@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "phonefast": {
+      "source": "gezihua123/phonefast",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "f2a7b347f12e152d7872157ac8575ae53678201130592e872d022e9976251b5b"
+    }
+  }
+}

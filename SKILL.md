@@ -20,12 +20,6 @@ description: |
   scrcpy, mobile testing, app testing, phone MCP, android MCP, mobile MCP,
   control my phone, see my phone, what's on my phone, interact with phone,
   phone tool.
-license: Apache-2.0
-compatibility: Designed for Claude Code and similar agentic coding tools.
-metadata:
-  author: gezihua123
-  repository: gezihua123/phonefast
-  version: "1.0"
 ---
 
 # phonefast — Android Device Control for AI Agents
