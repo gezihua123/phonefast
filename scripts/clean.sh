@@ -278,10 +278,10 @@ echo ""
 echo "========================================"
 echo " Clean complete ($LEVEL)"
 echo "========================================"
-if ! $DRY; then
+if ! $DRY && command -v go &>/dev/null; then
     echo "  Go cache remaining:"
-    go env GOCACHE GOMODCACHE 2>/dev/null | while read -r line; do
+    while IFS= read -r line; do
         dir="${line#*=}"
         [[ -d "$dir" ]] && echo "    $dir  ($(_sz "$dir"))" || true
-    done
+    done < <(go env GOCACHE GOMODCACHE 2>/dev/null)
 fi

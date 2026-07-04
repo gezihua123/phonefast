@@ -61,7 +61,11 @@ public final class UISocketHandler {
         "AbsoluteLayout", "GridLayout", "TableLayout", "TableRow",
         "ScrollView", "HorizontalScrollView", "NestedScrollView",
         "ViewGroup", "ViewStub", "Space", "Spacer",
-        "CoordinatorLayout", "DrawerLayout", "SwipeRefreshLayout"
+        "CoordinatorLayout", "DrawerLayout", "SwipeRefreshLayout",
+        "Toolbar", "ToolbarLayout", "ActionBar", "ActionBarContainer",
+        "BottomNavigationView", "TabLayout", "TabWidget",
+        "ViewPager", "ViewPager2", "ViewAnimator", "ViewFlipper",
+        "FragmentBreadCrumbs", "ContentFrameLayout"
     ));
 
     private final int scid;
@@ -242,6 +246,69 @@ public final class UISocketHandler {
         return LAYOUT_CLASS_SUFFIXES.contains(simple);
     }
 
+    /**
+     * Shortens common Android widget class names for summary mode.
+     * e.g. "android.widget.TextView" → "Text", "android.widget.ImageView" → "Image".
+     * Handles both fully-qualified and simple (already-stripped) names.
+     */
+    private static String simplifyClassName(String fullName) {
+        if (fullName == null || fullName.isEmpty()) return fullName;
+        int dot = fullName.lastIndexOf('.');
+        String simple = dot >= 0 ? fullName.substring(dot + 1) : fullName;
+        switch (simple) {
+            case "TextView":
+            case "CheckedTextView":
+            case "AppCompatTextView":
+            case "MaterialTextView":
+                return "Text";
+            case "ImageView":
+            case "AppCompatImageView":
+            case "MaterialImageView":
+                return "Image";
+            case "Button":
+            case "AppCompatButton":
+            case "MaterialButton":
+                return "Button";
+            case "ImageButton":
+                return "IconBtn";
+            case "EditText":
+            case "AppCompatEditText":
+            case "MaterialEditText":
+                return "Input";
+            case "CheckBox":
+            case "AppCompatCheckBox":
+            case "MaterialCheckBox":
+                return "Check";
+            case "RadioButton":
+            case "AppCompatRadioButton":
+            case "MaterialRadioButton":
+                return "Radio";
+            case "Switch":
+            case "SwitchCompat":
+            case "MaterialSwitch":
+                return "Switch";
+            case "ProgressBar":
+            case "AppCompatProgressBar":
+            case "MaterialProgressBar":
+                return "Progress";
+            case "SeekBar":
+            case "AppCompatSeekBar":
+            case "MaterialSeekBar":
+                return "Seek";
+            case "RatingBar":
+                return "Rating";
+            case "Spinner":
+                return "Select";
+            case "ToggleButton":
+                return "Toggle";
+            case "WebView":
+            case "WebViewClassic":
+                return "Browser";
+            default:
+                return simple;
+        }
+    }
+
     // ── dump ───────────────────────────────────────────────────────────────────
 
     private byte[] dumpUIHierarchy(int maxElements, boolean summaryMode) {
@@ -332,7 +399,11 @@ public final class UISocketHandler {
                     jw.name("text").value(text != null ? text.toString() : "");
                     jw.name("content_desc").value(desc != null ? desc.toString() : "");
                     jw.name("resource_id").value(resId != null ? resId : "");
-                    jw.name("class_name").value(cls != null ? cls.toString() : "");
+                    jw.name("class_name").value(
+                        (cls != null && summaryMode) ?
+                            simplifyClassName(cls.toString()) :
+                            (cls != null ? cls.toString() : "")
+                    );
 
                     jw.name("bounds");
                     jw.beginArray();

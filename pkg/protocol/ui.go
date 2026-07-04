@@ -96,10 +96,68 @@ func IsLayoutClass(className string) bool {
 		"AbsoluteLayout", "GridLayout", "TableLayout", "TableRow",
 		"ScrollView", "HorizontalScrollView", "NestedScrollView",
 		"ViewGroup", "ViewStub", "Space", "Spacer",
-		"CoordinatorLayout", "DrawerLayout", "SwipeRefreshLayout":
+		"CoordinatorLayout", "DrawerLayout", "SwipeRefreshLayout",
+		"Toolbar", "ToolbarLayout", "ActionBar", "ActionBarContainer",
+		"BottomNavigationView", "TabLayout", "TabWidget",
+		"ViewPager", "ViewPager2", "ViewAnimator", "ViewFlipper",
+		"FragmentBreadCrumbs", "ContentFrameLayout":
 		return true
 	}
 	return false
+}
+
+// SimplifyClassName shortens Android widget class names for summary mode display.
+// e.g. "android.widget.TextView" → "Text", "android.widget.ImageView" → "Image".
+// Handles both fully-qualified and simple (already-stripped) names.
+func SimplifyClassName(className string) string {
+	if className == "" {
+		return ""
+	}
+	// Extract simple name after last '.'
+	simple := className
+	if idx := strings.LastIndexByte(className, '.'); idx >= 0 {
+		simple = className[idx+1:]
+	}
+
+	switch simple {
+	case "TextView", "CheckedTextView",
+		"AppCompatTextView", "MaterialTextView":
+		return "Text"
+	case "ImageView",
+		"AppCompatImageView", "MaterialImageView":
+		return "Image"
+	case "Button",
+		"AppCompatButton", "MaterialButton":
+		return "Button"
+	case "ImageButton":
+		return "IconBtn"
+	case "EditText",
+		"AppCompatEditText", "MaterialEditText":
+		return "Input"
+	case "CheckBox",
+		"AppCompatCheckBox", "MaterialCheckBox":
+		return "Check"
+	case "RadioButton",
+		"AppCompatRadioButton", "MaterialRadioButton":
+		return "Radio"
+	case "Switch", "SwitchCompat", "MaterialSwitch":
+		return "Switch"
+	case "ProgressBar",
+		"AppCompatProgressBar", "MaterialProgressBar":
+		return "Progress"
+	case "SeekBar",
+		"AppCompatSeekBar", "MaterialSeekBar":
+		return "Seek"
+	case "RatingBar":
+		return "Rating"
+	case "Spinner":
+		return "Select"
+	case "ToggleButton":
+		return "Toggle"
+	case "WebView":
+		return "Browser"
+	}
+	return simple
 }
 
 // WriteUISummaryRequest sends a summary-mode dump request on the ui socket.

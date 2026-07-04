@@ -47,8 +47,20 @@ check_prereqs() {
         exit 1
     fi
 
-    if [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
-        echo "WARNING: Android SDK platform 36 not found, trying to install..."
+    # Accept any installed SDK platform >= 30
+    local sdk_found=""
+    local dir ver
+    for dir in "$ANDROID_HOME/platforms"/android-*; do
+        [ -d "$dir" ] || continue
+        ver="${dir##*/android-}"
+        if [[ "$ver" =~ ^[0-9]+$ ]] && [ "$ver" -ge 30 ] 2>/dev/null; then
+            sdk_found="$ver"
+            break
+        fi
+    done
+
+    if [ -z "$sdk_found" ]; then
+        echo "WARNING: No Android SDK platform >= 30 found, trying to install android-36..."
         "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" 2>/dev/null || {
             echo "ERROR: Could not install android-36. Install it manually:"
             echo "  sdkmanager 'platforms;android-36'"

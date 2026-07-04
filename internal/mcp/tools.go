@@ -646,16 +646,20 @@ func formatElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary 
 			parts = append(parts, fmt.Sprintf(`id="%s"`, simpleID))
 		}
 		if el.ClassName != "" {
-			cn := el.ClassName
-			if idx := strings.LastIndex(cn, "."); idx >= 0 {
-				cn = cn[idx+1:]
+			var cn string
+			if isSummary {
+				cn = protocol.SimplifyClassName(el.ClassName)
+			} else {
+				cn = el.ClassName
+				if idx := strings.LastIndex(cn, "."); idx >= 0 {
+					cn = cn[idx+1:]
+				}
 			}
 			parts = append(parts, fmt.Sprintf("(%s)", cn))
 		}
 		if el.Clickable {
 			parts = append(parts, "[clickable]")
 		}
-
 		desc := strings.Join(parts, " ")
 		if desc == "" {
 			desc = fmt.Sprintf("(%s)", el.ClassName)

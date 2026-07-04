@@ -123,3 +123,92 @@ func TestReadUIDumpResponseInvalidLength(t *testing.T) {
 		t.Error("expected error for invalid length")
 	}
 }
+
+func TestSimplifyClassName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"android.widget.TextView", "Text"},
+		{"android.widget.ImageView", "Image"},
+		{"android.widget.Button", "Button"},
+		{"android.widget.EditText", "Input"},
+		{"android.widget.CheckBox", "Check"},
+		{"android.widget.Switch", "Switch"},
+		{"android.widget.ProgressBar", "Progress"},
+		{"android.widget.SeekBar", "Seek"},
+		{"android.widget.RatingBar", "Rating"},
+		{"android.widget.Spinner", "Select"},
+		{"android.widget.ToggleButton", "Toggle"},
+		{"android.widget.ImageButton", "IconBtn"},
+		{"android.webkit.WebView", "Browser"},
+		{"android.widget.FrameLayout", "FrameLayout"},   // not in widget map — unchanged
+		{"android.widget.LinearLayout", "LinearLayout"}, // not in widget map — unchanged
+		{"com.example.CustomView", "CustomView"},         // unknown — unchanged
+		{"TextView", "Text"},                             // already simple
+		{"ImageView", "Image"},                           // already simple
+		{"", ""},                                         // empty
+	}
+
+	for _, tt := range tests {
+		got := SimplifyClassName(tt.input)
+		if got != tt.expected {
+			t.Errorf("SimplifyClassName(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestSimplifyClassNameAppCompatVariants(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"androidx.appcompat.widget.AppCompatTextView", "Text"},
+		{"androidx.appcompat.widget.AppCompatImageView", "Image"},
+		{"androidx.appcompat.widget.AppCompatButton", "Button"},
+		{"androidx.appcompat.widget.AppCompatEditText", "Input"},
+		{"com.google.android.material.button.MaterialButton", "Button"},
+		{"com.google.android.material.textview.MaterialTextView", "Text"},
+		{"androidx.appcompat.widget.SwitchCompat", "Switch"},
+	}
+
+	for _, tt := range tests {
+		got := SimplifyClassName(tt.input)
+		if got != tt.expected {
+			t.Errorf("SimplifyClassName(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
+func TestIsLayoutClass(t *testing.T) {
+	tests := []struct {
+		input    string
+		isLayout bool
+	}{
+		{"android.widget.FrameLayout", true},
+		{"android.widget.LinearLayout", true},
+		{"android.widget.RelativeLayout", true},
+		{"androidx.constraintlayout.widget.ConstraintLayout", true},
+		{"android.widget.ScrollView", true},
+		{"androidx.coordinatorlayout.widget.CoordinatorLayout", true},
+		{"com.google.android.material.bottomnavigation.BottomNavigationView", true},
+		{"androidx.viewpager.widget.ViewPager", true},
+		{"androidx.viewpager2.widget.ViewPager2", true},
+		{"android.widget.Toolbar", true},
+		{"androidx.appcompat.widget.Toolbar", true},
+		{"com.google.android.material.tabs.TabLayout", true},
+		{"android.widget.TextView", false},
+		{"android.widget.ImageView", false},
+		{"android.widget.Button", false},
+		{"android.widget.EditText", false},
+		{"com.example.MyCustomClass", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		got := IsLayoutClass(tt.input)
+		if got != tt.isLayout {
+			t.Errorf("IsLayoutClass(%q) = %v, want %v", tt.input, got, tt.isLayout)
+		}
+	}
+}
