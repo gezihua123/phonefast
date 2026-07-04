@@ -3,9 +3,10 @@
 # phonefast GitHub Release 发布脚本
 #
 # 用法:
-#   bash scripts/release.sh              # 使用默认版本 (来自 install_pkg.sh)
-#   bash scripts/release.sh 1.0.2        # 指定版本号
-#   bash scripts/release.sh --dry-run    # 试运行，只构建不发布
+#   bash scripts/release.sh              # 自动版本自增 + 发布
+#   bash scripts/release.sh --dry-run    # 试运行（只构建不发布）
+#   bash scripts/release.sh 1.0.3        # 指定版本号发布
+#   bash scripts/release.sh -y           # 跳过所有确认
 #
 # 前置依赖:
 #   - gh      (GitHub CLI, 已登录)
@@ -40,6 +41,38 @@ DEFAULT_VERSION="${DEFAULT_VERSION:-1.0.0}"
 
 VERSION=""
 DRY_RUN=false
+FORCE=false
+
+# ── 版本自增 ──────────────────────────────────────────────────────────────────────
+
+bump_patch() {
+    local ver="$1"
+    echo "$ver" | awk -F. '{print $1"."$2"."$3+1}'
+}
+
+# 更新项目中所有版本号引用
+update_version_files() {
+    local old_ver="$1" new_ver="$2"
+
+    step "版本号自增: ${old_ver} → ${new_ver}"
+
+    # scripts/install_pkg.sh — sed 替换所有 1.0.X 为 1.0.Y
+    sed -i '' "s/${old_ver}/${new_ver}/g" "$SCRIPT_DIR/install_pkg.sh"
+    info "  scripts/install_pkg.sh"
+
+    # docs/CLI.md — 版本头
+    sed -i '' "s/${old_ver}/${new_ver}/g" "$ROOT_DIR/docs/CLI.md"
+    info "  docs/CLI.md"
+
+    # 提交版本升级
+    git -C "$ROOT_DIR" add -A
+    git -C "$ROOT_DIR" commit -m "chore: bump version to ${new_ver}
+
+Auto-incremented by release script.
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+    info "版本升级已提交: ${new_ver}"
+}
 
 # ── 前置检查 ──────────────────────────────────────────────────────────────────────
 
@@ -65,10 +98,10 @@ check_prereqs() {
         warn "工作区有未提交的修改:"
         git -C "$ROOT_DIR" status --short
         echo ""
-        if $DRY_RUN; then
-            info "（dry-run 模式自动继续）"
+        if $DRY_RUN || $FORCE; then
+            info "（自动继续）"
         else
-            read -rp "是否继续？(y/N) " confirm
+            read -rp "是否继续？(y/N) " confirm || true
             if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
                 error "已取消发布"
             fi
@@ -193,11 +226,20 @@ main() {
     for arg in "$@"; do
         case "$arg" in
             --dry-run) DRY_RUN=true ;;
+            --yes|-y)  FORCE=true ;;
             --*) ;;
             *) version_arg="$arg" ;;
         esac
     done
-    VERSION="${version_arg:-$DEFAULT_VERSION}"
+    if [ -n "$version_arg" ]; then
+        # 手动指定版本，直接使用
+        VERSION="$version_arg"
+        info "使用指定版本: ${VERSION}"
+    else
+        # 未指定版本 → 自增
+        VERSION="$(bump_patch "$DEFAULT_VERSION")"
+        info "自动版本自增: ${DEFAULT_VERSION} → ${VERSION}"
+    fi
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
@@ -211,6 +253,12 @@ main() {
     echo ""
 
     check_prereqs
+
+    # 自动自增时先升级版本号并提交
+    if [ -z "$version_arg" ] && [ "$VERSION" != "$DEFAULT_VERSION" ]; then
+        update_version_files "$DEFAULT_VERSION" "$VERSION"
+    fi
+
     do_build
 
     if $DRY_RUN; then
@@ -229,9 +277,11 @@ main() {
     echo "  Tag:      v${VERSION}"
     echo "  构建产物: dist/dev/*.tar.gz"
     echo ""
-    read -rp "确认发布？(y/N) " confirm || true
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        error "已取消发布"
+    if ! $FORCE; then
+        read -rp "确认发布？(y/N) " confirm || true
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            error "已取消发布"
+        fi
     fi
 
     do_release

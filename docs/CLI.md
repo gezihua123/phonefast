@@ -1,6 +1,6 @@
 # phonefast CLI 使用手册
 
-> 版本: 1.0.2 | 协议: MIT | 平台: macOS / Linux / Windows
+> 版本: 1.0.3 | 协议: MIT | 平台: macOS / Linux / Windows
 
 phonefast 是一个高性能 Android 设备控制命令行工具，基于 Go 语言和 scrcpy 协议构建。专为 AI Agent 高频交互场景设计，单次操作延迟 <10ms，支持 Daemon 后台常驻模式和 MCP 协议集成。
 
@@ -166,7 +166,7 @@ phonefast [--foreground|--daemon] tap <x> <y>
 **示例：**
 ```bash
 phonefast tap 540 960                  # 点击屏幕中心
-phonefast tap 100 200                  # 点击左上角区域
+phonefast tap 1.0.300                  # 点击左上角区域
 phonefast --foreground tap 244 540     # 直接模式点击
 ```
 
@@ -988,7 +988,7 @@ phonefast run '[
 phonefast --serial DEVICE_A tap 540 960
 
 # 终端 2: 控制设备 B
-phonefast --serial DEVICE_B --foreground tap 100 200
+phonefast --serial DEVICE_B --foreground tap 1.0.300
 ```
 
 ### 最佳实践
