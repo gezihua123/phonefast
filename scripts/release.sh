@@ -273,6 +273,11 @@ main() {
         update_version_files "$DEFAULT_VERSION" "$VERSION"
     fi
 
+    # 清理旧的构建产物，确保每次发布从干净状态开始
+    step "清理 dist/ ..."
+    rm -rf "$ROOT_DIR/dist"
+    info "dist/ 已清理"
+
     build_server
     do_build
 
