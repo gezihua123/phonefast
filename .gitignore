@@ -51,3 +51,4 @@ ehthumbs.db
 go.work
 go.work.sum
 /phonefast
+.build-tmp

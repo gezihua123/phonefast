@@ -130,6 +130,17 @@ apply_patches() {
         exit 1
     fi
     echo "[OK] All patches applied"
+
+    # ── Overlay latest UISocketHandler ────────────────────────────────────
+    # The patch provides a baseline; the canonical source lives in
+    # android/phonefast-agent/UISocketHandler.java with protocol fixes
+    # (e.g. bulk-read 4 bytes to work around a LocalSocket + readByte()
+    # compatibility issue on certain Android builds).
+    local latest_handler="$PROJECT_ROOT/android/phonefast-agent/UISocketHandler.java"
+    if [ -f "$latest_handler" ]; then
+        cp "$latest_handler" server/src/main/java/com/genymobile/scrcpy/control/UISocketHandler.java
+        echo "[OK] Overlaid latest UISocketHandler.java from phonefast-agent/"
+    fi
 }
 
 # ── Build ─────────────────────────────────────────────────────────────────────

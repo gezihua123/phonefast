@@ -64,8 +64,8 @@ func ReadUIDumpResponse(r io.Reader) (*UIDumpResponse, error) {
 }
 
 // WriteUIDumpRequest sends a dump request on the ui socket.
-// If maxElements > 0, the request includes a limit: "dump:NNN\0".
-// Otherwise sends the legacy "dump\0" (server uses its default).
+// If maxElements > 0, includes a limit: "dump:NNN\0".
+// Otherwise sends "dump\0" (server uses its default of 500).
 func WriteUIDumpRequest(w io.Writer, maxElements int) error {
 	var req string
 	if maxElements > 0 {
@@ -162,7 +162,7 @@ func SimplifyClassName(className string) string {
 
 // WriteUISummaryRequest sends a summary-mode dump request on the ui socket.
 // Summary mode filters out layout containers on the server side.
-// If maxElements > 0, the request includes a limit: "sum:NNN\0".
+// If maxElements > 0, includes a limit: "sum:NNN\0".
 // Otherwise sends "sum\0" (server uses its default of 100).
 func WriteUISummaryRequest(w io.Writer, maxElements int) error {
 	var req string

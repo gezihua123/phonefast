@@ -44,15 +44,9 @@ public final class UISocketHandler {
     private static final String UI_SOCKET_SUFFIX = "_ui";
     // Absolute hard cap — never collect more than this per dump (avoids OOM)
     private static final int ABSOLUTE_MAX_ELEMENTS = 500;
-    // Default when no limit specified
-    private static final int DEFAULT_MAX_ELEMENTS = 500;
-    // Default for summary mode
-    private static final int DEFAULT_SUM_ELEMENTS = 100;
 
-    private static final String DUMP_PREFIX = "dump";
-    private static final String SUM_PREFIX = "sum";
-    private static final byte[] DUMP_PREFIX_BYTES = "dump".getBytes(StandardCharsets.US_ASCII);
-    private static final byte[] SUM_PREFIX_BYTES = "sum".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] DUMP_BYTES = "dump".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] SUM_BYTES = "sum".getBytes(StandardCharsets.US_ASCII);
 
     // Layout class names filtered out in summary mode (suffix matching).
     // These are non-interactive containers that just arrange children.
@@ -152,24 +146,76 @@ public final class UISocketHandler {
             DataInputStream in = new DataInputStream(socket.getInputStream());
             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
-            // Read until null terminator ('\0')
-            byte[] req = readUntilNull(in);
-            if (req == null) {
-                return;
+            // Read 4 bytes as a block. We batch-read via read(byte[], int, int)
+            // because DataInputStream.readByte() has a compatibility issue on
+            // certain Android builds when called more than 4 times — the
+            // LocalSocket connection is silently reset.
+            byte[] prefix = new byte[4];
+            int read = in.read(prefix, 0, 4);
+            if (read < 4) {
+                return; // incomplete request
             }
 
-            // Determine mode: "dump" (full) or "sum" (summary)
+            // Determine mode: "dump" (4 bytes) or "sum" (3 bytes + separator).
+            // For "sum", the 4th byte we read is the separator (':' or '\0'),
+            // so we check the first 3 bytes.
             boolean summaryMode;
-            if (startsWith(req, DUMP_PREFIX_BYTES)) {
+            if (Arrays.equals(prefix, DUMP_BYTES)) {
                 summaryMode = false;
-            } else if (startsWith(req, SUM_PREFIX_BYTES)) {
+            } else if (prefix[0] == SUM_BYTES[0] && prefix[1] == SUM_BYTES[1] && prefix[2] == SUM_BYTES[2]) {
                 summaryMode = true;
             } else {
                 Ln.w("phonefast: unknown UI request");
+                // The 4 bytes may contain partial data after the prefix;
+                // we've already consumed them, so just return.
                 return;
             }
 
-            int maxElements = parseMaxElements(req, summaryMode);
+            // Parse limit from remaining bytes after the prefix.
+            //   "dump\0"     → default (500)
+            //   "dump:NN\0"  → min(NN, 500)
+            //   "sum\0"      → default (100) — 4th byte was '\0'
+            //   "sum:NN\0"   → min(NN, 500)
+            // The 4th byte of "sum" requests was already read into prefix[3].
+            int maxElements = ABSOLUTE_MAX_ELEMENTS;
+            int sep;
+            if (summaryMode) {
+                // For "sum" requests, prefix[3] is the separator
+                sep = prefix[3] & 0xFF;
+            } else {
+                // For "dump" requests, read the 5th byte as separator
+                sep = in.read();
+            }
+
+            if (sep == ':') {
+                // Parse limit until '\0'
+                int n = 0;
+                while (true) {
+                    int b = in.read();
+                    if (b == 0) break;
+                    if (b >= '0' && b <= '9') {
+                        n = n * 10 + (b - '0');
+                        if (n > ABSOLUTE_MAX_ELEMENTS) {
+                            // Cap and drain
+                            drainUntilNull(in);
+                            n = ABSOLUTE_MAX_ELEMENTS;
+                            break;
+                        }
+                    } else {
+                        drainUntilNull(in);
+                        n = ABSOLUTE_MAX_ELEMENTS;
+                        break;
+                    }
+                }
+                if (n > 0) maxElements = n;
+            } else if (summaryMode && sep == 0) {
+                // "sum\0" — the 4th byte was the null terminator
+                // Use default (ABSOLUTE_MAX_ELEMENTS)
+            } else if (sep != 0 && sep != -1) {
+                // Unexpected byte — drain the rest
+                drainUntilNull(in);
+            }
+
             byte[] json = dumpUIHierarchy(maxElements, summaryMode);
             out.writeInt(json.length);
             out.write(json);
@@ -179,57 +225,14 @@ public final class UISocketHandler {
         }
     }
 
-    private static byte[] readUntilNull(DataInputStream in) throws IOException {
-        byte[] buf = new byte[32];
-        int pos = 0;
-        while (true) {
-            int b = in.readByte() & 0xFF;
-            if (b == 0) {
-                return Arrays.copyOf(buf, pos);
-            }
-            if (pos >= buf.length) {
-                buf = Arrays.copyOf(buf, buf.length * 2);
-            }
-            buf[pos++] = (byte) b;
-        }
-    }
-
-    private static boolean startsWith(byte[] data, byte[] prefix) {
-        if (data.length < prefix.length) return false;
-        for (int i = 0; i < prefix.length; i++) {
-            if (data[i] != prefix[i]) return false;
-        }
-        return true;
-    }
-
     /**
-     * Parses max elements from the request.
-     * "sum" or "dump"           → default for that mode
-     * "sum:NNN" or "dump:NNN"   → min(NNN, ABSOLUTE_MAX_ELEMENTS), or default if NNN <= 0
+     * Reads and discards bytes from the input stream until a null terminator
+     * is found. Prevents stale data from leaking between requests.
      */
-    private static int parseMaxElements(byte[] req, boolean summaryMode) {
-        int defaultVal = summaryMode ? DEFAULT_SUM_ELEMENTS : DEFAULT_MAX_ELEMENTS;
-
-        // Find first ':'
-        int colonIdx = -1;
-        for (int i = 0; i < req.length; i++) {
-            if (req[i] == ':') {
-                colonIdx = i;
-                break;
-            }
-        }
-        if (colonIdx < 0 || colonIdx + 1 >= req.length) {
-            return defaultVal;
-        }
-
-        try {
-            int n = Integer.parseInt(
-                    new String(req, colonIdx + 1, req.length - colonIdx - 1,
-                            StandardCharsets.US_ASCII));
-            if (n <= 0) return defaultVal;
-            return Math.min(n, ABSOLUTE_MAX_ELEMENTS);
-        } catch (NumberFormatException e) {
-            return defaultVal;
+    private static void drainUntilNull(DataInputStream in) throws IOException {
+        while (true) {
+            int b = in.read();
+            if (b == 0 || b == -1) break;
         }
     }
 

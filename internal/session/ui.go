@@ -11,10 +11,8 @@ import (
 )
 
 // GetUIElements retrieves UI hierarchy via the fast UI socket.
-//
-// maxElements controls the collection limit on the device side:
-//   - > 0: request that many elements (capped at 500 by the server)
-//   - <= 0: use server default (500)
+// maxElements controls the element limit (sent to the server as "dump:N\0",
+// also truncated client-side as a safety net). Pass <= 0 for server default (500).
 //
 // UISocketHandler closes the connection after each response (try-with-resources
 // on the server side), so we must open a fresh connection per request.
@@ -42,16 +40,16 @@ func (s *Session) GetUIElements(maxElements int) ([]protocol.UIElement, error) {
 		return nil, fmt.Errorf("read ui dump response: %w", err)
 	}
 
+	// Client-side truncation (server always returns its default max)
+	if maxElements > 0 && len(resp.Elements) > maxElements {
+		resp.Elements = resp.Elements[:maxElements]
+	}
 	return resp.Elements, nil
 }
 
 // GetUISummary retrieves UI hierarchy in summary mode via the fast UI socket.
-// Summary mode filters out layout containers on the server side, returning
-// only meaningful interactive elements (max 100 by default).
-//
-// maxElements controls the collection limit:
-//   - > 0: request that many elements (capped at 500 by the server)
-//   - <= 0: use server default (100)
+// Summary mode filters out layout containers on the server side.
+// maxElements controls the element limit. Pass <= 0 for server default (500).
 func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 	if s.uiPort == 0 {
 		return nil, fmt.Errorf("ui socket not configured")
@@ -75,6 +73,10 @@ func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 		return nil, fmt.Errorf("read ui summary response: %w", err)
 	}
 
+	// Client-side truncation (server always returns its default max)
+	if maxElements > 0 && len(resp.Elements) > maxElements {
+		resp.Elements = resp.Elements[:maxElements]
+	}
 	return resp.Elements, nil
 }
 
