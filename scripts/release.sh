@@ -217,13 +217,13 @@ ${release_notes:-_(无)_}
     if [ ${#archives[@]} -gt 0 ]; then
         gh release create "$tag" \
             --repo "gezihua123/phonefast" \
-            --title "phonefast v${VERSION}" \
+            --title "v${VERSION}" \
             --notes "$release_notes" \
             "${archives[@]}"
     else
         gh release create "$tag" \
             --repo "gezihua123/phonefast" \
-            --title "phonefast v${VERSION}" \
+            --title "v${VERSION}" \
             --notes "$release_notes"
     fi
     info "Release ${tag} 已发布！"
