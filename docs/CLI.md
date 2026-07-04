@@ -1,6 +1,6 @@
 # phonefast CLI 使用手册
 
-> 版本: 1.0.3 | 协议: MIT | 平台: macOS / Linux / Windows
+> 版本: 1.0.4 | 协议: MIT | 平台: macOS / Linux / Windows
 
 phonefast 是一个高性能 Android 设备控制命令行工具，基于 Go 语言和 scrcpy 协议构建。专为 AI Agent 高频交互场景设计，单次操作延迟 <10ms，支持 Daemon 后台常驻模式和 MCP 协议集成。
 
