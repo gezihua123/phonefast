@@ -117,7 +117,15 @@ check_prereqs() {
     fi
 }
 
-# ── 构建 ──────────────────────────────────────────────────────────────────────────
+# ── 构建 server jar ───────────────────────────────────────────────────────────────
+
+build_server() {
+    step "构建 scrcpy-server.jar v${VERSION} ..."
+    bash "$SCRIPT_DIR/build-server.sh"
+    info "server jar 构建完成"
+}
+
+# ── 构建 Go 二进制 ─────────────────────────────────────────────────────────────────
 
 do_build() {
     step "全平台构建 v${VERSION} ..."
@@ -265,6 +273,7 @@ main() {
         update_version_files "$DEFAULT_VERSION" "$VERSION"
     fi
 
+    build_server
     do_build
 
     if $DRY_RUN; then
