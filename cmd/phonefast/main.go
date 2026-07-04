@@ -83,6 +83,12 @@ func main() {
 		return
 	}
 
+	// --help / -h: print usage and exit (before any other parsing).
+	if os.Args[1] == "--help" || os.Args[1] == "-h" {
+		printUsage()
+		return
+	}
+
 	// Parse mode flags (before the subcommand). Default is daemon mode.
 	// --foreground / --direct bypass the daemon; --daemon is kept for backward compat.
 	mode, serial, subStart := parseModeFlags(os.Args[1:])
@@ -152,6 +158,8 @@ func main() {
 		runCmd(args)
 	case "devices":
 		devicesCmd()
+	case "help":
+		printUsage()
 	case "connect":
 		connectCmd(args)
 	case "disconnect":
@@ -1457,7 +1465,9 @@ Other:
   phonefast devices                    List connected devices
   phonefast run '<json>'              Single-shot action
   phonefast status                     Show daemon status
-  phonefast --version                  Show version`, "phonefast", binName))
+  phonefast help                       Show this help message
+  phonefast --version                  Show version
+  phonefast --help / -h                Show this help message`, "phonefast", binName))
 }
 
 func init() {

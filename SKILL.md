@@ -72,7 +72,7 @@ fi
 |------|---------|---------|
 | Both visual + element positions | `phonefast --daemon observe` | ~148ms |
 | Visual only (show user) | `phonefast --daemon screenshot <path>` | ~167ms |
-| Elements only (coordinates/text) | `phonefast --daemon get_ui_elements` | ~191ms |
+| Elements only (coordinates/text) | `phonefast --daemon ui` | ~191ms |
 
 **When to use each:**
 - `observe` → New/unknown screen, need to locate elements, confirm action result
@@ -86,14 +86,14 @@ fi
 |---------|---------|---------|
 | Tap at coordinates | `phonefast --daemon tap <x> <y>` | ~30ms |
 | Swipe | `phonefast --daemon swipe <x1> <y1> <x2> <y2> <dur_ms>` | ~326ms |
-| Type text | `phonefast --daemon type_text "<text>"` | ~13ms |
+| Type text | `phonefast --daemon type "<text>"` | ~13ms |
 | Press Back | `phonefast --daemon back` | ~20ms |
 | Press Home | `phonefast --daemon home` | ~29ms |
-| Press a key | `phonefast --daemon press_key <keycode_name>` | ~30ms |
-| Launch app | `phonefast --daemon launch_app <package>` | ~11ms |
+| Press a key | `phonefast --daemon key <keycode_name>` | ~30ms |
+| Launch app | `phonefast --daemon launch <package>` | ~11ms |
 | Check daemon | `phonefast --daemon status` | ~1ms |
-| Stop daemon | `phonefast stop` | — |
-| Show version | `phonefast version` | — |
+| Stop daemon | `phonefast daemon --stop` | — |
+| Show version | `phonefast --version` | — |
 | Start MCP server (SSE) | `phonefast serve` | — |
 | Start MCP server (STDIO) | `phonefast serve --transport stdio` | — |
 
@@ -102,7 +102,7 @@ fi
 
 **Batch execution** (for known sequences):
 ```bash
-phonefast run '[{"action": "tap", "x": 300, "y": 500}, {"action": "wait", "duration": 500}]'
+phonefast run '[{"action": "tap", "x": 300, "y": 500}, {"action": "wait", "duration_ms": 500}]'
 ```
 
 ### 5. Confirm (if needed)
@@ -148,8 +148,8 @@ After screen-changing actions, run `observe` again to verify the result and get 
 ## Output interpretation
 
 - **`observe`** → Image + structured UI tree. Analyze for screen context, find elements by `text`, `bounds`, `clickable`, `resource-id`.
-- **`get_ui_elements`** → XML with `bounds=[l,t,r,b]`, `text`, `content-desc`, `clickable`, `class`.
-- **`screenshot <path>`** → Saved to path. `screenshot -` → base64 stdout.
+- **`ui`** → Elements with `bounds=[l,t,r,b]`, `text`, `content-desc`, `clickable`, `class`.
+- **`screenshot [file]`** → Saved to file. `screenshot` (no args) → base64 data URI to stdout.
 
 ---
 
