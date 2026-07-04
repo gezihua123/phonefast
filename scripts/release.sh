@@ -56,12 +56,18 @@ update_version_files() {
 
     step "版本号自增: ${old_ver} → ${new_ver}"
 
-    # scripts/install_pkg.sh — sed 替换所有 1.0.X 为 1.0.Y
-    sed -i '' "s/${old_ver}/${new_ver}/g" "$SCRIPT_DIR/install_pkg.sh"
+    # scripts/install_pkg.sh — 只替换版本号字段，不碰无关数字
+    sed -i '' \
+        -e "s/\(--version \)$old_ver/\1$new_ver/g" \
+        -e "s/\(默认: \)${old_ver}/\1${new_ver}/g" \
+        -e "s/\(VERSION:-\)${old_ver}/\1${new_ver}/g" \
+        -e "s/\(VERSION=\)${old_ver}/\1${new_ver}/g" \
+        -e "s/${old_ver} bash/${new_ver} bash/g" \
+        "$SCRIPT_DIR/install_pkg.sh"
     info "  scripts/install_pkg.sh"
 
-    # docs/CLI.md — 版本头
-    sed -i '' "s/${old_ver}/${new_ver}/g" "$ROOT_DIR/docs/CLI.md"
+    # docs/CLI.md — 只替换 "版本: X.X.X" 头
+    sed -i '' "s/\(版本: \)${old_ver}/\1${new_ver}/" "$ROOT_DIR/docs/CLI.md"
     info "  docs/CLI.md"
 
     # 提交版本升级

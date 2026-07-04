@@ -166,7 +166,7 @@ phonefast [--foreground|--daemon] tap <x> <y>
 **示例：**
 ```bash
 phonefast tap 540 960                  # 点击屏幕中心
-phonefast tap 1.0.300                  # 点击左上角区域
+phonefast tap 100 200                  # 点击左上角区域
 phonefast --foreground tap 244 540     # 直接模式点击
 ```
 
@@ -988,7 +988,7 @@ phonefast run '[
 phonefast --serial DEVICE_A tap 540 960
 
 # 终端 2: 控制设备 B
-phonefast --serial DEVICE_B --foreground tap 1.0.300
+phonefast --serial DEVICE_B --foreground tap 100 200
 ```
 
 ### 最佳实践
