@@ -97,7 +97,7 @@ fi
 | Start MCP server (SSE) | `phonefast serve` | — |
 | Start MCP server (STDIO) | `phonefast serve --transport stdio` | — |
 
-> **Keycodes**: `KEYCODE_POWER`, `KEYCODE_VOLUME_UP/DOWN`, `KEYCODE_ENTER`, `KEYCODE_DEL`, `KEYCODE_MENU`.
+> **Keycodes**: `KEYCODE_POWER`, `KEYCODE_VOLUME_UP/DOWN`, `KEYCODE_ENTER`, `KEYCODE_DEL`, `KEYCODE_MENU`, `KEYCODE_ESCAPE` (收起键盘).
 > **Common packages**: `com.android.settings`, `com.tencent.mm`(微信), `com.taobao.taobao`, `com.ss.android.ugc.aweme`(抖音).
 
 **Batch execution** (for known sequences):
