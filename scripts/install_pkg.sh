@@ -30,7 +30,7 @@ step()  { echo -e "${CYAN}::${NC} $*"; }
 REPO="gezihua123/phonefast"
 VERSION="${VERSION:-1.0.7}"
 GITHUB_MIRROR="${GITHUB_MIRROR:-https://github.com}"
-BASE_URL="${GITHUB_MIRROR}/${REPO}/releases/download/${VERSION}"
+BASE_URL="${GITHUB_MIRROR}/${REPO}/releases/download/v${VERSION}"
 
 # ── 帮助 ─────────────────────────────────────────────────────────────────────
 show_help() {
@@ -136,7 +136,7 @@ main() {
       *)         warn "未知选项: $1"; shift ;;
     esac
   done
-  BASE_URL="${GITHUB_MIRROR}/${REPO}/releases/download/${VERSION}"
+  BASE_URL="${GITHUB_MIRROR}/${REPO}/releases/download/v${VERSION}"
 
   # 检测平台
   read -r os arch <<< "$(detect_platform)"
