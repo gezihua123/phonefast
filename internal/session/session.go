@@ -9,6 +9,7 @@ import (
 
 	"github.com/gezihua123/phonefast/internal/adb"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
+	"github.com/gezihua123/phonefast/pkg/avcodec"
 	"github.com/gezihua123/phonefast/pkg/h264"
 )
 
@@ -47,6 +48,9 @@ type Session struct {
 	videoPort  int           // forwarded TCP port for video+control (same socket, multiple accepts)
 	uiPort     int           // forwarded TCP port for UI (fresh connection per request)
 	uiReady    bool          // whether UI socket is available
+
+	avDecoder    avcodec.Decoder // CGO go-astiav decoder (lazy init, may be nil)
+	avDecoderErr error           // cached init error — don't retry
 }
 
 // Connect deploys scrcpy-server, starts it, and establishes all socket connections.
@@ -88,7 +92,7 @@ func Connect(serial string, scid int) (*Session, error) {
 	adb.StopServer(serial)
 
 	// Step 3: assign ports
-	s.videoPort = 27183 + (hashScid(scid) % 100)
+	s.videoPort = 27183 + hashScid(scid)
 	s.uiPort = s.videoPort + 10
 
 	// Step 4: start server on device (tunnel_forward=true)
@@ -171,22 +175,18 @@ func Connect(serial string, scid int) (*Session, error) {
 	s.DeviceW = s.decoder.Width()
 	s.DeviceH = s.decoder.Height()
 
-	// Step 9: wait for UISocketHandler.start() to bind the UI socket
-	// (runs in a new goroutine after server reads video header)
-	time.Sleep(600 * time.Millisecond)
-
-	// Step 10: now safe to forward and probe UI socket
+	// Step 9: probe UI socket readiness with adaptive polling.
+	// UISocketHandler.start() runs after the server reads the video header.
+	// Instead of a fixed 600ms sleep, probe at 50ms intervals so a
+	// fast-starting socket (typical: ~200ms) returns sooner.
 	uiSocketName := socketBase + "_ui"
-	if err := adbForward(serial, s.uiPort, uiSocketName); err != nil {
-		phonelog.Default().Write("warning: ui forward failed: %v", err)
+	if fwdErr := adbForward(serial, s.uiPort, uiSocketName); fwdErr != nil {
+		phonelog.Default().Write("warning: ui forward failed: %v", fwdErr)
 	} else {
-		// Probe: can we actually connect?
-		if probe, err := net.DialTimeout("tcp",
-			fmt.Sprintf("localhost:%d", s.uiPort), time.Second); err == nil {
-			probe.Close()
-			s.uiReady = true
-		} else {
-			phonelog.Default().Write("warning: ui socket not ready, using ADB fallback: %v", err)
+		// Probe loop: up to 20 iterations × 50ms = 1s ceiling
+		s.uiReady = probeUISocket(s.uiPort, 20, 50*time.Millisecond)
+		if !s.uiReady {
+			phonelog.Default().Write("warning: ui socket not ready after probe, using ADB fallback")
 		}
 	}
 
@@ -374,6 +374,23 @@ func setKeepAlive(conn net.Conn, interval time.Duration) {
 	}
 }
 
+// probeUISocket repeatedly attempts to connect to the given local TCP port
+// until one succeeds or maxAttempts are exhausted.
+func probeUISocket(port int, maxAttempts int, interval time.Duration) bool {
+	addr := fmt.Sprintf("localhost:%d", port)
+	for i := 0; i < maxAttempts; i++ {
+		if probe, err := net.DialTimeout("tcp", addr, 200*time.Millisecond); err == nil {
+			probe.Close()
+			return true
+		}
+		time.Sleep(interval)
+	}
+	return false
+}
+
+// hashScid computes (scid*31) % 100 for deriving a port offset.
+// Mirrored in daemon/scid.go:scidPort — both must stay in sync.
+// videoPort = 27183 + hashScid(scid)
 func hashScid(scid int) int {
 	h := scid * 31
 	if h < 0 {

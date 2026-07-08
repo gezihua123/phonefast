@@ -11,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/gezihua123/phonefast/internal/adb"
+	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/internal/session"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
@@ -257,7 +258,7 @@ func (s *Server) handleGetUIElements(ctx context.Context, req mcp.CallToolReques
 		}
 	}
 
-	formatted := formatElementsForLLM(elements, maxShow, isSummary)
+	formatted := format.ElementsForLLM(elements, maxShow, isSummary)
 	return mcp.NewToolResultText(formatted), nil
 }
 
@@ -501,7 +502,7 @@ func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*m
 	)
 	result.Content = append(result.Content, mcp.TextContent{
 		Type: mcp.ContentTypeText,
-		Text: formatElementsForLLM(elements, maxShow, isSummary),
+		Text: format.ElementsForLLM(elements, maxShow, isSummary),
 	})
 	return result, nil
 }
@@ -603,76 +604,6 @@ func mcpResultToToolResult(r *mcp.CallToolResult) *ToolResult {
 		content = append(content, tc)
 	}
 	return &ToolResult{Content: content}
-}
-
-// ── Formatting helpers ──
-
-func formatElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) string {
-	if len(elements) == 0 {
-		return "No interactive elements found on screen."
-	}
-
-	if maxShow < 0 || maxShow > len(elements) {
-		maxShow = len(elements)
-	}
-
-	var lines []string
-	lines = append(lines, "Interactive elements on screen:")
-	lines = append(lines, strings.Repeat("=", 50))
-
-	for i, el := range elements {
-		if i >= maxShow {
-			lines = append(lines, fmt.Sprintf("... and %d more elements", len(elements)-maxShow))
-			break
-		}
-
-		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
-			maxShow++ // don't count this filtered element
-			continue
-		}
-
-		var parts []string
-		if el.Text != "" {
-			parts = append(parts, fmt.Sprintf(`text="%s"`, el.Text))
-		}
-		if el.ContentDesc != "" {
-			parts = append(parts, fmt.Sprintf(`desc="%s"`, el.ContentDesc))
-		}
-		if el.ResourceID != "" {
-			simpleID := el.ResourceID
-			if idx := strings.LastIndex(simpleID, "/"); idx >= 0 {
-				simpleID = simpleID[idx+1:]
-			}
-			parts = append(parts, fmt.Sprintf(`id="%s"`, simpleID))
-		}
-		if el.ClassName != "" {
-			var cn string
-			if isSummary {
-				cn = protocol.SimplifyClassName(el.ClassName)
-			} else {
-				cn = el.ClassName
-				if idx := strings.LastIndex(cn, "."); idx >= 0 {
-					cn = cn[idx+1:]
-				}
-			}
-			parts = append(parts, fmt.Sprintf("(%s)", cn))
-		}
-		if el.Clickable {
-			parts = append(parts, "[clickable]")
-		}
-		desc := strings.Join(parts, " ")
-		if desc == "" {
-			desc = fmt.Sprintf("(%s)", el.ClassName)
-		}
-		lines = append(lines, fmt.Sprintf("[%d] %s bounds=[%d,%d][%d,%d]",
-			el.Index, desc,
-			el.Bounds[0], el.Bounds[1], el.Bounds[2], el.Bounds[3]))
-	}
-
-	lines = append(lines, strings.Repeat("=", 50))
-	lines = append(lines, "Use tap_element with index=N or text='...' to interact.")
-
-	return strings.Join(lines, "\n")
 }
 
 // getMaxElements extracts the max_elements argument from an MCP CallToolRequest.

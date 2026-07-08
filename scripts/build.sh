@@ -80,6 +80,97 @@ sync_assets() {
     fi
 }
 
+# ── 交叉编译 CGO 环境 ──────────────────────────────────────────────────────────────────
+
+# 目标 → zig target triple 映射
+os_arch_to_zig() {
+    local os="$1" arch="$2"
+    case "${os}-${arch}" in
+        darwin-amd64)  echo "x86_64-macos-none" ;;
+        darwin-arm64)  echo "aarch64-macos-none" ;;
+        linux-amd64)   echo "x86_64-linux-gnu" ;;
+        linux-arm64)   echo "aarch64-linux-gnu" ;;
+        windows-amd64) echo "x86_64-windows-gnu" ;;
+        *)             echo "" ;;
+    esac
+}
+
+# 目标 → cross-ffmpeg 目录名
+os_arch_to_ffmpeg_target() {
+    local os="$1" arch="$2"
+    case "${os}-${arch}" in
+        darwin-amd64)  echo "x86_64-darwin" ;;
+        darwin-arm64)  echo "aarch64-darwin" ;;
+        linux-amd64)   echo "x86_64-linux-gnu" ;;
+        linux-arm64)   echo "aarch64-linux-gnu" ;;
+        windows-amd64) echo "x86_64-windows-gnu" ;;
+        *)             echo "" ;;
+    esac
+}
+
+setup_cross_cgo() {
+    local os="$1" arch="$2"
+    local cur_os cur_arch
+    cur_os="$(go env GOOS)"
+    cur_arch="$(go env GOARCH)"
+
+    # 本机构建：不需要特殊配置
+    if [ "$os" = "$cur_os" ] && [ "$arch" = "$cur_arch" ]; then
+        return
+    fi
+
+    # CGO 关闭时不需要配置
+    if [ "${CGO_ENABLED:-1}" = "0" ]; then
+        return
+    fi
+
+    # macOS 交叉编译需要 x86_64 FFmpeg 库和 macOS SDK，容易出问题。
+    # 在没有 cross-ffmpeg 缓存时自动降级 CGO_ENABLED=0。
+    if [ "$os" = "darwin" ]; then
+        local ffmpeg_target
+        ffmpeg_target=$(os_arch_to_ffmpeg_target "$os" "$arch")
+        if [ ! -d "$ROOT_DIR/cross-ffmpeg/$ffmpeg_target/lib/pkgconfig" ]; then
+            warn "macOS ${arch} 交叉 FFmpeg 未缓存，自动降级 CGO_ENABLED=0"
+            export CGO_ENABLED=0
+        fi
+        return
+    fi
+
+    # ── Linux / Windows 交叉编译 ──
+    local zig_target
+    zig_target=$(os_arch_to_zig "$os" "$arch")
+    if [ -z "$zig_target" ]; then
+        warn "未知目标 ${os}/${arch}，CGO 可能失败"
+        return
+    fi
+
+    # 检查 zig
+    if ! command -v zig >/dev/null 2>&1; then
+        warn "zig 未安装，CGO 交叉编译不可用: brew install zig"
+        export CGO_ENABLED=0
+        return
+    fi
+
+    # 设置 zig cc 作为 C 编译器
+    export CC="zig cc -target $zig_target"
+    export CXX="zig c++ -target $zig_target"
+
+    # 查找交叉编译的 FFmpeg 库
+    local ffmpeg_target
+    ffmpeg_target=$(os_arch_to_ffmpeg_target "$os" "$arch")
+    local ffmpeg_dir="$ROOT_DIR/cross-ffmpeg/$ffmpeg_target"
+
+    if [ -d "$ffmpeg_dir/lib/pkgconfig" ]; then
+        export PKG_CONFIG_PATH="$ffmpeg_dir/lib/pkgconfig"
+        info "  CGO 交叉编译: zig target=$zig_target, FFmpeg=$ffmpeg_dir"
+    else
+        warn "FFmpeg 交叉编译库不存在: $ffmpeg_dir"
+        warn "请先执行: bash scripts/cross-build-ffmpeg.sh $ffmpeg_target"
+        warn "降级 CGO_ENABLED=0"
+        export CGO_ENABLED=0
+    fi
+}
+
 # ── 构建单个平台 ──────────────────────────────────────────────────────────────────
 
 build_target() {
@@ -90,7 +181,10 @@ build_target() {
     info "构建 ${os}/${arch} ..."
     mkdir -p "$dist_dir"
 
-    CGO_ENABLED=0 \
+    # 配置 CGO 交叉编译环境（zig cc + cross-ffmpeg）
+    setup_cross_cgo "$os" "$arch"
+
+    CGO_ENABLED="${CGO_ENABLED:-1}" \
     GOOS="$os" \
     GOARCH="$arch" \
     go build -trimpath -ldflags "$LDFLAGS" -o "$dist_dir/$bin_name" "$ROOT_DIR/cmd/phonefast/"

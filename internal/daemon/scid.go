@@ -7,8 +7,11 @@ import (
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 )
 
-// scrcpy's video port is derived from scid via the same hash used in
-// internal/session (port = 27183 + scid*31 % 100). Because the hash collides
+// scrcpy's video port is derived from scid via 27183 + abs(scid*31) % 100.
+// The same formula lives in internal/session/hashScid. Both must stay in sync:
+//   - daemon/scid.go: scidPort(scid) — full port computation
+//   - session/session.go: hashScid(scid) — returns h % 100 (caller adds 27183)
+// Because the hash collides
 // (e.g. scid 0 and scid 100 both map to port 27183), two actors must not pick
 // scids whose hashes collide, or their ADB forwards will fight over the same
 // local port. The allocator hands out scids guaranteed to map to distinct
