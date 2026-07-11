@@ -1,0 +1,535 @@
+- id: 0
+  class: FrameLayout
+  clickable: false
+  bounds: '[0,0][1080,2400]'
+  children:
+    - id: 1
+      class: LinearLayout
+      clickable: false
+      bounds: '[0,0][1080,2400]'
+      children:
+        - id: 2
+          class: FrameLayout
+          resource_id: android:id/content
+          clickable: false
+          bounds: '[0,0][1080,2400]'
+          children:
+            - id: 3
+              class: FrameLayout
+              resource_id: com.sec.android.app.launcher:id/launcher
+              clickable: false
+              bounds: '[0,0][1080,2400]'
+              children:
+                - id: 4
+                  class: View
+                  resource_id: com.sec.android.app.launcher:id/capture_blur_view
+                  clickable: false
+                  bounds: '[0,0][1080,2400]'
+                - id: 5
+                  class: View
+                  resource_id: com.sec.android.app.launcher:id/real_wallpaper_blur_view
+                  clickable: false
+                  bounds: '[0,0][1080,2400]'
+                - id: 6
+                  class: View
+                  resource_id: com.sec.android.app.launcher:id/scrim_view
+                  clickable: false
+                  bounds: '[0,0][1080,2400]'
+                - id: 7
+                  class: FrameLayout
+                  resource_id: com.sec.android.app.launcher:id/drag_layer
+                  clickable: false
+                  bounds: '[0,0][1080,2400]'
+                  children:
+                    - id: 8
+                      class: FrameLayout
+                      resource_id: com.sec.android.app.launcher:id/defalt_page_icon_layout
+                      clickable: false
+                      bounds: '[0,0][1080,2400]'
+                    - id: 9
+                      class: FrameLayout
+                      resource_id: com.sec.android.app.launcher:id/apptray_view
+                      clickable: false
+                      bounds: '[0,0][1080,2400]'
+                      children:
+                        - id: 10
+                          class: PagedView
+                          resource_id: com.sec.android.app.launcher:id/apps_content
+                          clickable: false
+                          bounds: '[0,0][1080,2400]'
+                          children:
+                            - id: 11
+                              class: ViewGroup
+                              clickable: false
+                              bounds: '[0,80][-1044,2170]'
+                              children:
+                                - id: 12
+                                  class: ViewGroup
+                                  clickable: false
+                                  bounds: '[0,272][-1045,2170]'
+                                  children:
+                                    - id: 13
+                                      class: TextView
+                                      text: 'Samsung'
+                                      content_desc: 'Samsung, 文件夹'
+                                      resource_id: com.sec.android.app.launcher:id/home_icon
+                                      clickable: true
+                                      bounds: '[0,272][-1801,646]'
+                                    - id: 14
+                                      class: TextView
+                                      text: 'Google'
+                                      content_desc: 'Google, 文件夹'
+                                      resource_id: com.sec.android.app.launcher:id/home_icon
+                                      clickable: true
+                                      bounds: '[0,272][-1549,646]'
+                                    - id: 15
+                                      class: TextView
+                                      text: 'OneDrive'
+                                      content_desc: 'OneDrive'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,272][-1297,646]'
+                                    - id: 16
+                                      class: TextView
+                                      text: 'Play 商店'
+                                      content_desc: 'Play 商店, 1 条通知'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,272][-1045,646]'
+                                    - id: 17
+                                      class: TextView
+                                      text: '应用商店'
+                                      content_desc: '应用商店, 1 条通知'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-1801,1026]'
+                                    - id: 18
+                                      class: TextView
+                                      text: '电话'
+                                      content_desc: '电话'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-1549,1026]'
+                                    - id: 19
+                                      class: TextView
+                                      text: '信息'
+                                      content_desc: '信息'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-1297,1026]'
+                                    - id: 20
+                                      class: TextView
+                                      text: '相机'
+                                      content_desc: '相机'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-1045,1026]'
+                                    - id: 21
+                                      class: TextView
+                                      text: '相册'
+                                      content_desc: '相册'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-1801,1406]'
+                                    - id: 22
+                                      class: TextView
+                                      text: '时钟'
+                                      content_desc: '时钟'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-1549,1406]'
+                                    - id: 23
+                                      class: TextView
+                                      text: '联系人'
+                                      content_desc: '联系人'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-1297,1406]'
+                                    - id: 24
+                                      class: TextView
+                                      text: '设置'
+                                      content_desc: '设置'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-1045,1406]'
+                                    - id: 25
+                                      class: TextView
+                                      text: '日历'
+                                      content_desc: '日历'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-1801,1786]'
+                                    - id: 26
+                                      class: TextView
+                                      text: '游戏中心'
+                                      content_desc: '游戏中心'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-1549,1786]'
+                                    - id: 27
+                                      class: TextView
+                                      text: 'Samsung Free'
+                                      content_desc: 'Samsung Free'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-1297,1786]'
+                                    - id: 28
+                                      class: TextView
+                                      text: '大象'
+                                      content_desc: '大象'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-1045,1786]'
+                                    - id: 29
+                                      class: TextView
+                                      text: 'Meet'
+                                      content_desc: 'Meet'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1792][-1801,2166]'
+                            - id: 30
+                              class: ViewGroup
+                              clickable: false
+                              bounds: '[0,80][-1,2170]'
+                              children:
+                                - id: 31
+                                  class: ViewGroup
+                                  clickable: false
+                                  bounds: '[0,272][-2,2170]'
+                                  children:
+                                    - id: 32
+                                      class: TextView
+                                      text: 'TaskFlow'
+                                      content_desc: 'TaskFlow'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,272][-758,646]'
+                                    - id: 33
+                                      class: TextView
+                                      text: '实时海拔计'
+                                      content_desc: '实时海拔计'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,272][-506,646]'
+                                    - id: 34
+                                      class: TextView
+                                      text: 'Testing'
+                                      content_desc: 'Testing'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,272][-254,646]'
+                                    - id: 35
+                                      class: TextView
+                                      text: 'Echo'
+                                      content_desc: 'Echo'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,272][-2,646]'
+                                    - id: 36
+                                      class: TextView
+                                      text: '像素漫游'
+                                      content_desc: '像素漫游'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-758,1026]'
+                                    - id: 37
+                                      class: TextView
+                                      text: '素数独'
+                                      content_desc: '素数独'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-506,1026]'
+                                    - id: 38
+                                      class: TextView
+                                      text: 'EchoLang'
+                                      content_desc: 'EchoLang'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-254,1026]'
+                                    - id: 39
+                                      class: TextView
+                                      text: '悬浮文本'
+                                      content_desc: '悬浮文本'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,652][-2,1026]'
+                                    - id: 40
+                                      class: TextView
+                                      text: 'WordPopper'
+                                      content_desc: 'WordPopper'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-758,1406]'
+                                    - id: 41
+                                      class: TextView
+                                      text: 'Trustamp'
+                                      content_desc: 'Trustamp'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-506,1406]'
+                                    - id: 42
+                                      class: TextView
+                                      text: 'Pony Shotter'
+                                      content_desc: 'Pony Shotter'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-254,1406]'
+                                    - id: 43
+                                      class: TextView
+                                      text: 'Nomic阅读'
+                                      content_desc: 'Nomic阅读'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1032][-2,1406]'
+                                    - id: 44
+                                      class: TextView
+                                      text: 'Celestial Oracle'
+                                      content_desc: 'Celestial Oracle'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-758,1786]'
+                                    - id: 45
+                                      class: TextView
+                                      text: 'Matrix To-Do'
+                                      content_desc: 'Matrix To-Do'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-506,1786]'
+                                    - id: 46
+                                      class: TextView
+                                      text: '水印工具'
+                                      content_desc: '水印工具'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-254,1786]'
+                                    - id: 47
+                                      class: TextView
+                                      text: 'FakeChatForWhatsApp'
+                                      content_desc: 'FakeChatForWhatsApp'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1412][-2,1786]'
+                                    - id: 48
+                                      class: TextView
+                                      text: 'LogLogic'
+                                      content_desc: 'LogLogic'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1792][-758,2166]'
+                                    - id: 49
+                                      class: TextView
+                                      text: 'AA Calculator'
+                                      content_desc: 'AA Calculator'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1792][-506,2166]'
+                                    - id: 50
+                                      class: TextView
+                                      text: 'WhatsApp'
+                                      content_desc: 'WhatsApp'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1792][-254,2166]'
+                                    - id: 51
+                                      class: TextView
+                                      text: 'Typeless'
+                                      content_desc: 'Typeless'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[0,1792][-2,2166]'
+                            - id: 52
+                              class: ViewGroup
+                              clickable: false
+                              bounds: '[38,80][1042,2170]'
+                              children:
+                                - id: 53
+                                  class: ViewGroup
+                                  clickable: false
+                                  bounds: '[39,272][1041,2170]'
+                                  children:
+                                    - id: 54
+                                      class: TextView
+                                      text: 'Life Palmistry'
+                                      content_desc: 'Life Palmistry'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[39,272][285,646]'
+                                    - id: 55
+                                      class: TextView
+                                      text: 'Nebula'
+                                      content_desc: 'Nebula'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[291,272][537,646]'
+                                    - id: 56
+                                      class: TextView
+                                      text: 'Manus'
+                                      content_desc: 'Manus'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[543,272][789,646]'
+                                    - id: 57
+                                      class: TextView
+                                      text: 'Instagram'
+                                      content_desc: 'Instagram'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[795,272][1041,646]'
+                                    - id: 58
+                                      class: TextView
+                                      text: 'MNN Chat'
+                                      content_desc: 'MNN Chat'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[39,652][285,1026]'
+                                    - id: 59
+                                      class: TextView
+                                      text: 'Keeta'
+                                      content_desc: 'Keeta'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[291,652][537,1026]'
+                                    - id: 60
+                                      class: TextView
+                                      text: 'Leaks'
+                                      content_desc: 'Leaks'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[543,652][789,1026]'
+                                    - id: 61
+                                      class: TextView
+                                      text: 'Lemon8'
+                                      content_desc: 'Lemon8'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[795,652][1041,1026]'
+                                    - id: 62
+                                      class: TextView
+                                      text: 'FlClash'
+                                      content_desc: 'FlClash, 1 条通知'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[39,1032][285,1406]'
+                                    - id: 63
+                                      class: TextView
+                                      text: 'Reddit'
+                                      content_desc: 'Reddit'
+                                      resource_id: com.sec.android.app.launcher:id/apps_icon
+                                      clickable: true
+                                      bounds: '[291,1032][537,1406]'
+                        - id: 64
+                          class: LinearLayout
+                          resource_id: com.sec.android.app.launcher:id/apps_searchbar_container
+                          clickable: false
+                          bounds: '[0,0][1080,227]'
+                          children:
+                            - id: 65
+                              class: RelativeLayout
+                              resource_id: com.sec.android.app.launcher:id/app_search_wrapper
+                              clickable: false
+                              bounds: '[0,80][1080,227]'
+                              children:
+                                - id: 66
+                                  class: ImageView
+                                  resource_id: com.sec.android.app.launcher:id/app_search_bar_bg
+                                  clickable: false
+                                  bounds: '[0,80][1080,227]'
+                                - id: 67
+                                  class: LinearLayout
+                                  clickable: false
+                                  bounds: '[0,80][1080,227]'
+                                  children:
+                                    - id: 68
+                                      class: LinearLayout
+                                      resource_id: com.sec.android.app.launcher:id/app_search_edit_text_wrapper
+                                      clickable: true
+                                      bounds: '[0,80][938,227]'
+                                      children:
+                                        - id: 69
+                                          class: TextView
+                                          text: '搜索'
+                                          resource_id: com.sec.android.app.launcher:id/app_search_edit_text
+                                          clickable: false
+                                          bounds: '[26,96][938,211]'
+                                    - id: 70
+                                      class: LinearLayout
+                                      resource_id: com.sec.android.app.launcher:id/app_search_more_button_wrapper
+                                      clickable: false
+                                      bounds: '[938,80][1080,227]'
+                                      children:
+                                        - id: 71
+                                          class: FrameLayout
+                                          resource_id: com.sec.android.app.launcher:id/more_button_container
+                                          clickable: false
+                                          bounds: '[938,95][1054,211]'
+                                          children:
+                                            - id: 72
+                                              class: View
+                                              resource_id: com.sec.android.app.launcher:id/support_sort_option
+                                              clickable: false
+                                              bounds: '[938,95][1054,95]'
+                                            - id: 73
+                                              class: ImageButton
+                                              content_desc: '更多选项'
+                                              resource_id: com.sec.android.app.launcher:id/more_icon_imageview
+                                              clickable: true
+                                              bounds: '[938,95][1054,211]'
+                        - id: 74
+                          class: FrameLayout
+                          resource_id: com.sec.android.app.launcher:id/apps_page_indicator
+                          clickable: false
+                          bounds: '[0,2197][1080,2247]'
+                          children:
+                            - id: 75
+                              class: LinearLayout
+                              clickable: false
+                              bounds: '[0,2197][1080,2247]'
+                              children:
+                                - id: 76
+                                  class: FrameLayout
+                                  content_desc: '第 1 页，共 3 页'
+                                  clickable: true
+                                  bounds: '[459,2197][513,2247]'
+                                  children:
+                                    - id: 77
+                                      class: ImageView
+                                      resource_id: com.sec.android.app.launcher:id/inactive
+                                      clickable: false
+                                      bounds: '[461,2197][511,2247]'
+                                    - id: 78
+                                      class: ImageView
+                                      resource_id: com.sec.android.app.launcher:id/active
+                                      clickable: false
+                                      bounds: '[461,2197][511,2247]'
+                                - id: 79
+                                  class: FrameLayout
+                                  content_desc: '第 2 页，共 3 页'
+                                  clickable: true
+                                  bounds: '[513,2197][567,2247]'
+                                  children:
+                                    - id: 80
+                                      class: ImageView
+                                      resource_id: com.sec.android.app.launcher:id/inactive
+                                      clickable: false
+                                      bounds: '[515,2197][565,2247]'
+                                    - id: 81
+                                      class: ImageView
+                                      resource_id: com.sec.android.app.launcher:id/active
+                                      clickable: false
+                                      bounds: '[515,2197][565,2247]'
+                                - id: 82
+                                  class: FrameLayout
+                                  content_desc: '第 3 页，共 3 页, 当前已是最后一页。'
+                                  clickable: true
+                                  bounds: '[567,2197][621,2247]'
+                                  children:
+                                    - id: 83
+                                      class: ImageView
+                                      resource_id: com.sec.android.app.launcher:id/inactive
+                                      clickable: false
+                                      bounds: '[569,2197][619,2247]'
+                                    - id: 84
+                                      class: ImageView
+                                      resource_id: com.sec.android.app.launcher:id/active
+                                      clickable: false
+                                      bounds: '[569,2197][619,2247]'

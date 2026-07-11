@@ -1,0 +1,74 @@
+[1] text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[2] text="android:id/content" (FrameLayout)
+[3] text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[4] text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[5] text="com.android.vending:id/0_resource_name_obfuscated" (ComposeView)
+[6] text="为您推荐" (TextView)
+[7] text="" (View) [clickable]
+[8] text="热门排行榜" (TextView)
+[9] text="" (View) [clickable]
+[10] text="儿童" (TextView)
+[11] text="" (View) [clickable]
+[12] text="类别" (TextView)
+[13] text="升级赛事体验，解锁更多精彩" (TextView)
+[14] text="" (View) [clickable]
+[15] text="为你的球队呐喊助威，与全世界一起高歌" (TextView)
+[16] text="" (View) [clickable]
+[17] text="Smule: 全民K歌神器 - 唱歌录制分享平台
+Smule
+12 岁以上
+星级：4.4
+" (View)
+[18] text="" (View) [clickable]
+[19] text="安装" (View)
+[20] text="安装" (TextView)
+[21] text="包含内购商品" (TextView)
+[22] text="" (View) [clickable]
+[23] text="火热进行中" (TextView)
+[24] text="共迎全球最大的体育赛事" (TextView)
+[25] text="2026 国际足联世界杯™ 重磅开幕" (TextView)
+[26] text="赞助商广告" (TextView)
+[27] text="为您推荐" (TextView)
+[28] text="更多选项" (View) [clickable]
+[29] text="" (View) [clickable]
+[30] text="Keeta - 外卖送递及自取
+餐饮美食
+外卖
+已安装
+" (View)
+[31] text="" (View) [clickable]
+[32] text="foodpanda - 美食外卖及生鲜杂货外送服务
+餐饮美食
+外卖
+星级：4.2
+" (View)
+[33] text="" (View) [clickable]
+[34] text="他TA星球-語音連結的溫暖宇宙
+社交
+人脉
+星级：3.3
+" (View)
+[35] text="" (View) [clickable]
+[36] text="" (View) [clickable]
+[37] text="" (View) [clickable]
+[38] text="" (View) [clickable]
+[39] text="与“个性化推荐”相符的更多搜索结果" (Button) [clickable]
+[40] text="" (View) [clickable]
+[41] text="" (View) [clickable]
+[42] text="显示通知和优惠。有 6 个新通知。" (View)
+[43] text="" (View) [clickable]
+[44] text="目前的登录者是yuanhao li yuanhaol281@gmail.com
+账号和设置。" (FrameLayout) [clickable]
+[45] text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[46] text="com.android.vending:id/0_resource_name_obfuscated" (ImageView)
+[47] text="" (View) [clickable]
+[48] text="游戏" (TextView)
+[49] text="应用" (TextView)
+[50] text="" (View) [clickable]
+[51] text="搜索" (TextView)
+[52] text="" (View) [clickable]
+[53] text="图书" (TextView)
+[54] text="" (View) [clickable]
+[55] text="我" (TextView)
+[56] text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[57] text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)

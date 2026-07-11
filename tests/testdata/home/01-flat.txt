@@ -1,0 +1,44 @@
+[0] text="android:id/content" (FrameLayout)
+[1] text="com.google.android.apps.nexuslauncher:id/launcher" (FrameLayout)
+[2] text="com.google.android.apps.nexuslauncher:id/drag_layer" (FrameLayout)
+[3] text="com.google.android.apps.nexuslauncher:id/scrim_view" (View)
+[4] text="com.google.android.apps.nexuslauncher:id/workspace" (ScrollView)
+[5] text="com.google.android.apps.nexuslauncher:id/search_container_workspace" (FrameLayout)
+[6] text="com.google.android.apps.nexuslauncher:id/bc_smartspace_view" (FrameLayout)
+[7] text="资讯一览" (ViewPager)
+[8] text="com.google.android.apps.nexuslauncher:id/base_template_card_with_date" (ViewGroup) [clickable]
+[9] text="com.google.android.apps.nexuslauncher:id/text_group" (ViewGroup)
+[10] text="7月9日周四" (TextView) [clickable]
+[11] text="com.google.android.apps.nexuslauncher:id/smartspace_subtitle_group" (ViewGroup)
+[12] text="33°C" (TextView) [clickable]
+[13] text="Play 商店" (TextView) [clickable]
+[14] text="Gmail" (TextView) [clickable]
+[15] text="相册" (TextView) [clickable]
+[16] text="YouTube" (TextView) [clickable]
+[17] text="Keeta" (TextView) [clickable]
+[18] text="大象" (TextView) [clickable]
+[19] text="Fake Location" (TextView) [clickable]
+[20] text="Clash" (TextView) [clickable]
+[21] text="微信" (TextView) [clickable]
+[22] text="Keeta Tool" (TextView) [clickable]
+[23] text="主屏幕" (View)
+[24] text="com.google.android.apps.nexuslauncher:id/page_indicator" (LinearLayout)
+[25] text="com.google.android.apps.nexuslauncher:id/page_indicator_dots" (View)
+[26] text="com.google.android.apps.nexuslauncher:id/hotseat" (ViewGroup)
+[27] text="电话" (TextView) [clickable]
+[28] text="信息" (TextView) [clickable]
+[29] text="Chrome" (TextView) [clickable]
+[30] text="相机" (TextView) [clickable]
+[31] text="Google" (OseWidgetView)
+[32] text="com.google.android.googlequicksearchbox:id/rootView" (FrameLayout)
+[33] text="com.google.android.googlequicksearchbox:id/glance_view_id_000" (FrameLayout) [clickable]
+[34] (FrameLayout) [clickable]
+[35] text="Google 应用" (ImageView)
+[36] (FrameLayout) [clickable]
+[37] text="AI 模式" (ImageView)
+[38] (FrameLayout) [clickable]
+[39] text="语音搜索" (ImageView)
+[40] (FrameLayout) [clickable]
+[41] text="拍照搜索" (ImageView)
+[42] text="Google 搜索" (LinearLayout)
+[43] text="com.google.android.apps.nexuslauncher:id/overview_actions_view" (FrameLayout)

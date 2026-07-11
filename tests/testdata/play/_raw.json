@@ -1,0 +1,1199 @@
+[
+  {
+    "index": 0,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 1,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "android:id/content",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 2,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 3,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 4,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "androidx.compose.ui.platform.ComposeView",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 5,
+    "text": "为您推荐",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      58,
+      307,
+      182,
+      352
+    ],
+    "center": [
+      120,
+      329
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 6,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      240,
+      279,
+      480,
+      387
+    ],
+    "center": [
+      360,
+      333
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 7,
+    "text": "热门排行榜",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      283,
+      307,
+      438,
+      352
+    ],
+    "center": [
+      360,
+      329
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 8,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      480,
+      279,
+      720,
+      387
+    ],
+    "center": [
+      600,
+      333
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 9,
+    "text": "儿童",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      569,
+      307,
+      631,
+      352
+    ],
+    "center": [
+      600,
+      329
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 10,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      720,
+      279,
+      960,
+      387
+    ],
+    "center": [
+      840,
+      333
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 11,
+    "text": "类别",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      809,
+      307,
+      871,
+      352
+    ],
+    "center": [
+      840,
+      329
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 12,
+    "text": "升级赛事体验，解锁更多精彩",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      54,
+      423,
+      574,
+      481
+    ],
+    "center": [
+      314,
+      452
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 13,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      55,
+      517,
+      905,
+      1155
+    ],
+    "center": [
+      480,
+      836
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 14,
+    "text": "为你的球队呐喊助威，与全世界一起高歌",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      82,
+      912,
+      802,
+      970
+    ],
+    "center": [
+      442,
+      941
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 15,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      55,
+      988,
+      905,
+      1155
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 16,
+    "text": "",
+    "content_desc": "Smule: 全民K歌神器 - 唱歌录制分享平台\nSmule\n12 岁以上\n星级：4.4\n",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      186,
+      1024,
+      744,
+      1120
+    ],
+    "center": [
+      465,
+      1072
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 17,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      771,
+      1002,
+      905,
+      1110
+    ],
+    "center": [
+      838,
+      1056
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 18,
+    "text": "",
+    "content_desc": "安装",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      807,
+      1033,
+      869,
+      1078
+    ],
+    "center": [
+      838,
+      1055
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 19,
+    "text": "安装",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      807,
+      1033,
+      869,
+      1078
+    ],
+    "center": [
+      838,
+      1055
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 20,
+    "text": "包含内购商品",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      783,
+      1087,
+      894,
+      1119
+    ],
+    "center": [
+      838,
+      1103
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 21,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      933,
+      517,
+      960,
+      1155
+    ],
+    "center": [
+      946,
+      836
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 22,
+    "text": "火热进行中",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      969,
+      544,
+      1041,
+      583
+    ],
+    "center": [
+      1005,
+      563
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 23,
+    "text": "共迎全球最大的体育赛事",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      969,
+      1000,
+      1041,
+      1054
+    ],
+    "center": [
+      1005,
+      1027
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 24,
+    "text": "2026 国际足联世界杯™ 重磅开幕",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      969,
+      1054,
+      1041,
+      1093
+    ],
+    "center": [
+      1005,
+      1073
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 25,
+    "text": "赞助商广告",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      54,
+      1238,
+      176,
+      1274
+    ],
+    "center": [
+      115,
+      1256
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 26,
+    "text": "为您推荐",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      206,
+      1227,
+      366,
+      1285
+    ],
+    "center": [
+      286,
+      1256
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 27,
+    "text": "",
+    "content_desc": "更多选项",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      816,
+      1202,
+      924,
+      1310
+    ],
+    "center": [
+      870,
+      1256
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 28,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      41,
+      1321,
+      919,
+      1525
+    ],
+    "center": [
+      480,
+      1423
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 29,
+    "text": "",
+    "content_desc": "Keeta - 外卖送递及自取\n餐饮美食\n外卖\n已安装\n",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      217,
+      1339,
+      905,
+      1483
+    ],
+    "center": [
+      561,
+      1411
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 30,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      41,
+      1525,
+      919,
+      1728
+    ],
+    "center": [
+      480,
+      1626
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 31,
+    "text": "",
+    "content_desc": "foodpanda - 美食外卖及生鲜杂货外送服务\n餐饮美食\n外卖\n星级：4.2\n",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      217,
+      1543,
+      905,
+      1686
+    ],
+    "center": [
+      561,
+      1614
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 32,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      41,
+      1728,
+      919,
+      1931
+    ],
+    "center": [
+      480,
+      1829
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 33,
+    "text": "",
+    "content_desc": "他TA星球-語音連結的溫暖宇宙\n社交\n人脉\n星级：3.3\n",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      217,
+      1746,
+      905,
+      1889
+    ],
+    "center": [
+      561,
+      1817
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 34,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      919,
+      1321,
+      960,
+      1525
+    ],
+    "center": [
+      939,
+      1423
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 35,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      919,
+      1525,
+      960,
+      1728
+    ],
+    "center": [
+      939,
+      1626
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 36,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      919,
+      1728,
+      960,
+      1931
+    ],
+    "center": [
+      939,
+      1829
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 37,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      0,
+      1931,
+      960,
+      1944
+    ],
+    "center": [
+      480,
+      1937
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 38,
+    "text": "",
+    "content_desc": "与“个性化推荐”相符的更多搜索结果",
+    "resource_id": "",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      813,
+      1942,
+      921,
+      1944
+    ],
+    "center": [
+      867,
+      1943
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 39,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      126,
+      153,
+      689,
+      279
+    ],
+    "center": [
+      407,
+      216
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 40,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      689,
+      162,
+      797,
+      270
+    ],
+    "center": [
+      743,
+      216
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 41,
+    "text": "",
+    "content_desc": "显示通知和优惠。有 6 个新通知。",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      716,
+      189,
+      770,
+      243
+    ],
+    "center": [
+      743,
+      216
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 42,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      797,
+      162,
+      906,
+      271
+    ],
+    "center": [
+      851,
+      216
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 43,
+    "text": "",
+    "content_desc": "目前的登录者是yuanhao li yuanhaol281@gmail.com\n账号和设置。",
+    "resource_id": "",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      797,
+      162,
+      906,
+      271
+    ],
+    "center": [
+      851,
+      216
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 44,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      797,
+      162,
+      906,
+      271
+    ],
+    "center": [
+      851,
+      216
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 45,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "android.widget.ImageView",
+    "bounds": [
+      802,
+      167,
+      901,
+      266
+    ],
+    "center": [
+      851,
+      216
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 46,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      0,
+      1944,
+      192,
+      2088
+    ],
+    "center": [
+      96,
+      2016
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 47,
+    "text": "游戏",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      68,
+      2037,
+      124,
+      2076
+    ],
+    "center": [
+      96,
+      2056
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 48,
+    "text": "应用",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      260,
+      2037,
+      316,
+      2076
+    ],
+    "center": [
+      288,
+      2056
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 49,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      384,
+      1944,
+      576,
+      2088
+    ],
+    "center": [
+      480,
+      2016
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 50,
+    "text": "搜索",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      452,
+      2037,
+      508,
+      2076
+    ],
+    "center": [
+      480,
+      2056
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 51,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      576,
+      1944,
+      768,
+      2088
+    ],
+    "center": [
+      672,
+      2016
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 52,
+    "text": "图书",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      644,
+      2037,
+      700,
+      2076
+    ],
+    "center": [
+      672,
+      2056
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 53,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      768,
+      1944,
+      960,
+      2088
+    ],
+    "center": [
+      864,
+      2016
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 54,
+    "text": "我",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      850,
+      2037,
+      878,
+      2076
+    ],
+    "center": [
+      864,
+      2056
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 55,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      153
+    ],
+    "center": [
+      480,
+      76
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 56,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.android.vending:id/0_resource_name_obfuscated",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      153,
+      960,
+      153
+    ],
+    "center": [
+      480,
+      153
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  }
+]

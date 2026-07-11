@@ -1,0 +1,44 @@
+- [0] **android:id/content** *FrameLayout*
+- [1] **com.google.android.apps.nexuslauncher:id/launcher** *FrameLayout*
+- [2] **com.google.android.apps.nexuslauncher:id/drag_layer** *FrameLayout*
+- [3] **com.google.android.apps.nexuslauncher:id/scrim_view** *View*
+- [4] **com.google.android.apps.nexuslauncher:id/workspace** *ScrollView*
+- [5] **com.google.android.apps.nexuslauncher:id/search_container_workspace** *FrameLayout*
+- [6] **com.google.android.apps.nexuslauncher:id/bc_smartspace_view** *FrameLayout*
+- [7] **资讯一览** *ViewPager*
+- [8] **com.google.android.apps.nexuslauncher:id/base_template_card_with_date** *ViewGroup* 🔘
+- [9] **com.google.android.apps.nexuslauncher:id/text_group** *ViewGroup*
+- [10] **7月9日周四** *TextView* 🔘
+- [11] **com.google.android.apps.nexuslauncher:id/smartspace_subtitle_group** *ViewGroup*
+- [12] **33°C** *TextView* 🔘
+- [13] **Play 商店** *TextView* 🔘
+- [14] **Gmail** *TextView* 🔘
+- [15] **相册** *TextView* 🔘
+- [16] **YouTube** *TextView* 🔘
+- [17] **Keeta** *TextView* 🔘
+- [18] **大象** *TextView* 🔘
+- [19] **Fake Location** *TextView* 🔘
+- [20] **Clash** *TextView* 🔘
+- [21] **微信** *TextView* 🔘
+- [22] **Keeta Tool** *TextView* 🔘
+- [23] **主屏幕** *View*
+- [24] **com.google.android.apps.nexuslauncher:id/page_indicator** *LinearLayout*
+- [25] **com.google.android.apps.nexuslauncher:id/page_indicator_dots** *View*
+- [26] **com.google.android.apps.nexuslauncher:id/hotseat** *ViewGroup*
+- [27] **电话** *TextView* 🔘
+- [28] **信息** *TextView* 🔘
+- [29] **Chrome** *TextView* 🔘
+- [30] **相机** *TextView* 🔘
+- [31] **Google** *OseWidgetView*
+- [32] **com.google.android.googlequicksearchbox:id/rootView** *FrameLayout*
+- [33] **com.google.android.googlequicksearchbox:id/glance_view_id_000** *FrameLayout* 🔘
+- [34] **** *FrameLayout* 🔘
+- [35] **Google 应用** *ImageView*
+- [36] **** *FrameLayout* 🔘
+- [37] **AI 模式** *ImageView*
+- [38] **** *FrameLayout* 🔘
+- [39] **语音搜索** *ImageView*
+- [40] **** *FrameLayout* 🔘
+- [41] **拍照搜索** *ImageView*
+- [42] **Google 搜索** *LinearLayout*
+- [43] **com.google.android.apps.nexuslauncher:id/overview_actions_view** *FrameLayout*

@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
 #
-# phonefast 打包脚本
+# phonefast macOS 本机构建脚本 (CGO + 静态 FFmpeg)
+#
+# 职责: 在 macOS 上构建本机 darwin-arm64 二进制 (FFmpeg 静态链接进二进制)。
+#       开发者日常用本脚本出本机可运行二进制。
 #
 # 用法:
-#   bash scripts/build.sh                    # 当前平台构建
-#   bash scripts/build.sh --all              # 全平台构建 (macOS/Linux/Windows)
-#   bash scripts/build.sh --linux            # Linux x86_64
-#   bash scripts/build.sh --macos            # macOS arm64 + x86_64
-#   bash scripts/build.sh --windows          # Windows x86_64
+#   bash scripts/build.sh                    # 构建本机 darwin-arm64 (默认)
+#   bash scripts/build.sh --all              # 全平台 (zig 交叉编, 方案2)
+#   bash scripts/build.sh --macos            # 仅 darwin arm64+amd64
+#   bash scripts/build.sh --linux            # 仅 linux amd64+arm64
+#   bash scripts/build.sh --windows          # 仅 windows amd64
 #   bash scripts/build.sh --version 1.0.0    # 指定版本号
 #   bash scripts/build.sh --clean            # 构建前清理 dist/
 #
+# 正式 release 推荐走 CI 原生 runner:
+#   推 v* tag 触发 .github/workflows/release.yml (方案3, 每平台原生编译最稳)
+#
 # 产物目录: dist/dev/
-#   ├── phonefast-<os>-<arch>[/.exe]  # CLI 二进制 (jar 已 embed 编译进二进制)
+#   ├── phonefast-<os>-<arch>[/.exe]    # CLI 二进制 (jar embed + FFmpeg 静态链接)
 #   ├── README.md
 #   └── docs/
 #
-# 单文件分发: jar 已通过 Go embed 编译进二进制，无需额外文件即可运行。
+# 单文件分发: jar + FFmpeg 均编译进二进制，无需额外文件即可运行。
+#
+# 前置: bash scripts/build_env.sh check 检测环境 (nasm/zig/clang)
+#       非本机目标需先编静态 FFmpeg: bash scripts/cross-build-ffmpeg.sh <target>
 
 set -euo pipefail
 
@@ -95,7 +104,7 @@ os_arch_to_zig() {
     esac
 }
 
-# 目标 → cross-ffmpeg 目录名
+# 目标 → build/cross-ffmpeg 目录名
 os_arch_to_ffmpeg_target() {
     local os="$1" arch="$2"
     case "${os}-${arch}" in
@@ -114,60 +123,72 @@ setup_cross_cgo() {
     cur_os="$(go env GOOS)"
     cur_arch="$(go env GOARCH)"
 
-    # 本机构建：不需要特殊配置
-    if [ "$os" = "$cur_os" ] && [ "$arch" = "$cur_arch" ]; then
-        return
-    fi
-
     # CGO 关闭时不需要配置
     if [ "${CGO_ENABLED:-1}" = "0" ]; then
         return
     fi
 
-    # macOS 交叉编译需要 x86_64 FFmpeg 库和 macOS SDK，容易出问题。
-    # 在没有 cross-ffmpeg 缓存时自动降级 CGO_ENABLED=0。
-    if [ "$os" = "darwin" ]; then
-        local ffmpeg_target
-        ffmpeg_target=$(os_arch_to_ffmpeg_target "$os" "$arch")
-        if [ ! -d "$ROOT_DIR/cross-ffmpeg/$ffmpeg_target/lib/pkgconfig" ]; then
-            warn "macOS ${arch} 交叉 FFmpeg 未缓存，自动降级 CGO_ENABLED=0"
-            export CGO_ENABLED=0
-        fi
-        return
+    local is_native=false
+    if [ "$os" = "$cur_os" ] && [ "$arch" = "$cur_arch" ]; then
+        is_native=true
     fi
 
-    # ── Linux / Windows 交叉编译 ──
+    # ── 工具链选择 ──
+    # 原生构建: 用默认工具链 (CC 不改)
+    # Darwin 交叉: 必须用 clang 链接 (zig cc 找不到 macOS SDK 系统库: resolv/z/iconv/VideoToolbox)
+    # 其他平台交叉:  zig cc (有完整的 sysroot)
     local zig_target
     zig_target=$(os_arch_to_zig "$os" "$arch")
-    if [ -z "$zig_target" ]; then
+    if ! $is_native && [ -z "$zig_target" ]; then
         warn "未知目标 ${os}/${arch}，CGO 可能失败"
         return
     fi
 
-    # 检查 zig
-    if ! command -v zig >/dev/null 2>&1; then
-        warn "zig 未安装，CGO 交叉编译不可用: brew install zig"
-        export CGO_ENABLED=0
-        return
+    if $is_native; then
+        : # 默认 CC
+    elif [ "$os" = "darwin" ]; then
+        export CC="clang"
+        export CXX="clang++"
+    else
+        if ! command -v zig >/dev/null 2>&1; then
+            warn "zig 未安装，CGO 交叉编译不可用: brew install zig"
+            export CGO_ENABLED=0
+            return
+        fi
+        export CC="zig cc -target $zig_target"
+        export CXX="zig c++ -target $zig_target"
     fi
 
-    # 设置 zig cc 作为 C 编译器
-    export CC="zig cc -target $zig_target"
-    export CXX="zig c++ -target $zig_target"
-
-    # 查找交叉编译的 FFmpeg 库
+    # 静态 FFmpeg 库目录 (原生和交叉都从这里取，确保静态链接而非系统动态库)
     local ffmpeg_target
     ffmpeg_target=$(os_arch_to_ffmpeg_target "$os" "$arch")
-    local ffmpeg_dir="$ROOT_DIR/cross-ffmpeg/$ffmpeg_target"
+    local ffmpeg_dir="$ROOT_DIR/build/cross-ffmpeg/$ffmpeg_target"
 
     if [ -d "$ffmpeg_dir/lib/pkgconfig" ]; then
         export PKG_CONFIG_PATH="$ffmpeg_dir/lib/pkgconfig"
-        info "  CGO 交叉编译: zig target=$zig_target, FFmpeg=$ffmpeg_dir"
+        local native_tag=""
+        [ "$is_native" = "true" ] && native_tag=" (native)"
+        info "  CGO: CC=${CC:-default}, FFmpeg=$ffmpeg_target$native_tag"
     else
-        warn "FFmpeg 交叉编译库不存在: $ffmpeg_dir"
-        warn "请先执行: bash scripts/cross-build-ffmpeg.sh $ffmpeg_target"
-        warn "降级 CGO_ENABLED=0"
-        export CGO_ENABLED=0
+        warn "FFmpeg 静态库不存在: $ffmpeg_dir"
+        # 自动从 FFmpeg 官方源码编译 (仅交互式终端，CI 避免卡住)
+        local downloaded=false
+        if [ -t 1 ] && [ -f "$SCRIPT_DIR/download-ffmpeg.sh" ]; then
+            info "  尝试从 FFmpeg 官方源码编译..."
+            if bash "$SCRIPT_DIR/download-ffmpeg.sh" "$ffmpeg_target" 2>/dev/null; then
+                if [ -d "$ffmpeg_dir/lib/pkgconfig" ]; then
+                    export PKG_CONFIG_PATH="$ffmpeg_dir/lib/pkgconfig"
+                    info "  CGO: CC=${CC:-default}, FFmpeg=$ffmpeg_target (源码编译)"
+                    downloaded=true
+                fi
+            fi
+        fi
+        if ! $downloaded; then
+            warn "  手动备选: bash scripts/cross-build-ffmpeg.sh $ffmpeg_target"
+            warn "  或跳过 CGO: CGO_ENABLED=0 go build ./cmd/phonefast/"
+            warn "  降级 CGO_ENABLED=0"
+            export CGO_ENABLED=0
+        fi
     fi
 }
 
@@ -181,7 +202,7 @@ build_target() {
     info "构建 ${os}/${arch} ..."
     mkdir -p "$dist_dir"
 
-    # 配置 CGO 交叉编译环境（zig cc + cross-ffmpeg）
+    # 配置 CGO 交叉编译环境（zig cc + build/cross-ffmpeg）
     setup_cross_cgo "$os" "$arch"
 
     CGO_ENABLED="${CGO_ENABLED:-1}" \
@@ -233,8 +254,22 @@ make_archive() {
 }
 
 # ── 所有平台定义 ──────────────────────────────────────────────────────────────────
+#
+# 本脚本 (build.sh) 在 macOS 上构建:
+#   默认           → 本机 darwin-arm64 (原生 clang + 静态 FFmpeg, 开发日常用)
+#   --all          → 全平台 (zig 交叉编 linux/windows + darwin, 方案2)
+#   --macos        → 仅 darwin (arm64 + amd64)
+#   --linux        → 仅 linux (amd64 + arm64)
+#   --windows      → 仅 windows (amd64)
+#
+# 非本机目标用 zig cc 交叉编译 (已验证 asm-on 全平台通过)。
+# 正式 release 推荐走 CI 原生 runner (.github/workflows/release.yml, 方案3),
+# 本脚本 --all 用于本地快速出全平台包。
 
-PLATFORMS=(
+PLATFORMS_DEFAULT=(
+    "darwin  arm64"
+)
+PLATFORMS_ALL=(
     "darwin  amd64"
     "darwin  arm64"
     "linux   amd64"
@@ -244,29 +279,23 @@ PLATFORMS=(
 
 build_platforms() {
     local filter="${1:-}"
-    local cur_os cur_arch
-    cur_os="$(go env GOOS)"
-    cur_arch="$(go env GOARCH)"
+    local platforms=("${PLATFORMS_DEFAULT[@]}")
 
-    for plat in "${PLATFORMS[@]}"; do
+    case "$filter" in
+        all)     platforms=("${PLATFORMS_ALL[@]}") ;;
+        macos)   platforms=("darwin amd64" "darwin arm64") ;;
+        linux)   platforms=("linux amd64" "linux arm64") ;;
+        windows) platforms=("windows amd64") ;;
+    esac
+
+    for plat in "${platforms[@]}"; do
         read -r os arch <<< "$plat"
         local ext=""
         if [ "$os" = "windows" ]; then ext=".exe"; fi
 
-        local should_build=false
-        case "$filter" in
-            all)     should_build=true ;;
-            macos)   [ "$os" = "darwin" ]  && should_build=true ;;
-            linux)   [ "$os" = "linux" ]   && should_build=true ;;
-            windows) [ "$os" = "windows" ] && should_build=true ;;
-            "")      [ "$os" = "$cur_os" ] && [ "$arch" = "$cur_arch" ] && should_build=true ;;
-        esac
-
-        if $should_build; then
-            build_target "$os" "$arch" "$ext"
-            if [ "$filter" = "all" ] || [ "$filter" = "macos" ] || [ "$filter" = "linux" ] || [ "$filter" = "windows" ]; then
-                make_archive "$os" "$arch"
-            fi
+        build_target "$os" "$arch" "$ext"
+        if [ -n "$filter" ]; then
+            make_archive "$os" "$arch"
         fi
     done
 }

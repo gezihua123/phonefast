@@ -107,33 +107,145 @@ bash scripts/build-server.sh
 
 ### 全平台构建
 
+phonefast 把 FFmpeg 静态链接进 Go CGO 二进制，实现单文件分发（jar + FFmpeg 全部内嵌）。
+有两条构建路径：
+
+#### 方案 2：本地 zig 交叉编译（开发日常用）
+
+在 macOS 上一条命令编出全部 5 个平台二进制。本机 darwin-arm64 用原生 clang，
+其余目标用 zig cc 交叉编译（asm 全开，已验证）。`build_local.sh` 是一键封装：
+
 ```bash
-bash scripts/build.sh --all
+# 一键全平台 (自动: 环境检查 → 编 FFmpeg 库 → 编 Go 二进制)
+bash scripts/build_local.sh            # 全平台 5 目标
+bash scripts/build_local.sh --macos    # 仅 darwin
+bash scripts/build_local.sh --linux    # 仅 linux
+bash scripts/build_local.sh --windows  # 仅 windows
+bash scripts/build_local.sh --clean    # 构建前清理 dist/
 ```
 
-构建产物输出到 `dist/dev/`。
+底层步骤（build_local.sh 自动完成，也可手动）：
+
+```bash
+# 1. 检测/安装构建环境 (nasm/zig/clang/go)
+bash scripts/build_env.sh check        # 检测
+bash scripts/build_env.sh install      # 自动装缺失依赖 (brew)
+
+# 2. 编静态 FFmpeg 库 (每目标一次，缓存于 build/cross-ffmpeg/<target>/)
+bash scripts/cross-build-ffmpeg.sh aarch64-darwin    # mac arm64
+bash scripts/cross-build-ffmpeg.sh x86_64-darwin     # mac amd64
+bash scripts/cross-build-ffmpeg.sh x86_64-linux-gnu  # linux amd64
+bash scripts/cross-build-ffmpeg.sh aarch64-linux-gnu # linux arm64
+bash scripts/cross-build-ffmpeg.sh x86_64-windows-gnu # windows amd64
+
+# 3. 构建
+bash scripts/build.sh            # 仅本机 darwin-arm64 (默认)
+bash scripts/build.sh --all      # 全平台 5 目标
+bash scripts/build.sh --linux    # 仅 linux
+```
+
+产物在 `dist/dev/`：`phonefast-<os>-<arch>[.exe]` + `.tar.gz`。
+
+#### 方案 3：CI 原生 runner（正式 release 用）
+
+每个平台用对应架构的原生 GitHub Actions runner，零模拟、asm 全开、最稳。
+推 `v*` tag 自动触发：`.github/workflows/release.yml`。
+
+```bash
+# 本地打 tag 推送即触发 CI 全平台构建 + 发版
+git tag v1.0.8 && git push origin v1.0.8
+# 或 Actions 页面手动 Run workflow (输入版本号)
+```
+
+CI matrix（每平台原生 runner）：
+
+| 目标 | runner | FFmpeg 工具链 |
+|---|---|---|
+| darwin-arm64 | macos-14 | 原生 clang + nasm |
+| darwin-amd64 | macos-13 | 原生 clang + nasm |
+| linux-amd64 | ubuntu-latest | 原生 gcc + nasm |
+| linux-arm64 | ubuntu-24.04-arm | 原生 gcc (NEON) |
+| windows-amd64 | windows-latest | 原生 mingw + nasm |
+
+> 公开仓库 CI 全免费（含 macOS runner 和 arm64 linux runner）。
+
+### 构建环境与 asm 判定
+
+`scripts/build_env.sh` 是统一的环境检测/安装入口：
+
+```bash
+bash scripts/build_env.sh           # 报告
+bash scripts/build_env.sh check     # 检测，缺依赖返回非 0
+bash scripts/build_env.sh install   # brew 自动装缺失 (nasm/zig/go)
+```
+
+**asm 判定逻辑**（`cross-build-ffmpeg.sh`）：
+- `x86_64` 目标：需 nasm（SSE/AVX/AVX2/AVX-512）。有则开，无则降级 `--disable-asm`（纯 C 慢 2-4×）。
+- `aarch64` 目标：NEON 走 assembler（zig 内置 / clang gas），无需 nasm，始终开。
+- 装好 nasm 即全平台 asm-on：`bash scripts/build_env.sh install`。
+
+### 静态 FFmpeg 编译的关键坑
+
+`cross-build-ffmpeg.sh` 踩过并修复的坑（供后人排查）：
+
+1. **zig + nasm 开 asm**：早期版本因没装 nasm 硬编码 `--disable-asm`。装 nasm 后 zig cc
+   自动探测，全平台 asm-on。运行时验证：asm-off 报 `No accelerated colorspace conversion found`，
+   asm-on 后 amd64 目标警告消失。
+
+2. **darwin 强制 Apple 原生 ar/ranlib**：若 PATH 上有 GNU binutils（`brew install binutils`），
+   其 ar 产出 GNU 格式 `.a`（符号表成员名为 `/`），Apple ld 不认 →
+   `archive member '/' not a mach-o file`。darwin 分支强制 `/usr/bin/ar`、`/usr/bin/ranlib`、`/usr/bin/nm`
+   产 BSD 格式 `.a`，无需 libtool 重封装。
+
+3. **不能 libtool 重封装 darwin .a**：早期用 `ar -x` + `libtool -static *.o` 重封装修复 SYMDEF，
+   但 `ar -x` 会让 aarch64 与根目录同名的 `.o`（如 `aarch64/swscale.o` vs `swscale.o`）互相覆盖，
+   丢 NEON init 符号 → `symbol(s) not found for architecture arm64`。Apple 原生 ar 已生成有效 SYMDEF，
+   重封装步骤已删除。
+
+4. **mingw C99 math 冲突**（windows 目标）：zig-mingw 下 configure 的 math 函数探测全失败
+   （`HAVE_TRUNC/ROUND/CBRT/...=0`），FFmpeg `libm.h` 用 static inline 重定义，与 mingw math.h 的
+   extern 声明冲突 → `static declaration follows non-static declaration`。`mingw_math` patch 把这些
+   `HAVE_*` 翻成 1（用 mingw 系统版本），并注释掉冲突的 `#define getenv(x) NULL`。
+
+5. **GCC + PIC + x86 inline asm**（Linux-host 分支）：`--enable-pic` + GCC 会触发
+   `impossible constraint in 'asm'`（mathops.h NEG_USR32）。Linux 静态库链进 Go 不需要 PIC
+   （Go 链接器自行重定位），Linux-host 分支不开 PIC。zig 分支不受此影响（已验证 PIC 可用）。
+
+### 为什么不用 docker
+
+arm64 Mac 上用 docker 编 amd64 必走 qemu 模拟，gcc 编 FFmpeg 的 SIMD/asm 会
+`internal compiler error: Segmentation fault`（qemu+gcc 已知不稳，无可靠 workaround）。
+业界共识：能交叉编译就别用模拟。故 linux/windows 目标走 zig 交叉（方案2）或 CI 原生 runner（方案3），
+docker 路线已移除。
 
 ### GitHub Release
 
+`release.sh` 只负责触发 CI，不本地构建、不直接创建 Release。
+推 `v*` tag 后，GitHub Actions（方案3）全平台原生编译并发布。
+
 ```bash
-# dry-run 试运行（只构建不发布）
+# dry-run 预览 (不打 tag, 不触发 CI)
 bash scripts/release.sh --dry-run
 
-# 自动版本自增 + 发布
+# 自动版本自增 + 触发 CI 发版
 bash scripts/release.sh
 
 # 指定版本
-bash scripts/release.sh 1.0.4
+bash scripts/release.sh 1.0.8
 ```
 
 前置条件：
-- `gh` CLI 已登录（`gh auth login`）
-- Go 工具链
-- Git
+- Git（必须，推 tag 用）
+- gh（可选，事后查看 CI/Release）
 
 Release 流程：
 1. 检查工作区干净
-2. 自动 patch 版本号自增
-3. 全平台交叉编译
-4. 创建 Git tag 并推送
-5. 创建 GitHub Release，上传所有构建产物
+2. 自动 patch 版本号自增 + commit
+3. 创建 Git tag `v${VERSION}`
+4. push tag → **触发 CI** → CI 5 平台原生编译 → 发布 GitHub Release
+
+产物最终位置：GitHub Release 的 Assets
+`https://github.com/gezihua123/phonefast/releases/tag/vX.Y.Z`
+
+> 本地手动出包（不发布）用 `bash scripts/build_local.sh`（方案2）。
+> CI 产物与本地产物可交叉校验。

@@ -1,0 +1,44 @@
+- [0] text="android:id/content" (FrameLayout) id="content"
+- [1] text="com.google.android.apps.nexuslauncher:id/launcher" (FrameLayout) id="launcher"
+- [2] text="com.google.android.apps.nexuslauncher:id/drag_layer" (FrameLayout) id="drag_layer"
+- [3] text="com.google.android.apps.nexuslauncher:id/scrim_view" (View) id="scrim_view"
+- [4] text="com.google.android.apps.nexuslauncher:id/workspace" (ScrollView) id="workspace"
+- [5] text="com.google.android.apps.nexuslauncher:id/search_container_workspace" (FrameLayout) id="search_container_workspace"
+- [6] text="com.google.android.apps.nexuslauncher:id/bc_smartspace_view" (FrameLayout) id="bc_smartspace_view"
+- [7] text="资讯一览" (ViewPager) id="smartspace_card_pager"
+- [8] text="com.google.android.apps.nexuslauncher:id/base_template_card_with_date" (ViewGroup) [clickable] id="base_template_card_with_date"
+- [9] text="com.google.android.apps.nexuslauncher:id/text_group" (ViewGroup) id="text_group"
+- [10] text="7月9日周四" (TextView) [clickable] id="date"
+- [11] text="com.google.android.apps.nexuslauncher:id/smartspace_subtitle_group" (ViewGroup) id="smartspace_subtitle_group"
+- [12] text="33°C" (TextView) [clickable] id="subtitle_text"
+- [13] text="Play 商店" (TextView) [clickable]
+- [14] text="Gmail" (TextView) [clickable]
+- [15] text="相册" (TextView) [clickable]
+- [16] text="YouTube" (TextView) [clickable]
+- [17] text="Keeta" (TextView) [clickable]
+- [18] text="大象" (TextView) [clickable]
+- [19] text="Fake Location" (TextView) [clickable]
+- [20] text="Clash" (TextView) [clickable]
+- [21] text="微信" (TextView) [clickable]
+- [22] text="Keeta Tool" (TextView) [clickable]
+- [23] text="主屏幕" (View) id="accessibility_action_view"
+- [24] text="com.google.android.apps.nexuslauncher:id/page_indicator" (LinearLayout) id="page_indicator"
+- [25] text="com.google.android.apps.nexuslauncher:id/page_indicator_dots" (View) id="page_indicator_dots"
+- [26] text="com.google.android.apps.nexuslauncher:id/hotseat" (ViewGroup) id="hotseat"
+- [27] text="电话" (TextView) [clickable]
+- [28] text="信息" (TextView) [clickable]
+- [29] text="Chrome" (TextView) [clickable]
+- [30] text="相机" (TextView) [clickable]
+- [31] text="Google" (OseWidgetView)
+- [32] text="com.google.android.googlequicksearchbox:id/rootView" (FrameLayout) id="rootView"
+- [33] text="com.google.android.googlequicksearchbox:id/glance_view_id_000" (FrameLayout) [clickable] id="glance_view_id_000"
+- [34] text="" (FrameLayout) [clickable]
+- [35] text="Google 应用" (ImageView)
+- [36] text="" (FrameLayout) [clickable]
+- [37] text="AI 模式" (ImageView)
+- [38] text="" (FrameLayout) [clickable]
+- [39] text="语音搜索" (ImageView)
+- [40] text="" (FrameLayout) [clickable]
+- [41] text="拍照搜索" (ImageView)
+- [42] text="Google 搜索" (LinearLayout)
+- [43] text="com.google.android.apps.nexuslauncher:id/overview_actions_view" (FrameLayout) id="overview_actions_view"

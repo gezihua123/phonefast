@@ -1,0 +1,44 @@
+elements:
+- {index: 0, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/action_bar_root", class: FrameLayout, clickable: False}
+- {index: 1, parent: -1, depth: 0, text: "android:id/content", class: FrameLayout, clickable: False}
+- {index: 2, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/touch_capture_view", class: FrameLayout, clickable: False}
+- {index: 3, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/photo_container", class: FrameLayout, clickable: False}
+- {index: 4, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/drawer_layout", class: DrawerLayout, clickable: False}
+- {index: 5, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/main_container", class: FrameLayout, clickable: False}
+- {index: 6, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/toolbar_parent", class: ViewGroup, clickable: False}
+- {index: 7, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/touch_capture_view", class: FrameLayout, clickable: False}
+- {index: 8, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/all_photos_coordinator", class: ViewGroup, clickable: False}
+- {index: 9, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/fragment_container", class: FrameLayout, clickable: False}
+- {index: 10, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/fragment_container", class: FrameLayout, clickable: False}
+- {index: 11, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/fragment_container", class: FrameLayout, clickable: False}
+- {index: 12, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/photos_photogrid_date_scrubber_view", class: FrameLayout, clickable: False}
+- {index: 13, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/recycler_view", class: RecyclerView, clickable: False}
+- {index: 14, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/photos_mars_all_photos_promo_id", class: FrameLayout, clickable: False}
+- {index: 15, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/set_up_locked_folder_promo", class: CardView, clickable: False}
+- {index: 16, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/icon", class: ImageView, clickable: False}
+- {index: 17, parent: -1, depth: 0, text: "隐藏敏感照片和视频", class: TextView, clickable: False}
+- {index: 18, parent: -1, depth: 0, text: "设置“加密文件夹”以隐藏和保护敏感照片和视频", class: TextView, clickable: False}
+- {index: 19, parent: -1, depth: 0, text: "以后再说", class: Button, clickable: True}
+- {index: 20, parent: -1, depth: 0, text: "开始使用", class: Button, clickable: True}
+- {index: 21, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/hats_container", class: FrameLayout, clickable: False}
+- {index: 22, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/protection_layout", class: FrameLayout, clickable: False}
+- {index: 23, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/scrolling_toolbar_container", class: FrameLayout, clickable: False}
+- {index: 24, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/toolbar_container", class: LinearLayout, clickable: False}
+- {index: 25, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/notification_bar_spacer", class: View, clickable: False}
+- {index: 26, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/toolbar", class: ViewGroup, clickable: False}
+- {index: 27, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 28, parent: -1, depth: 0, text: "已完成备份", class: TextView, clickable: False}
+- {index: 29, parent: -1, depth: 0, text: "创作、新内容", class: Button, clickable: True}
+- {index: 30, parent: -1, depth: 0, text: "更新", class: Button, clickable: True}
+- {index: 31, parent: -1, depth: 0, text: "目前的登录者是yuanhao li yuanhaol281@gmail.com
+账号和设置。", class: FrameLayout, clickable: True}
+- {index: 32, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/og_selected_account_disc_apd", class: FrameLayout, clickable: False}
+- {index: 33, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/og_apd_internal_image_view", class: ImageView, clickable: False}
+- {index: 34, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/tab_bar", class: FrameLayout, clickable: False}
+- {index: 35, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/tab_layout", class: LinearLayout, clickable: False}
+- {index: 36, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/photos_tabbar_layout", class: LinearLayout, clickable: False}
+- {index: 37, parent: -1, depth: 0, text: "相册", class: Button, clickable: True}
+- {index: 38, parent: -1, depth: 0, text: "合集", class: Button, clickable: True}
+- {index: 39, parent: -1, depth: 0, text: "创作", class: Button, clickable: True}
+- {index: 40, parent: -1, depth: 0, text: "搜索", class: Button, clickable: True}
+- {index: 41, parent: -1, depth: 0, text: "com.google.android.apps.photos:id/fill_under_navigation_bar", class: View, clickable: False}

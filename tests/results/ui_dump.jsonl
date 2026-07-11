@@ -1,0 +1,85 @@
+{"id":0,"parent":-1,"depth":0,"class":"FrameLayout","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":1,"parent":0,"depth":1,"class":"LinearLayout","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":2,"parent":1,"depth":2,"resource_id":"android:id/content","class":"FrameLayout","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":3,"parent":2,"depth":3,"resource_id":"com.sec.android.app.launcher:id/launcher","class":"FrameLayout","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":4,"parent":3,"depth":4,"resource_id":"com.sec.android.app.launcher:id/capture_blur_view","class":"View","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":5,"parent":3,"depth":4,"resource_id":"com.sec.android.app.launcher:id/real_wallpaper_blur_view","class":"View","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":6,"parent":3,"depth":4,"resource_id":"com.sec.android.app.launcher:id/scrim_view","class":"View","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":7,"parent":3,"depth":4,"resource_id":"com.sec.android.app.launcher:id/drag_layer","class":"FrameLayout","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":8,"parent":7,"depth":5,"resource_id":"com.sec.android.app.launcher:id/defalt_page_icon_layout","class":"FrameLayout","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":9,"parent":7,"depth":5,"resource_id":"com.sec.android.app.launcher:id/apptray_view","class":"FrameLayout","bounds":"[0,0][1080,2400]","clickable":false,"focused":true}
+{"id":10,"parent":9,"depth":6,"resource_id":"com.sec.android.app.launcher:id/apps_content","class":"PagedView","bounds":"[0,0][1080,2400]","clickable":false}
+{"id":11,"parent":10,"depth":7,"class":"ViewGroup","bounds":"[0,80][-1044,2170]","clickable":false}
+{"id":12,"parent":11,"depth":8,"class":"ViewGroup","bounds":"[0,272][-1045,2170]","clickable":false}
+{"id":13,"parent":12,"depth":9,"text":"Samsung","content_desc":"Samsung, 文件夹","resource_id":"com.sec.android.app.launcher:id/home_icon","class":"TextView","bounds":"[0,272][-1801,646]","clickable":true}
+{"id":14,"parent":12,"depth":9,"text":"Google","content_desc":"Google, 文件夹","resource_id":"com.sec.android.app.launcher:id/home_icon","class":"TextView","bounds":"[0,272][-1549,646]","clickable":true}
+{"id":15,"parent":12,"depth":9,"text":"OneDrive","content_desc":"OneDrive","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,272][-1297,646]","clickable":true}
+{"id":16,"parent":12,"depth":9,"text":"Play 商店","content_desc":"Play 商店, 1 条通知","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,272][-1045,646]","clickable":true}
+{"id":17,"parent":12,"depth":9,"text":"应用商店","content_desc":"应用商店, 1 条通知","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-1801,1026]","clickable":true}
+{"id":18,"parent":12,"depth":9,"text":"电话","content_desc":"电话","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-1549,1026]","clickable":true}
+{"id":19,"parent":12,"depth":9,"text":"信息","content_desc":"信息","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-1297,1026]","clickable":true}
+{"id":20,"parent":12,"depth":9,"text":"相机","content_desc":"相机","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-1045,1026]","clickable":true}
+{"id":21,"parent":12,"depth":9,"text":"相册","content_desc":"相册","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-1801,1406]","clickable":true}
+{"id":22,"parent":12,"depth":9,"text":"时钟","content_desc":"时钟","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-1549,1406]","clickable":true}
+{"id":23,"parent":12,"depth":9,"text":"联系人","content_desc":"联系人","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-1297,1406]","clickable":true}
+{"id":24,"parent":12,"depth":9,"text":"设置","content_desc":"设置","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-1045,1406]","clickable":true}
+{"id":25,"parent":12,"depth":9,"text":"日历","content_desc":"日历","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-1801,1786]","clickable":true}
+{"id":26,"parent":12,"depth":9,"text":"游戏中心","content_desc":"游戏中心","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-1549,1786]","clickable":true}
+{"id":27,"parent":12,"depth":9,"text":"Samsung Free","content_desc":"Samsung Free","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-1297,1786]","clickable":true}
+{"id":28,"parent":12,"depth":9,"text":"大象","content_desc":"大象","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-1045,1786]","clickable":true}
+{"id":29,"parent":12,"depth":9,"text":"Meet","content_desc":"Meet","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1792][-1801,2166]","clickable":true}
+{"id":30,"parent":10,"depth":7,"class":"ViewGroup","bounds":"[0,80][-1,2170]","clickable":false}
+{"id":31,"parent":30,"depth":8,"class":"ViewGroup","bounds":"[0,272][-2,2170]","clickable":false}
+{"id":32,"parent":31,"depth":9,"text":"TaskFlow","content_desc":"TaskFlow","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,272][-758,646]","clickable":true}
+{"id":33,"parent":31,"depth":9,"text":"实时海拔计","content_desc":"实时海拔计","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,272][-506,646]","clickable":true}
+{"id":34,"parent":31,"depth":9,"text":"Testing","content_desc":"Testing","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,272][-254,646]","clickable":true}
+{"id":35,"parent":31,"depth":9,"text":"Echo","content_desc":"Echo","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,272][-2,646]","clickable":true}
+{"id":36,"parent":31,"depth":9,"text":"像素漫游","content_desc":"像素漫游","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-758,1026]","clickable":true}
+{"id":37,"parent":31,"depth":9,"text":"素数独","content_desc":"素数独","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-506,1026]","clickable":true}
+{"id":38,"parent":31,"depth":9,"text":"EchoLang","content_desc":"EchoLang","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-254,1026]","clickable":true}
+{"id":39,"parent":31,"depth":9,"text":"悬浮文本","content_desc":"悬浮文本","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,652][-2,1026]","clickable":true}
+{"id":40,"parent":31,"depth":9,"text":"WordPopper","content_desc":"WordPopper","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-758,1406]","clickable":true}
+{"id":41,"parent":31,"depth":9,"text":"Trustamp","content_desc":"Trustamp","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-506,1406]","clickable":true}
+{"id":42,"parent":31,"depth":9,"text":"Pony Shotter","content_desc":"Pony Shotter","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-254,1406]","clickable":true}
+{"id":43,"parent":31,"depth":9,"text":"Nomic阅读","content_desc":"Nomic阅读","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1032][-2,1406]","clickable":true}
+{"id":44,"parent":31,"depth":9,"text":"Celestial Oracle","content_desc":"Celestial Oracle","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-758,1786]","clickable":true}
+{"id":45,"parent":31,"depth":9,"text":"Matrix To-Do","content_desc":"Matrix To-Do","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-506,1786]","clickable":true}
+{"id":46,"parent":31,"depth":9,"text":"水印工具","content_desc":"水印工具","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-254,1786]","clickable":true}
+{"id":47,"parent":31,"depth":9,"text":"FakeChatForWhatsApp","content_desc":"FakeChatForWhatsApp","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1412][-2,1786]","clickable":true}
+{"id":48,"parent":31,"depth":9,"text":"LogLogic","content_desc":"LogLogic","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1792][-758,2166]","clickable":true}
+{"id":49,"parent":31,"depth":9,"text":"AA Calculator","content_desc":"AA Calculator","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1792][-506,2166]","clickable":true}
+{"id":50,"parent":31,"depth":9,"text":"WhatsApp","content_desc":"WhatsApp","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1792][-254,2166]","clickable":true}
+{"id":51,"parent":31,"depth":9,"text":"Typeless","content_desc":"Typeless","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[0,1792][-2,2166]","clickable":true}
+{"id":52,"parent":10,"depth":7,"class":"ViewGroup","bounds":"[38,80][1042,2170]","clickable":false}
+{"id":53,"parent":52,"depth":8,"class":"ViewGroup","bounds":"[39,272][1041,2170]","clickable":false}
+{"id":54,"parent":53,"depth":9,"text":"Life Palmistry","content_desc":"Life Palmistry","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[39,272][285,646]","clickable":true}
+{"id":55,"parent":53,"depth":9,"text":"Nebula","content_desc":"Nebula","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[291,272][537,646]","clickable":true}
+{"id":56,"parent":53,"depth":9,"text":"Manus","content_desc":"Manus","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[543,272][789,646]","clickable":true}
+{"id":57,"parent":53,"depth":9,"text":"Instagram","content_desc":"Instagram","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[795,272][1041,646]","clickable":true}
+{"id":58,"parent":53,"depth":9,"text":"MNN Chat","content_desc":"MNN Chat","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[39,652][285,1026]","clickable":true}
+{"id":59,"parent":53,"depth":9,"text":"Keeta","content_desc":"Keeta","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[291,652][537,1026]","clickable":true}
+{"id":60,"parent":53,"depth":9,"text":"Leaks","content_desc":"Leaks","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[543,652][789,1026]","clickable":true}
+{"id":61,"parent":53,"depth":9,"text":"Lemon8","content_desc":"Lemon8","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[795,652][1041,1026]","clickable":true}
+{"id":62,"parent":53,"depth":9,"text":"FlClash","content_desc":"FlClash, 1 条通知","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[39,1032][285,1406]","clickable":true}
+{"id":63,"parent":53,"depth":9,"text":"Reddit","content_desc":"Reddit","resource_id":"com.sec.android.app.launcher:id/apps_icon","class":"TextView","bounds":"[291,1032][537,1406]","clickable":true}
+{"id":64,"parent":9,"depth":6,"resource_id":"com.sec.android.app.launcher:id/apps_searchbar_container","class":"LinearLayout","bounds":"[0,0][1080,227]","clickable":false}
+{"id":65,"parent":64,"depth":7,"resource_id":"com.sec.android.app.launcher:id/app_search_wrapper","class":"RelativeLayout","bounds":"[0,80][1080,227]","clickable":false}
+{"id":66,"parent":65,"depth":8,"resource_id":"com.sec.android.app.launcher:id/app_search_bar_bg","class":"ImageView","bounds":"[0,80][1080,227]","clickable":false}
+{"id":67,"parent":65,"depth":8,"class":"LinearLayout","bounds":"[0,80][1080,227]","clickable":false}
+{"id":68,"parent":67,"depth":9,"resource_id":"com.sec.android.app.launcher:id/app_search_edit_text_wrapper","class":"LinearLayout","bounds":"[0,80][938,227]","clickable":true}
+{"id":69,"parent":68,"depth":10,"text":"搜索","resource_id":"com.sec.android.app.launcher:id/app_search_edit_text","class":"TextView","bounds":"[26,96][938,211]","clickable":false}
+{"id":70,"parent":67,"depth":9,"resource_id":"com.sec.android.app.launcher:id/app_search_more_button_wrapper","class":"LinearLayout","bounds":"[938,80][1080,227]","clickable":false}
+{"id":71,"parent":70,"depth":10,"resource_id":"com.sec.android.app.launcher:id/more_button_container","class":"FrameLayout","bounds":"[938,95][1054,211]","clickable":false}
+{"id":72,"parent":71,"depth":11,"resource_id":"com.sec.android.app.launcher:id/support_sort_option","class":"View","bounds":"[938,95][1054,95]","clickable":false}
+{"id":73,"parent":71,"depth":11,"content_desc":"更多选项","resource_id":"com.sec.android.app.launcher:id/more_icon_imageview","class":"ImageButton","bounds":"[938,95][1054,211]","clickable":true}
+{"id":74,"parent":9,"depth":6,"resource_id":"com.sec.android.app.launcher:id/apps_page_indicator","class":"FrameLayout","bounds":"[0,2197][1080,2247]","clickable":false}
+{"id":75,"parent":74,"depth":7,"class":"LinearLayout","bounds":"[0,2197][1080,2247]","clickable":false}
+{"id":76,"parent":75,"depth":8,"content_desc":"第 1 页，共 3 页","class":"FrameLayout","bounds":"[459,2197][513,2247]","clickable":true}
+{"id":77,"parent":76,"depth":9,"resource_id":"com.sec.android.app.launcher:id/inactive","class":"ImageView","bounds":"[461,2197][511,2247]","clickable":false}
+{"id":78,"parent":76,"depth":9,"resource_id":"com.sec.android.app.launcher:id/active","class":"ImageView","bounds":"[461,2197][511,2247]","clickable":false}
+{"id":79,"parent":75,"depth":8,"content_desc":"第 2 页，共 3 页","class":"FrameLayout","bounds":"[513,2197][567,2247]","clickable":true}
+{"id":80,"parent":79,"depth":9,"resource_id":"com.sec.android.app.launcher:id/inactive","class":"ImageView","bounds":"[515,2197][565,2247]","clickable":false}
+{"id":81,"parent":79,"depth":9,"resource_id":"com.sec.android.app.launcher:id/active","class":"ImageView","bounds":"[515,2197][565,2247]","clickable":false}
+{"id":82,"parent":75,"depth":8,"content_desc":"第 3 页，共 3 页, 当前已是最后一页。","class":"FrameLayout","bounds":"[567,2197][621,2247]","clickable":true}
+{"id":83,"parent":82,"depth":9,"resource_id":"com.sec.android.app.launcher:id/inactive","class":"ImageView","bounds":"[569,2197][619,2247]","clickable":false}
+{"id":84,"parent":82,"depth":9,"resource_id":"com.sec.android.app.launcher:id/active","class":"ImageView","bounds":"[569,2197][619,2247]","clickable":false}

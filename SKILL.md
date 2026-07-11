@@ -70,14 +70,16 @@ fi
 
 | Need | Command | Latency |
 |------|---------|---------|
-| Both visual + element positions | `phonefast --daemon observe` | ~148ms |
-| Visual only (show user) | `phonefast --daemon screenshot <path>` | ~167ms |
-| Elements only (coordinates/text) | `phonefast --daemon ui` | ~191ms |
+| Both visual + element positions | `phonefast observe` | ~148ms |
+| Visual only (show user) | `phonefast screenshot <path>` | ~167ms |
+| Elements only (flat list) | `phonefast ui` | ~191ms |
+| Elements with hierarchy info | `phonefast ui --format flatref` | ~191ms |
 
 **When to use each:**
 - `observe` → New/unknown screen, need to locate elements, confirm action result
-- `screenshot` → User asked for an image, or you just need a quick visual check
-- `get_ui_elements` → You already know the layout, just need updated coordinates or find a specific element
+- `screenshot` → User asked for an image, or just need a quick visual check
+- `ui` → Simple screen layout, find elements by index
+- `ui --format flatref` → Complex nested layout, need parent-child relationships, identify interactive vs decorative elements
 - **Skip all** if user gave exact coordinates or a system command (back/home/key)
 
 ### 4. Execute action
@@ -316,12 +318,13 @@ After screen-changing actions, run `observe` again to verify the result and get 
 
 ## Key rules
 
-1. **Choose the right info command** — `observe` for new/unknown screens, `screenshot`/`get_ui_elements` when you only need one, skip when coordinates are known.
-2. **Re-observe after actions** — Confirm the screen changed as expected.
-3. **Calculate tap center** — From bounds: `(left+right)/2, (top+bottom)/2`.
-4. **Wait after app launches** — 1–3s before observing.
-5. **Don't hardcode flows** — Read current UI tree and adapt.
-6. **Always use `--daemon`** — Avoids cold start overhead.
+1. **Choose the right info command** — `observe` for new/unknown screens, `screenshot`/`ui` when you only need one, skip when coordinates are known.
+2. **Use `--format flatref` for complex layouts** — The `|`-separated columns give full hierarchy; column 3 (`[flags]`) tells you what's interactive vs decorative.
+3. **Re-observe after actions** — Confirm the screen changed as expected.
+4. **Calculate tap center** — From bounds: `(left+right)/2, (top+bottom)/2`.
+5. **Wait after app launches** — 1–3s before observing.
+6. **Don't hardcode flows** — Read current UI tree and adapt.
+7. **Skip `--daemon` flag** — Current version uses daemon by default, no flag needed.
 
 ---
 
@@ -344,6 +347,80 @@ After screen-changing actions, run `observe` again to verify the result and get 
 - **`observe`** → Image + structured UI tree. Analyze for screen context, find elements by `text`, `bounds`, `clickable`, `resource-id`.
 - **`ui`** → Elements with `bounds=[l,t,r,b]`, `text`, `content-desc`, `clickable`, `class`.
 - **`screenshot [file]`** → Saved to file. `screenshot` (no args) → base64 data URI to stdout.
+
+### Hierarchical UI formats (--format flag)
+
+For screens with complex nested layouts, use `--format flatref` to get full hierarchy information:
+
+```bash
+phonefast ui --format flatref          # 4-column pipe-separated hierarchy
+phonefast ui --format jsonl            # JSON Lines (highest parse accuracy)
+phonefast ui --format simplexml        # Nested XML
+phonefast ui --format yml              # YAML tree
+phonefast ui                           # Legacy flat format (default)
+```
+
+#### flatref format
+
+Four semantic columns separated by ` | ` for unambiguous LLM parsing:
+
+```
+#N <identity> | bounds=[l,t][r,b] | [flags] | depth=N parent=#M
+```
+
+| Column | Content | Meaning |
+|--------|---------|---------|
+| 1 身份 | `#N text="..." desc="..." id="..." (Class)` | What the element is |
+| 2 位置 | `bounds=[l,t][r,b]` | Where on screen |
+| 3 状态 | `[clickable] [focused] [selected] [disabled]` | Interactive state (empty = decorative) |
+| 4 层级 | `depth=N parent=#M` | Tree depth + parent node ID |
+
+**Examples:**
+```
+#0 (FrameLayout) | bounds=[0,0][1080,2400] | | depth=0 parent=#-1
+#19 (ImageButton) | bounds=[0,0][96,96] | [clickable] | depth=3 parent=#18
+#21 text="安装" (TextView) | bounds=[899,432][975,491] | | depth=4 parent=#20
+#54 (FrameLayout) | bounds=[335,480][744,750] | [clickable] [focused] | depth=8 parent=#53
+```
+
+**How to parse:**
+- **Split by ` | `** to get 4 fields per line
+- **`#N`** is the element ID — referenced by `parent=#N` in other elements
+- **`depth=N`** — root is 0, deeper = more nested
+- **`parent=#M`** — trace up to understand containment: button `#21` is inside `#20` is inside `#19`...
+- **Column 3 empty** (`| |`) → the element is a layout container, not directly interactive
+- **Column 3 has tags** → element is interactive; use `[clickable]` to identify tap targets
+- **Center tap point**: `x=(l+r)/2, y=(t+b)/2` from `bounds=[l,t][r,b]`
+
+**Parent chain traversal** (find what contains this element):
+```
+#21 text="安装" ... depth=4 parent=#20
+→ #20 desc="安装" ... depth=3 parent=#19  
+→ #19 ... [clickable] depth=2 parent=#17
+→ #17 (LinearLayout) depth=1 parent=#0
+→ #0 (FrameLayout) depth=0 parent=#-1  ← root
+```
+So the "安装" button is inside a clickable container `#19`.
+
+#### jsonl format
+
+Each element is a single valid JSON line — highest parse accuracy for LLMs:
+
+```json
+{"id":19,"parent":17,"depth":2,"class":"View","bounds":"[857,399][1017,525]","clickable":true}
+{"id":20,"parent":19,"depth":3,"content_desc":"安装","class":"View","bounds":"[899,432][975,491]","clickable":false}
+```
+
+Fields: `id`, `parent`, `depth`, `text`, `content_desc`, `resource_id`, `class`, `bounds`, `clickable`, `enabled`, `focused`, `selected`.
+
+#### Choosing a format
+
+| Need | Format |
+|------|--------|
+| Simple screen, few elements | flat (default, no flag) |
+| Complex nested layout, need hierarchy | `flatref` |
+| Need guaranteed parse accuracy | `jsonl` |
+| Human reading or debugging | `simplexml` or `yml` |
 
 ---
 

@@ -10,7 +10,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/asticode/go-astiav"
@@ -18,10 +17,13 @@ import (
 
 // astiavDecoder implements Decoder using CGO bindings to FFmpeg's libavcodec
 // and libswscale.
+//
+// Not safe for concurrent use — the caller (DeviceActor) guarantees
+// single-goroutine access. No mutex needed.
 type astiavDecoder struct {
-	mu     sync.Mutex
-	codec  *astiav.Codec
-	swsCtx *astiav.SoftwareScaleContext
+	codec    *astiav.Codec
+	codecCtx *astiav.CodecContext // persistent codec context, reused across decodes
+	swsCtx   *astiav.SoftwareScaleContext
 
 	// Cached dimensions so we know when to recreate the scaler.
 	width  int
@@ -44,11 +46,14 @@ func NewDecoder(width, height int) (Decoder, error) {
 	}, nil
 }
 
-// newCodecCtx creates and opens a fresh H.264 codec context.
-// The context is recreated per-decode because we flush after each frame
-// (which puts the decoder in EOF state), and go-astiav does not expose
-// avcodec_flush_buffers() to reset it.
-func (d *astiavDecoder) newCodecCtx() (*astiav.CodecContext, error) {
+// getCodecCtx returns the persistent codec context, initializing it lazily.
+// Since we only decode single IDR keyframes (no flush needed between frames),
+// the same context can be reused indefinitely — the decoder naturally resets
+// its reference frames when it encounters a new IDR.
+func (d *astiavDecoder) getCodecCtx() (*astiav.CodecContext, error) {
+	if d.codecCtx != nil {
+		return d.codecCtx, nil
+	}
 	codecCtx := astiav.AllocCodecContext(d.codec)
 	if codecCtx == nil {
 		return nil, fmt.Errorf("alloc codec context failed")
@@ -59,13 +64,13 @@ func (d *astiavDecoder) newCodecCtx() (*astiav.CodecContext, error) {
 		codecCtx.Free()
 		return nil, fmt.Errorf("open codec: %w", err)
 	}
+	d.codecCtx = codecCtx
 	return codecCtx, nil
 }
 
 // Decode converts a raw AnnexB H.264 keyframe to a PNG or JPEG image.
+// Not safe for concurrent use — the caller guarantees single-goroutine access.
 func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageFormat) ([]byte, int, int, string, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	if len(keyframe) == 0 {
 		return nil, 0, 0, "", errors.New("avcodec: empty keyframe")
@@ -73,14 +78,14 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 
 	tTotal := time.Now()
 
-	// Create a fresh codec context per decode because we can't reset the
-	// decoder state after flushing (no avcodec_flush_buffers in go-astiav).
+	// Create/retrieve persistent codec context.
+	// Single IDR keyframe decode: no flush needed — the decoder resets its
+	// reference frames naturally on each new IDR.
 	t0 := time.Now()
-	codecCtx, err := d.newCodecCtx()
+	codecCtx, err := d.getCodecCtx()
 	if err != nil {
 		return nil, 0, 0, "", fmt.Errorf("%w: %v", ErrNotAvailable, err)
 	}
-	defer codecCtx.Free()
 	tCtx := time.Since(t0)
 
 	// ---- Step 1: determine effective dimensions & recreate scaler if needed ----
@@ -109,14 +114,11 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 		return nil, 0, 0, "", newDecodeError("send_packet", sendErr)
 	}
 	pkt.Free()
-
-	// ---- Step 3: flush decoder to emit buffered frames ----
-	nullPkt := astiav.AllocPacket()
-	codecCtx.SendPacket(nullPkt)
-	nullPkt.Free()
 	tSend := time.Since(t0)
 
-	// ---- Step 4: receive decoded frame ----
+	// ---- Step 3: receive decoded frame ----
+	// Single keyframe decode: no null-packet flush needed. IDR frames
+	// are output immediately and the decoder is ready for the next packet.
 	t0 = time.Now()
 	var frame *astiav.Frame
 	for {
@@ -143,7 +145,7 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 	defer frame.Free()
 	tRecv := time.Since(t0)
 
-	// ---- Step 5: scale YUV420P → RGBA ----
+	// ---- Step 4: scale YUV420P → RGBA ----
 	t0 = time.Now()
 	rgbaFrame, err := d.scaleToRGBA(frame, effectiveW, effectiveH)
 	if err != nil {
@@ -152,7 +154,7 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 	defer rgbaFrame.Free()
 	tScale := time.Since(t0)
 
-	// ---- Step 6: convert to Go image.Image ----
+	// ---- Step 5: convert to Go image.Image ----
 	t0 = time.Now()
 	img, err := d.frameToImage(rgbaFrame)
 	if err != nil {
@@ -161,7 +163,7 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 	outW, outH := rgbaFrame.Width(), rgbaFrame.Height()
 	tToImg := time.Since(t0)
 
-	// ---- Step 7: encode to PNG or JPEG ----
+	// ---- Step 6: encode to PNG or JPEG ----
 	t0 = time.Now()
 	var buf bytes.Buffer
 	switch format {
@@ -182,10 +184,12 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 	return buf.Bytes(), outW, outH, format.String(), nil
 }
 
-// Close releases all resources.
+// Close releases all resources. Not safe for concurrent use.
 func (d *astiavDecoder) Close() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	if d.codecCtx != nil {
+		d.codecCtx.Free()
+		d.codecCtx = nil
+	}
 	if d.swsCtx != nil {
 		d.swsCtx.Free()
 		d.swsCtx = nil

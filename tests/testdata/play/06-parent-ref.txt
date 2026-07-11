@@ -1,0 +1,74 @@
+[0] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[1] parent=-1 text="android:id/content" (FrameLayout)
+[2] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[3] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[4] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (ComposeView)
+[5] parent=-1 text="为您推荐" (TextView)
+[6] parent=-1 text="" (View) [clickable]
+[7] parent=-1 text="热门排行榜" (TextView)
+[8] parent=-1 text="" (View) [clickable]
+[9] parent=-1 text="儿童" (TextView)
+[10] parent=-1 text="" (View) [clickable]
+[11] parent=-1 text="类别" (TextView)
+[12] parent=-1 text="升级赛事体验，解锁更多精彩" (TextView)
+[13] parent=-1 text="" (View) [clickable]
+[14] parent=-1 text="为你的球队呐喊助威，与全世界一起高歌" (TextView)
+[15] parent=-1 text="" (View) [clickable]
+[16] parent=-1 text="Smule: 全民K歌神器 - 唱歌录制分享平台
+Smule
+12 岁以上
+星级：4.4
+" (View)
+[17] parent=-1 text="" (View) [clickable]
+[18] parent=-1 text="安装" (View)
+[19] parent=-1 text="安装" (TextView)
+[20] parent=-1 text="包含内购商品" (TextView)
+[21] parent=-1 text="" (View) [clickable]
+[22] parent=-1 text="火热进行中" (TextView)
+[23] parent=-1 text="共迎全球最大的体育赛事" (TextView)
+[24] parent=-1 text="2026 国际足联世界杯™ 重磅开幕" (TextView)
+[25] parent=-1 text="赞助商广告" (TextView)
+[26] parent=-1 text="为您推荐" (TextView)
+[27] parent=-1 text="更多选项" (View) [clickable]
+[28] parent=-1 text="" (View) [clickable]
+[29] parent=-1 text="Keeta - 外卖送递及自取
+餐饮美食
+外卖
+已安装
+" (View)
+[30] parent=-1 text="" (View) [clickable]
+[31] parent=-1 text="foodpanda - 美食外卖及生鲜杂货外送服务
+餐饮美食
+外卖
+星级：4.2
+" (View)
+[32] parent=-1 text="" (View) [clickable]
+[33] parent=-1 text="他TA星球-語音連結的溫暖宇宙
+社交
+人脉
+星级：3.3
+" (View)
+[34] parent=-1 text="" (View) [clickable]
+[35] parent=-1 text="" (View) [clickable]
+[36] parent=-1 text="" (View) [clickable]
+[37] parent=-1 text="" (View) [clickable]
+[38] parent=-1 text="与“个性化推荐”相符的更多搜索结果" (Button) [clickable]
+[39] parent=-1 text="" (View) [clickable]
+[40] parent=-1 text="" (View) [clickable]
+[41] parent=-1 text="显示通知和优惠。有 6 个新通知。" (View)
+[42] parent=-1 text="" (View) [clickable]
+[43] parent=-1 text="目前的登录者是yuanhao li yuanhaol281@gmail.com
+账号和设置。" (FrameLayout) [clickable]
+[44] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[45] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (ImageView)
+[46] parent=-1 text="" (View) [clickable]
+[47] parent=-1 text="游戏" (TextView)
+[48] parent=-1 text="应用" (TextView)
+[49] parent=-1 text="" (View) [clickable]
+[50] parent=-1 text="搜索" (TextView)
+[51] parent=-1 text="" (View) [clickable]
+[52] parent=-1 text="图书" (TextView)
+[53] parent=-1 text="" (View) [clickable]
+[54] parent=-1 text="我" (TextView)
+[55] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)
+[56] parent=-1 text="com.android.vending:id/0_resource_name_obfuscated" (FrameLayout)

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<node index="0" class="FrameLayout" bounds="[0,0][1080,2400]">
+  <node index="1" class="LinearLayout" bounds="[0,0][1080,2400]">
+    <node index="2" class="FrameLayout" resource-id="android:id/content" bounds="[0,0][1080,2400]">
+      <node index="3" class="FrameLayout" resource-id="com.sec.android.app.launcher:id/launcher" bounds="[0,0][1080,2400]">
+        <node index="4" class="View" resource-id="com.sec.android.app.launcher:id/capture_blur_view" bounds="[0,0][1080,2400]" />
+        <node index="5" class="View" resource-id="com.sec.android.app.launcher:id/real_wallpaper_blur_view" bounds="[0,0][1080,2400]" />
+        <node index="6" class="View" resource-id="com.sec.android.app.launcher:id/scrim_view" bounds="[0,0][1080,2400]" />
+        <node index="7" class="FrameLayout" resource-id="com.sec.android.app.launcher:id/drag_layer" bounds="[0,0][1080,2400]">
+          <node index="8" class="FrameLayout" resource-id="com.sec.android.app.launcher:id/defalt_page_icon_layout" bounds="[0,0][1080,2400]" />
+          <node index="9" class="FrameLayout" resource-id="com.sec.android.app.launcher:id/apptray_view" bounds="[0,0][1080,2400]" focused="True">
+            <node index="10" class="PagedView" resource-id="com.sec.android.app.launcher:id/apps_content" bounds="[0,0][1080,2400]">
+              <node index="11" class="ViewGroup" bounds="[0,80][-1044,2170]">
+                <node index="12" class="ViewGroup" bounds="[0,272][-1045,2170]">
+                  <node index="13" class="TextView" text="Samsung" content-desc="Samsung, 文件夹" resource-id="com.sec.android.app.launcher:id/home_icon" bounds="[0,272][-1801,646]" clickable="True" />
+                  <node index="14" class="TextView" text="Google" content-desc="Google, 文件夹" resource-id="com.sec.android.app.launcher:id/home_icon" bounds="[0,272][-1549,646]" clickable="True" />
+                  <node index="15" class="TextView" text="OneDrive" content-desc="OneDrive" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,272][-1297,646]" clickable="True" />
+                  <node index="16" class="TextView" text="Play 商店" content-desc="Play 商店, 1 条通知" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,272][-1045,646]" clickable="True" />
+                  <node index="17" class="TextView" text="应用商店" content-desc="应用商店, 1 条通知" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-1801,1026]" clickable="True" />
+                  <node index="18" class="TextView" text="电话" content-desc="电话" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-1549,1026]" clickable="True" />
+                  <node index="19" class="TextView" text="信息" content-desc="信息" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-1297,1026]" clickable="True" />
+                  <node index="20" class="TextView" text="相机" content-desc="相机" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-1045,1026]" clickable="True" />
+                  <node index="21" class="TextView" text="相册" content-desc="相册" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-1801,1406]" clickable="True" />
+                  <node index="22" class="TextView" text="时钟" content-desc="时钟" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-1549,1406]" clickable="True" />
+                  <node index="23" class="TextView" text="联系人" content-desc="联系人" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-1297,1406]" clickable="True" />
+                  <node index="24" class="TextView" text="设置" content-desc="设置" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-1045,1406]" clickable="True" />
+                  <node index="25" class="TextView" text="日历" content-desc="日历" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-1801,1786]" clickable="True" />
+                  <node index="26" class="TextView" text="游戏中心" content-desc="游戏中心" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-1549,1786]" clickable="True" />
+                  <node index="27" class="TextView" text="Samsung Free" content-desc="Samsung Free" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-1297,1786]" clickable="True" />
+                  <node index="28" class="TextView" text="大象" content-desc="大象" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-1045,1786]" clickable="True" />
+                  <node index="29" class="TextView" text="Meet" content-desc="Meet" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1792][-1801,2166]" clickable="True" />
+                </node>
+              </node>
+              <node index="30" class="ViewGroup" bounds="[0,80][-1,2170]">
+                <node index="31" class="ViewGroup" bounds="[0,272][-2,2170]">
+                  <node index="32" class="TextView" text="TaskFlow" content-desc="TaskFlow" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,272][-758,646]" clickable="True" />
+                  <node index="33" class="TextView" text="实时海拔计" content-desc="实时海拔计" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,272][-506,646]" clickable="True" />
+                  <node index="34" class="TextView" text="Testing" content-desc="Testing" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,272][-254,646]" clickable="True" />
+                  <node index="35" class="TextView" text="Echo" content-desc="Echo" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,272][-2,646]" clickable="True" />
+                  <node index="36" class="TextView" text="像素漫游" content-desc="像素漫游" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-758,1026]" clickable="True" />
+                  <node index="37" class="TextView" text="素数独" content-desc="素数独" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-506,1026]" clickable="True" />
+                  <node index="38" class="TextView" text="EchoLang" content-desc="EchoLang" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-254,1026]" clickable="True" />
+                  <node index="39" class="TextView" text="悬浮文本" content-desc="悬浮文本" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,652][-2,1026]" clickable="True" />
+                  <node index="40" class="TextView" text="WordPopper" content-desc="WordPopper" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-758,1406]" clickable="True" />
+                  <node index="41" class="TextView" text="Trustamp" content-desc="Trustamp" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-506,1406]" clickable="True" />
+                  <node index="42" class="TextView" text="Pony Shotter" content-desc="Pony Shotter" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-254,1406]" clickable="True" />
+                  <node index="43" class="TextView" text="Nomic阅读" content-desc="Nomic阅读" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1032][-2,1406]" clickable="True" />
+                  <node index="44" class="TextView" text="Celestial Oracle" content-desc="Celestial Oracle" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-758,1786]" clickable="True" />
+                  <node index="45" class="TextView" text="Matrix To-Do" content-desc="Matrix To-Do" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-506,1786]" clickable="True" />
+                  <node index="46" class="TextView" text="水印工具" content-desc="水印工具" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-254,1786]" clickable="True" />
+                  <node index="47" class="TextView" text="FakeChatForWhatsApp" content-desc="FakeChatForWhatsApp" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1412][-2,1786]" clickable="True" />
+                  <node index="48" class="TextView" text="LogLogic" content-desc="LogLogic" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1792][-758,2166]" clickable="True" />
+                  <node index="49" class="TextView" text="AA Calculator" content-desc="AA Calculator" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1792][-506,2166]" clickable="True" />
+                  <node index="50" class="TextView" text="WhatsApp" content-desc="WhatsApp" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1792][-254,2166]" clickable="True" />
+                  <node index="51" class="TextView" text="Typeless" content-desc="Typeless" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[0,1792][-2,2166]" clickable="True" />
+                </node>
+              </node>
+              <node index="52" class="ViewGroup" bounds="[38,80][1042,2170]">
+                <node index="53" class="ViewGroup" bounds="[39,272][1041,2170]">
+                  <node index="54" class="TextView" text="Life Palmistry" content-desc="Life Palmistry" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[39,272][285,646]" clickable="True" />
+                  <node index="55" class="TextView" text="Nebula" content-desc="Nebula" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[291,272][537,646]" clickable="True" />
+                  <node index="56" class="TextView" text="Manus" content-desc="Manus" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[543,272][789,646]" clickable="True" />
+                  <node index="57" class="TextView" text="Instagram" content-desc="Instagram" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[795,272][1041,646]" clickable="True" />
+                  <node index="58" class="TextView" text="MNN Chat" content-desc="MNN Chat" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[39,652][285,1026]" clickable="True" />
+                  <node index="59" class="TextView" text="Keeta" content-desc="Keeta" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[291,652][537,1026]" clickable="True" />
+                  <node index="60" class="TextView" text="Leaks" content-desc="Leaks" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[543,652][789,1026]" clickable="True" />
+                  <node index="61" class="TextView" text="Lemon8" content-desc="Lemon8" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[795,652][1041,1026]" clickable="True" />
+                  <node index="62" class="TextView" text="FlClash" content-desc="FlClash, 1 条通知" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[39,1032][285,1406]" clickable="True" />
+                  <node index="63" class="TextView" text="Reddit" content-desc="Reddit" resource-id="com.sec.android.app.launcher:id/apps_icon" bounds="[291,1032][537,1406]" clickable="True" />
+                </node>
+              </node>
+            </node>
+            <node index="64" class="LinearLayout" resource-id="com.sec.android.app.launcher:id/apps_searchbar_container" bounds="[0,0][1080,227]">
+              <node index="65" class="RelativeLayout" resource-id="com.sec.android.app.launcher:id/app_search_wrapper" bounds="[0,80][1080,227]">
+                <node index="66" class="ImageView" resource-id="com.sec.android.app.launcher:id/app_search_bar_bg" bounds="[0,80][1080,227]" />
+                <node index="67" class="LinearLayout" bounds="[0,80][1080,227]">
+                  <node index="68" class="LinearLayout" resource-id="com.sec.android.app.launcher:id/app_search_edit_text_wrapper" bounds="[0,80][938,227]" clickable="True">
+                    <node index="69" class="TextView" text="搜索" resource-id="com.sec.android.app.launcher:id/app_search_edit_text" bounds="[26,96][938,211]" />
+                  </node>
+                  <node index="70" class="LinearLayout" resource-id="com.sec.android.app.launcher:id/app_search_more_button_wrapper" bounds="[938,80][1080,227]">
+                    <node index="71" class="FrameLayout" resource-id="com.sec.android.app.launcher:id/more_button_container" bounds="[938,95][1054,211]">
+                      <node index="72" class="View" resource-id="com.sec.android.app.launcher:id/support_sort_option" bounds="[938,95][1054,95]" />
+                      <node index="73" class="ImageButton" content-desc="更多选项" resource-id="com.sec.android.app.launcher:id/more_icon_imageview" bounds="[938,95][1054,211]" clickable="True" />
+                    </node>
+                  </node>
+                </node>
+              </node>
+            </node>
+            <node index="74" class="FrameLayout" resource-id="com.sec.android.app.launcher:id/apps_page_indicator" bounds="[0,2197][1080,2247]">
+              <node index="75" class="LinearLayout" bounds="[0,2197][1080,2247]">
+                <node index="76" class="FrameLayout" content-desc="第 1 页，共 3 页" bounds="[459,2197][513,2247]" clickable="True">
+                  <node index="77" class="ImageView" resource-id="com.sec.android.app.launcher:id/inactive" bounds="[461,2197][511,2247]" />
+                  <node index="78" class="ImageView" resource-id="com.sec.android.app.launcher:id/active" bounds="[461,2197][511,2247]" />
+                </node>
+                <node index="79" class="FrameLayout" content-desc="第 2 页，共 3 页" bounds="[513,2197][567,2247]" clickable="True">
+                  <node index="80" class="ImageView" resource-id="com.sec.android.app.launcher:id/inactive" bounds="[515,2197][565,2247]" />
+                  <node index="81" class="ImageView" resource-id="com.sec.android.app.launcher:id/active" bounds="[515,2197][565,2247]" />
+                </node>
+                <node index="82" class="FrameLayout" content-desc="第 3 页，共 3 页, 当前已是最后一页。" bounds="[567,2197][621,2247]" clickable="True">
+                  <node index="83" class="ImageView" resource-id="com.sec.android.app.launcher:id/inactive" bounds="[569,2197][619,2247]" />
+                  <node index="84" class="ImageView" resource-id="com.sec.android.app.launcher:id/active" bounds="[569,2197][619,2247]" />
+                </node>
+              </node>
+            </node>
+          </node>
+        </node>
+      </node>
+    </node>
+  </node>
+</node>

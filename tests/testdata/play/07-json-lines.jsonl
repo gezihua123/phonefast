@@ -1,0 +1,57 @@
+{"i": 0, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 1, "t": "android:id/content", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 2, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 3, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 4, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "ComposeView", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 5, "t": "为您推荐", "c": "TextView", "p": -1, "dp": 0, "b": [58, 307, 182, 352], "x": 120, "y": 329, "clk": false, "en": true}
+{"i": 6, "t": "", "c": "View", "p": -1, "dp": 0, "b": [240, 279, 480, 387], "x": 360, "y": 333, "clk": true, "en": true}
+{"i": 7, "t": "热门排行榜", "c": "TextView", "p": -1, "dp": 0, "b": [283, 307, 438, 352], "x": 360, "y": 329, "clk": false, "en": true}
+{"i": 8, "t": "", "c": "View", "p": -1, "dp": 0, "b": [480, 279, 720, 387], "x": 600, "y": 333, "clk": true, "en": true}
+{"i": 9, "t": "儿童", "c": "TextView", "p": -1, "dp": 0, "b": [569, 307, 631, 352], "x": 600, "y": 329, "clk": false, "en": true}
+{"i": 10, "t": "", "c": "View", "p": -1, "dp": 0, "b": [720, 279, 960, 387], "x": 840, "y": 333, "clk": true, "en": true}
+{"i": 11, "t": "类别", "c": "TextView", "p": -1, "dp": 0, "b": [809, 307, 871, 352], "x": 840, "y": 329, "clk": false, "en": true}
+{"i": 12, "t": "升级赛事体验，解锁更多精彩", "c": "TextView", "p": -1, "dp": 0, "b": [54, 423, 574, 481], "x": 314, "y": 452, "clk": false, "en": true}
+{"i": 13, "t": "", "c": "View", "p": -1, "dp": 0, "b": [55, 517, 905, 1155], "x": 480, "y": 836, "clk": true, "en": true}
+{"i": 14, "t": "为你的球队呐喊助威，与全世界一起高歌", "c": "TextView", "p": -1, "dp": 0, "b": [82, 912, 802, 970], "x": 442, "y": 941, "clk": false, "en": true}
+{"i": 15, "t": "", "c": "View", "p": -1, "dp": 0, "b": [55, 988, 905, 1155], "x": 480, "y": 1071, "clk": true, "en": true}
+{"i": 16, "t": "Smule: 全民K歌神器 - 唱歌录制分享平台\nSmule\n12 岁以上\n星级：4.4\n", "c": "View", "p": -1, "dp": 0, "b": [186, 1024, 744, 1120], "x": 465, "y": 1072, "clk": false, "en": true}
+{"i": 17, "t": "", "c": "View", "p": -1, "dp": 0, "b": [771, 1002, 905, 1110], "x": 838, "y": 1056, "clk": true, "en": true}
+{"i": 18, "t": "安装", "c": "View", "p": -1, "dp": 0, "b": [807, 1033, 869, 1078], "x": 838, "y": 1055, "clk": false, "en": true}
+{"i": 19, "t": "安装", "c": "TextView", "p": -1, "dp": 0, "b": [807, 1033, 869, 1078], "x": 838, "y": 1055, "clk": false, "en": true}
+{"i": 20, "t": "包含内购商品", "c": "TextView", "p": -1, "dp": 0, "b": [783, 1087, 894, 1119], "x": 838, "y": 1103, "clk": false, "en": true}
+{"i": 21, "t": "", "c": "View", "p": -1, "dp": 0, "b": [933, 517, 960, 1155], "x": 946, "y": 836, "clk": true, "en": true}
+{"i": 22, "t": "火热进行中", "c": "TextView", "p": -1, "dp": 0, "b": [969, 544, 1041, 583], "x": 1005, "y": 563, "clk": false, "en": true}
+{"i": 23, "t": "共迎全球最大的体育赛事", "c": "TextView", "p": -1, "dp": 0, "b": [969, 1000, 1041, 1054], "x": 1005, "y": 1027, "clk": false, "en": true}
+{"i": 24, "t": "2026 国际足联世界杯™ 重磅开幕", "c": "TextView", "p": -1, "dp": 0, "b": [969, 1054, 1041, 1093], "x": 1005, "y": 1073, "clk": false, "en": true}
+{"i": 25, "t": "赞助商广告", "c": "TextView", "p": -1, "dp": 0, "b": [54, 1238, 176, 1274], "x": 115, "y": 1256, "clk": false, "en": true}
+{"i": 26, "t": "为您推荐", "c": "TextView", "p": -1, "dp": 0, "b": [206, 1227, 366, 1285], "x": 286, "y": 1256, "clk": false, "en": true}
+{"i": 27, "t": "更多选项", "c": "View", "p": -1, "dp": 0, "b": [816, 1202, 924, 1310], "x": 870, "y": 1256, "clk": true, "en": true}
+{"i": 28, "t": "", "c": "View", "p": -1, "dp": 0, "b": [41, 1321, 919, 1525], "x": 480, "y": 1423, "clk": true, "en": true}
+{"i": 29, "t": "Keeta - 外卖送递及自取\n餐饮美食\n外卖\n已安装\n", "c": "View", "p": -1, "dp": 0, "b": [217, 1339, 905, 1483], "x": 561, "y": 1411, "clk": false, "en": true}
+{"i": 30, "t": "", "c": "View", "p": -1, "dp": 0, "b": [41, 1525, 919, 1728], "x": 480, "y": 1626, "clk": true, "en": true}
+{"i": 31, "t": "foodpanda - 美食外卖及生鲜杂货外送服务\n餐饮美食\n外卖\n星级：4.2\n", "c": "View", "p": -1, "dp": 0, "b": [217, 1543, 905, 1686], "x": 561, "y": 1614, "clk": false, "en": true}
+{"i": 32, "t": "", "c": "View", "p": -1, "dp": 0, "b": [41, 1728, 919, 1931], "x": 480, "y": 1829, "clk": true, "en": true}
+{"i": 33, "t": "他TA星球-語音連結的溫暖宇宙\n社交\n人脉\n星级：3.3\n", "c": "View", "p": -1, "dp": 0, "b": [217, 1746, 905, 1889], "x": 561, "y": 1817, "clk": false, "en": true}
+{"i": 34, "t": "", "c": "View", "p": -1, "dp": 0, "b": [919, 1321, 960, 1525], "x": 939, "y": 1423, "clk": true, "en": true}
+{"i": 35, "t": "", "c": "View", "p": -1, "dp": 0, "b": [919, 1525, 960, 1728], "x": 939, "y": 1626, "clk": true, "en": true}
+{"i": 36, "t": "", "c": "View", "p": -1, "dp": 0, "b": [919, 1728, 960, 1931], "x": 939, "y": 1829, "clk": true, "en": true}
+{"i": 37, "t": "", "c": "View", "p": -1, "dp": 0, "b": [0, 1931, 960, 1944], "x": 480, "y": 1937, "clk": true, "en": true}
+{"i": 38, "t": "与“个性化推荐”相符的更多搜索结果", "c": "Button", "p": -1, "dp": 0, "b": [813, 1942, 921, 1944], "x": 867, "y": 1943, "clk": true, "en": true}
+{"i": 39, "t": "", "c": "View", "p": -1, "dp": 0, "b": [126, 153, 689, 279], "x": 407, "y": 216, "clk": true, "en": true}
+{"i": 40, "t": "", "c": "View", "p": -1, "dp": 0, "b": [689, 162, 797, 270], "x": 743, "y": 216, "clk": true, "en": true}
+{"i": 41, "t": "显示通知和优惠。有 6 个新通知。", "c": "View", "p": -1, "dp": 0, "b": [716, 189, 770, 243], "x": 743, "y": 216, "clk": false, "en": true}
+{"i": 42, "t": "", "c": "View", "p": -1, "dp": 0, "b": [797, 162, 906, 271], "x": 851, "y": 216, "clk": true, "en": true}
+{"i": 43, "t": "目前的登录者是yuanhao li yuanhaol281@gmail.com\n账号和设置。", "c": "FrameLayout", "p": -1, "dp": 0, "b": [797, 162, 906, 271], "x": 851, "y": 216, "clk": true, "en": true}
+{"i": 44, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "FrameLayout", "p": -1, "dp": 0, "b": [797, 162, 906, 271], "x": 851, "y": 216, "clk": false, "en": true}
+{"i": 45, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "ImageView", "p": -1, "dp": 0, "b": [802, 167, 901, 266], "x": 851, "y": 216, "clk": false, "en": true}
+{"i": 46, "t": "", "c": "View", "p": -1, "dp": 0, "b": [0, 1944, 192, 2088], "x": 96, "y": 2016, "clk": true, "en": true}
+{"i": 47, "t": "游戏", "c": "TextView", "p": -1, "dp": 0, "b": [68, 2037, 124, 2076], "x": 96, "y": 2056, "clk": false, "en": true}
+{"i": 48, "t": "应用", "c": "TextView", "p": -1, "dp": 0, "b": [260, 2037, 316, 2076], "x": 288, "y": 2056, "clk": false, "en": true}
+{"i": 49, "t": "", "c": "View", "p": -1, "dp": 0, "b": [384, 1944, 576, 2088], "x": 480, "y": 2016, "clk": true, "en": true}
+{"i": 50, "t": "搜索", "c": "TextView", "p": -1, "dp": 0, "b": [452, 2037, 508, 2076], "x": 480, "y": 2056, "clk": false, "en": true}
+{"i": 51, "t": "", "c": "View", "p": -1, "dp": 0, "b": [576, 1944, 768, 2088], "x": 672, "y": 2016, "clk": true, "en": true}
+{"i": 52, "t": "图书", "c": "TextView", "p": -1, "dp": 0, "b": [644, 2037, 700, 2076], "x": 672, "y": 2056, "clk": false, "en": true}
+{"i": 53, "t": "", "c": "View", "p": -1, "dp": 0, "b": [768, 1944, 960, 2088], "x": 864, "y": 2016, "clk": true, "en": true}
+{"i": 54, "t": "我", "c": "TextView", "p": -1, "dp": 0, "b": [850, 2037, 878, 2076], "x": 864, "y": 2056, "clk": false, "en": true}
+{"i": 55, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 153], "x": 480, "y": 76, "clk": false, "en": true}
+{"i": 56, "t": "com.android.vending:id/0_resource_name_obfuscated", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 153, 960, 153], "x": 480, "y": 153, "clk": false, "en": true}

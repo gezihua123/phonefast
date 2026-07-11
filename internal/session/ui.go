@@ -10,33 +10,52 @@ import (
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
-// GetUIElements retrieves UI hierarchy via the fast UI socket.
-// maxElements controls the element limit (sent to the server as "dump:N\0",
-// also truncated client-side as a safety net). Pass <= 0 for server default (500).
-//
-// UISocketHandler closes the connection after each response (try-with-resources
-// on the server side), so we must open a fresh connection per request.
-func (s *Session) GetUIElements(maxElements int) ([]protocol.UIElement, error) {
+// getUIConn returns the persistent UI socket connection, creating it lazily.
+// On error the stale connection is dropped so the next call re-dials.
+func (s *Session) getUIConn() (net.Conn, error) {
 	if s.uiPort == 0 {
 		return nil, fmt.Errorf("ui socket not configured")
 	}
-
-	// Fresh connection per request — server closes after each dump
+	if s.uiConn != nil {
+		return s.uiConn, nil
+	}
 	conn, err := net.DialTimeout("tcp",
 		fmt.Sprintf("localhost:%d", s.uiPort), 2*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("connect ui socket: %w", err)
 	}
-	defer conn.Close()
+	s.uiConn = conn
+	return conn, nil
+}
+
+// dropUIConn closes and discards the persistent UI connection.
+// The next getUIConn() call will create a fresh one.
+func (s *Session) dropUIConn() {
+	if s.uiConn != nil {
+		s.uiConn.Close()
+		s.uiConn = nil
+	}
+}
+
+// GetUIElements retrieves UI hierarchy via the fast UI socket.
+// maxElements controls the element limit (sent to the server as "dump:N\0",
+// also truncated client-side as a safety net). Pass <= 0 for server default (500).
+func (s *Session) GetUIElements(maxElements int) ([]protocol.UIElement, error) {
+	conn, err := s.getUIConn()
+	if err != nil {
+		return nil, err
+	}
 
 	conn.SetDeadline(time.Now().Add(3 * time.Second))
 
 	if err := protocol.WriteUIDumpRequest(conn, maxElements); err != nil {
+		s.dropUIConn()
 		return nil, fmt.Errorf("write ui dump request: %w", err)
 	}
 
 	resp, err := protocol.ReadUIDumpResponse(conn)
 	if err != nil {
+		s.dropUIConn()
 		return nil, fmt.Errorf("read ui dump response: %w", err)
 	}
 
@@ -51,29 +70,54 @@ func (s *Session) GetUIElements(maxElements int) ([]protocol.UIElement, error) {
 // Summary mode filters out layout containers on the server side.
 // maxElements controls the element limit. Pass <= 0 for server default (500).
 func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
-	if s.uiPort == 0 {
-		return nil, fmt.Errorf("ui socket not configured")
-	}
-
-	conn, err := net.DialTimeout("tcp",
-		fmt.Sprintf("localhost:%d", s.uiPort), 2*time.Second)
+	conn, err := s.getUIConn()
 	if err != nil {
-		return nil, fmt.Errorf("connect ui socket: %w", err)
+		return nil, err
 	}
-	defer conn.Close()
 
 	conn.SetDeadline(time.Now().Add(3 * time.Second))
 
 	if err := protocol.WriteUISummaryRequest(conn, maxElements); err != nil {
+		s.dropUIConn()
 		return nil, fmt.Errorf("write ui summary request: %w", err)
 	}
 
 	resp, err := protocol.ReadUIDumpResponse(conn)
 	if err != nil {
+		s.dropUIConn()
 		return nil, fmt.Errorf("read ui summary response: %w", err)
 	}
 
 	// Client-side truncation (server always returns its default max)
+	if maxElements > 0 && len(resp.Elements) > maxElements {
+		resp.Elements = resp.Elements[:maxElements]
+	}
+	return resp.Elements, nil
+}
+
+// GetUIFull retrieves the complete UI hierarchy with parent/depth metadata via the fast UI socket.
+// This mode returns ALL nodes (no filtering) for generating hierarchical formats
+// (jsonl, simplexml, flatref).
+// maxElements controls the element limit. Pass <= 0 for server default (500).
+func (s *Session) GetUIFull(maxElements int) ([]protocol.UIFullElement, error) {
+	conn, err := s.getUIConn()
+	if err != nil {
+		return nil, err
+	}
+
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+
+	if err := protocol.WriteUIFullRequest(conn, maxElements); err != nil {
+		s.dropUIConn()
+		return nil, fmt.Errorf("write ui full request: %w", err)
+	}
+
+	resp, err := protocol.ReadUIFullResponse(conn)
+	if err != nil {
+		s.dropUIConn()
+		return nil, fmt.Errorf("read ui full response: %w", err)
+	}
+
 	if maxElements > 0 && len(resp.Elements) > maxElements {
 		resp.Elements = resp.Elements[:maxElements]
 	}

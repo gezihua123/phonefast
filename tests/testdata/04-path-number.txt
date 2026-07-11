@@ -1,0 +1,18 @@
+# UI 元素列表 — Android 手机屏幕 (设置 > 网络与互联网)
+# 屏幕分辨率: 1080×2400
+# 字段: index=编号 depth=层级(0=顶层) parent=父节点(-1=顶层)
+#       text=文本 class=控件类型 clickable=可点击
+
+Interactive elements on screen:
+[1] text="Wi‑Fi" (Preference) [clickable]
+  [1.1] text="HomeWiFi" (TextView)
+  [1.2] text="已连接" (TextView)
+[2] text="蓝牙" (Preference) [clickable]
+[3] text="SIM 卡" (Preference) [clickable]
+  [3.1] text="中国移动" (TextView)
+[4] text="流量用量" (Preference) [clickable]
+[5] text="热点与网络共享" (Preference) [clickable]
+  [5.1] text="Wi‑Fi 热点" (Preference) [clickable]
+    [5.1.1] text="已关闭 / 0 台设备" (TextView)
+  [5.2] text="USB 网络共享" (Switch) [clickable]
+[6] text="VPN" (Preference) [clickable] [disabled]

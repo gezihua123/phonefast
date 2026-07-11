@@ -244,12 +244,34 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
+	formatType := getFormatFromParams(req)
 	maxShow := getMaxElementsFromParams(req, 100)
 	collectMax := maxShow
 	if collectMax < 0 || collectMax > 500 {
 		collectMax = 0 // server default (500 for full, 100 for summary)
 	}
 	isSummary := getSummaryFromParams(req)
+
+	// Handle hierarchical formats via UIFormatter registry
+	if f := format.ByName(formatType); f != nil {
+		fullElements, err := sess.GetUIFull(collectMax)
+		if err != nil {
+			return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("get ui full: %v", err))
+		}
+		if maxShow > 0 && len(fullElements) > maxShow {
+			fullElements = fullElements[:maxShow]
+		}
+
+		formatted := f.Format(fullElements)
+		return newResultResponse(req.ID, map[string]any{
+			"elements":  fullElements,
+			"formatted": formatted,
+			"count":     len(fullElements),
+			"format":    formatType,
+		})
+	}
+
+	// Legacy flat format (no format specified or unknown format)
 	var elements []protocol.UIElement
 	var err error
 	if isSummary {
@@ -264,10 +286,10 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		}
 	}
 
-	formatted := format.ElementsForLLM(elements, maxShow, isSummary)
+	legacyFormatted := format.ElementsForLLM(elements, maxShow, isSummary)
 	return newResultResponse(req.ID, map[string]any{
 		"elements":  elements,
-		"formatted": formatted,
+		"formatted": legacyFormatted,
 		"count":     len(elements),
 	})
 }
@@ -557,6 +579,15 @@ func getMaxElementsFromParams(req *Request, defaultVal int) int {
 		return n
 	}
 	return defaultVal
+}
+
+func getFormatFromParams(req *Request) string {
+	params, err := parseParams(req.Params)
+	if err != nil {
+		return ""
+	}
+	v, _ := params["format"].(string)
+	return strings.ToLower(strings.TrimSpace(v))
 }
 
 func getSummaryFromParams(req *Request) bool {

@@ -1,0 +1,44 @@
+{"i": 0, "t": "android:id/content", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 1, "t": "com.google.android.apps.nexuslauncher:id/launcher", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 2, "t": "com.google.android.apps.nexuslauncher:id/drag_layer", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 3, "t": "com.google.android.apps.nexuslauncher:id/scrim_view", "c": "View", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 4, "t": "com.google.android.apps.nexuslauncher:id/workspace", "c": "ScrollView", "p": -1, "dp": 0, "b": [0, 0, 960, 2142], "x": 480, "y": 1071, "clk": false, "en": true}
+{"i": 5, "t": "com.google.android.apps.nexuslauncher:id/search_container_workspace", "c": "FrameLayout", "p": -1, "dp": 0, "b": [44, 178, 916, 400], "x": 480, "y": 289, "clk": false, "en": true}
+{"i": 6, "t": "com.google.android.apps.nexuslauncher:id/bc_smartspace_view", "c": "FrameLayout", "p": -1, "dp": 0, "b": [44, 178, 916, 400], "x": 480, "y": 289, "clk": false, "en": true}
+{"i": 7, "t": "资讯一览", "c": "ViewPager", "p": -1, "dp": 0, "b": [44, 178, 916, 400], "x": 480, "y": 289, "clk": false, "en": true}
+{"i": 8, "t": "com.google.android.apps.nexuslauncher:id/base_template_card_with_date", "c": "ViewGroup", "p": -1, "dp": 0, "b": [44, 178, 916, 400], "x": 480, "y": 289, "clk": true, "en": true}
+{"i": 9, "t": "com.google.android.apps.nexuslauncher:id/text_group", "c": "ViewGroup", "p": -1, "dp": 0, "b": [64, 221, 897, 357], "x": 480, "y": 289, "clk": false, "en": true}
+{"i": 10, "t": "7月9日周四", "c": "TextView", "p": -1, "dp": 0, "b": [64, 221, 262, 278], "x": 163, "y": 249, "clk": true, "en": true}
+{"i": 11, "t": "com.google.android.apps.nexuslauncher:id/smartspace_subtitle_group", "c": "ViewGroup", "p": -1, "dp": 0, "b": [64, 288, 897, 357], "x": 480, "y": 322, "clk": false, "en": true}
+{"i": 12, "t": "33°C", "c": "TextView", "p": -1, "dp": 0, "b": [64, 288, 188, 357], "x": 126, "y": 322, "clk": true, "en": true}
+{"i": 13, "t": "Play 商店", "c": "TextView", "p": -1, "dp": 0, "b": [44, 1413, 236, 1635], "x": 140, "y": 1524, "clk": true, "en": true}
+{"i": 14, "t": "Gmail", "c": "TextView", "p": -1, "dp": 0, "b": [271, 1413, 463, 1635], "x": 367, "y": 1524, "clk": true, "en": true}
+{"i": 15, "t": "相册", "c": "TextView", "p": -1, "dp": 0, "b": [498, 1413, 690, 1635], "x": 594, "y": 1524, "clk": true, "en": true}
+{"i": 16, "t": "YouTube", "c": "TextView", "p": -1, "dp": 0, "b": [725, 1413, 916, 1635], "x": 820, "y": 1524, "clk": true, "en": true}
+{"i": 17, "t": "Keeta", "c": "TextView", "p": -1, "dp": 0, "b": [990, 178, 960, 400], "x": 975, "y": 289, "clk": true, "en": true}
+{"i": 18, "t": "大象", "c": "TextView", "p": -1, "dp": 0, "b": [1217, 178, 960, 400], "x": 1088, "y": 289, "clk": true, "en": true}
+{"i": 19, "t": "Fake Location", "c": "TextView", "p": -1, "dp": 0, "b": [1444, 178, 960, 400], "x": 1202, "y": 289, "clk": true, "en": true}
+{"i": 20, "t": "Clash", "c": "TextView", "p": -1, "dp": 0, "b": [1671, 178, 960, 400], "x": 1315, "y": 289, "clk": true, "en": true}
+{"i": 21, "t": "微信", "c": "TextView", "p": -1, "dp": 0, "b": [990, 425, 960, 647], "x": 975, "y": 536, "clk": true, "en": true}
+{"i": 22, "t": "Keeta Tool", "c": "TextView", "p": -1, "dp": 0, "b": [1217, 425, 960, 647], "x": 1088, "y": 536, "clk": true, "en": true}
+{"i": 23, "t": "主屏幕", "c": "View", "p": -1, "dp": 0, "b": [0, 153, 960, 2088], "x": 480, "y": 1120, "clk": false, "en": true}
+{"i": 24, "t": "com.google.android.apps.nexuslauncher:id/page_indicator", "c": "LinearLayout", "p": -1, "dp": 0, "b": [0, 1663, 960, 1717], "x": 480, "y": 1690, "clk": false, "en": true}
+{"i": 25, "t": "com.google.android.apps.nexuslauncher:id/page_indicator_dots", "c": "View", "p": -1, "dp": 0, "b": [455, 1676, 504, 1703], "x": 479, "y": 1689, "clk": false, "en": true}
+{"i": 26, "t": "com.google.android.apps.nexuslauncher:id/hotseat", "c": "ViewGroup", "p": -1, "dp": 0, "b": [0, 1717, 960, 2142], "x": 480, "y": 1929, "clk": false, "en": true}
+{"i": 27, "t": "电话", "c": "TextView", "p": -1, "dp": 0, "b": [65, 1717, 214, 1885], "x": 139, "y": 1801, "clk": true, "en": true}
+{"i": 28, "t": "信息", "c": "TextView", "p": -1, "dp": 0, "b": [292, 1717, 441, 1885], "x": 366, "y": 1801, "clk": true, "en": true}
+{"i": 29, "t": "Chrome", "c": "TextView", "p": -1, "dp": 0, "b": [519, 1717, 668, 1885], "x": 593, "y": 1801, "clk": true, "en": true}
+{"i": 30, "t": "相机", "c": "TextView", "p": -1, "dp": 0, "b": [746, 1717, 895, 1885], "x": 820, "y": 1801, "clk": true, "en": true}
+{"i": 31, "t": "Google", "c": "OseWidgetView", "p": -1, "dp": 0, "b": [71, 1906, 889, 2048], "x": 480, "y": 1977, "clk": false, "en": true}
+{"i": 32, "t": "com.google.android.googlequicksearchbox:id/rootView", "c": "FrameLayout", "p": -1, "dp": 0, "b": [71, 1914, 889, 2040], "x": 480, "y": 1977, "clk": false, "en": true}
+{"i": 33, "t": "com.google.android.googlequicksearchbox:id/glance_view_id_000", "c": "FrameLayout", "p": -1, "dp": 0, "b": [71, 1914, 889, 2040], "x": 480, "y": 1977, "clk": true, "en": true}
+{"i": 34, "t": "", "c": "FrameLayout", "p": -1, "dp": 0, "b": [71, 1914, 190, 2040], "x": 130, "y": 1977, "clk": true, "en": true}
+{"i": 35, "t": "Google 应用", "c": "ImageView", "p": -1, "dp": 0, "b": [104, 1945, 167, 2008], "x": 135, "y": 1976, "clk": false, "en": true}
+{"i": 36, "t": "", "c": "FrameLayout", "p": -1, "dp": 0, "b": [551, 1914, 659, 2040], "x": 605, "y": 1977, "clk": true, "en": true}
+{"i": 37, "t": "AI 模式", "c": "ImageView", "p": -1, "dp": 0, "b": [573, 1945, 636, 2008], "x": 604, "y": 1976, "clk": false, "en": true}
+{"i": 38, "t": "", "c": "FrameLayout", "p": -1, "dp": 0, "b": [659, 1914, 767, 2040], "x": 713, "y": 1977, "clk": true, "en": true}
+{"i": 39, "t": "语音搜索", "c": "ImageView", "p": -1, "dp": 0, "b": [681, 1945, 744, 2008], "x": 712, "y": 1976, "clk": false, "en": true}
+{"i": 40, "t": "", "c": "FrameLayout", "p": -1, "dp": 0, "b": [767, 1914, 889, 2040], "x": 828, "y": 1977, "clk": true, "en": true}
+{"i": 41, "t": "拍照搜索", "c": "ImageView", "p": -1, "dp": 0, "b": [789, 1945, 852, 2008], "x": 820, "y": 1976, "clk": false, "en": true}
+{"i": 42, "t": "Google 搜索", "c": "LinearLayout", "p": -1, "dp": 0, "b": [71, 1918, 889, 2035], "x": 480, "y": 1976, "clk": false, "en": true}
+{"i": 43, "t": "com.google.android.apps.nexuslauncher:id/overview_actions_view", "c": "FrameLayout", "p": -1, "dp": 0, "b": [0, 1751, 960, 2142], "x": 480, "y": 1946, "clk": false, "en": true}

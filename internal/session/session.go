@@ -51,6 +51,8 @@ type Session struct {
 
 	avDecoder    avcodec.Decoder // CGO go-astiav decoder (lazy init, may be nil)
 	avDecoderErr error           // cached init error — don't retry
+
+	uiConn net.Conn // persistent UI socket (reused across GetUI* calls)
 }
 
 // Connect deploys scrcpy-server, starts it, and establishes all socket connections.
@@ -241,7 +243,10 @@ func (s *Session) Close() error {
 	if ctrl != nil {
 		ctrl.Close()
 	}
-	// uiConn is not persistent — each GetUIElements() opens its own connection
+	if s.uiConn != nil {
+		s.uiConn.Close()
+		s.uiConn = nil
+	}
 
 	adbRemoveForward(s.Serial, s.videoPort)
 	adbRemoveForward(s.Serial, s.uiPort)

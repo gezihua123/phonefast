@@ -1,0 +1,75 @@
+index,parent,depth,text,class,clickable
+0,-1,0,com.android.vending:id/0_resource_name_obfuscated,FrameLayout,False
+1,-1,0,android:id/content,FrameLayout,False
+2,-1,0,com.android.vending:id/0_resource_name_obfuscated,FrameLayout,False
+3,-1,0,com.android.vending:id/0_resource_name_obfuscated,FrameLayout,False
+4,-1,0,com.android.vending:id/0_resource_name_obfuscated,ComposeView,False
+5,-1,0,为您推荐,TextView,False
+6,-1,0,,View,True
+7,-1,0,热门排行榜,TextView,False
+8,-1,0,,View,True
+9,-1,0,儿童,TextView,False
+10,-1,0,,View,True
+11,-1,0,类别,TextView,False
+12,-1,0,升级赛事体验，解锁更多精彩,TextView,False
+13,-1,0,,View,True
+14,-1,0,为你的球队呐喊助威，与全世界一起高歌,TextView,False
+15,-1,0,,View,True
+16,-1,0,Smule: 全民K歌神器 - 唱歌录制分享平台
+Smule
+12 岁以上
+星级：4.4
+,View,False
+17,-1,0,,View,True
+18,-1,0,安装,View,False
+19,-1,0,安装,TextView,False
+20,-1,0,包含内购商品,TextView,False
+21,-1,0,,View,True
+22,-1,0,火热进行中,TextView,False
+23,-1,0,共迎全球最大的体育赛事,TextView,False
+24,-1,0,2026 国际足联世界杯™ 重磅开幕,TextView,False
+25,-1,0,赞助商广告,TextView,False
+26,-1,0,为您推荐,TextView,False
+27,-1,0,更多选项,View,True
+28,-1,0,,View,True
+29,-1,0,Keeta - 外卖送递及自取
+餐饮美食
+外卖
+已安装
+,View,False
+30,-1,0,,View,True
+31,-1,0,foodpanda - 美食外卖及生鲜杂货外送服务
+餐饮美食
+外卖
+星级：4.2
+,View,False
+32,-1,0,,View,True
+33,-1,0,他TA星球-語音連結的溫暖宇宙
+社交
+人脉
+星级：3.3
+,View,False
+34,-1,0,,View,True
+35,-1,0,,View,True
+36,-1,0,,View,True
+37,-1,0,,View,True
+38,-1,0,与“个性化推荐”相符的更多搜索结果,Button,True
+39,-1,0,,View,True
+40,-1,0,,View,True
+41,-1,0,显示通知和优惠。有 6 个新通知。,View,False
+42,-1,0,,View,True
+43,-1,0,目前的登录者是yuanhao li yuanhaol281@gmail.com
+账号和设置。,FrameLayout,True
+44,-1,0,com.android.vending:id/0_resource_name_obfuscated,FrameLayout,False
+45,-1,0,com.android.vending:id/0_resource_name_obfuscated,ImageView,False
+46,-1,0,,View,True
+47,-1,0,游戏,TextView,False
+48,-1,0,应用,TextView,False
+49,-1,0,,View,True
+50,-1,0,搜索,TextView,False
+51,-1,0,,View,True
+52,-1,0,图书,TextView,False
+53,-1,0,,View,True
+54,-1,0,我,TextView,False
+55,-1,0,com.android.vending:id/0_resource_name_obfuscated,FrameLayout,False
+56,-1,0,com.android.vending:id/0_resource_name_obfuscated,FrameLayout,False

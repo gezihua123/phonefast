@@ -42,6 +42,12 @@ func (s *Server) registerTools() {
 				mcp.WithNumber("max_elements",
 					mcp.Description("Max number of elements to show (default: 100, -1 for all)."),
 				),
+				mcp.WithString("format",
+					mcp.Description("Output format: 'flat' (default), 'jsonl', 'simplexml', 'flatref', 'yml'."),
+				),
+				mcp.WithBoolean("summary",
+					mcp.Description("If true, filter out layout containers (flat format only)."),
+				),
 		),
 		s.handleGetUIElements,
 	)
@@ -239,12 +245,27 @@ func (s *Server) handleGetUIElements(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	formatType := getFormat(req)
 	maxShow := getMaxElements(req, 100)
 	collectMax := maxShow
 	if collectMax < 0 || collectMax > 500 {
 		collectMax = 0 // server default (500 for full, 100 for summary)
 	}
 	isSummary := getSummary(req)
+
+	// Handle hierarchical formats
+	if f := format.ByName(formatType); f != nil {
+		fullElements, err := sess.GetUIFull(collectMax)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if maxShow > 0 && len(fullElements) > maxShow {
+			fullElements = fullElements[:maxShow]
+		}
+		return mcp.NewToolResultText(f.Format(fullElements)), nil
+	}
+
+	// Legacy flat format (no format specified or unknown format)
 	var elements []protocol.UIElement
 	if isSummary {
 		elements, err = sess.GetUISummary(collectMax)
@@ -257,9 +278,7 @@ func (s *Server) handleGetUIElements(ctx context.Context, req mcp.CallToolReques
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 	}
-
-	formatted := format.ElementsForLLM(elements, maxShow, isSummary)
-	return mcp.NewToolResultText(formatted), nil
+	return mcp.NewToolResultText(format.ElementsForLLM(elements, maxShow, isSummary)), nil
 }
 
 func (s *Server) handleTap(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -604,6 +623,15 @@ func mcpResultToToolResult(r *mcp.CallToolResult) *ToolResult {
 		content = append(content, tc)
 	}
 	return &ToolResult{Content: content}
+}
+
+// getFormat extracts the format argument from an MCP CallToolRequest.
+func getFormat(req mcp.CallToolRequest) string {
+	args := req.GetArguments()
+	if v, ok := args["format"].(string); ok {
+		return strings.ToLower(strings.TrimSpace(v))
+	}
+	return ""
 }
 
 // getMaxElements extracts the max_elements argument from an MCP CallToolRequest.

@@ -31,6 +31,8 @@ import android.net.LocalSocket;
  *             "dump:NNN\0"       → full mode, max N elements
  *             "sum\0"            → summary mode, default max (100)
  *             "sum:NNN\0"        → summary mode, max N elements
+ *             "full\0"           → hierarchical mode (all nodes, parent/depth), default max (500)
+ *             "full:NNN\0"       → hierarchical mode, max N elements
  *   Response: 4-byte big-endian length + JSON bytes
  *
  * Summary mode filters out pure layout containers (FrameLayout, LinearLayout, etc.)
@@ -47,6 +49,7 @@ public final class UISocketHandler {
 
     private static final byte[] DUMP_BYTES = "dump".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] SUM_BYTES = "sum".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] FULL_BYTES = "full".getBytes(StandardCharsets.US_ASCII);
 
     // Layout class names filtered out in summary mode (suffix matching).
     // These are non-interactive containers that just arrange children.
@@ -106,13 +109,13 @@ public final class UISocketHandler {
                 Ln.i("phonefast: UI socket ready on " + socketName);
 
                 while (running) {
-                    try (LocalSocket client = serverSocket.accept()) {
-                        handleClient(client);
-                    } catch (IOException e) {
-                        if (running) {
-                            Ln.w("phonefast: UI accept error: " + e.getMessage());
-                        }
+                    LocalSocket client = serverSocket.accept();
+                    Ln.i("phonefast: UI client connected");
+                    // Keep connection alive — handle multiple requests until client disconnects.
+                    while (running && handleClient(client)) {
+                        // continue on same connection
                     }
+                    try { client.close(); } catch (IOException ignore) {}
                 }
                 serverSocket.close();
             } catch (IOException e) {
@@ -141,34 +144,37 @@ public final class UISocketHandler {
         return "scrcpy_" + String.format("%08x", scid) + UI_SOCKET_SUFFIX;
     }
 
-    private void handleClient(LocalSocket socket) {
+    // Returns true on success, false when the client has disconnected.
+    private boolean handleClient(LocalSocket socket) {
         try {
             DataInputStream in = new DataInputStream(socket.getInputStream());
             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
-            // Read 4 bytes as a block. We batch-read via read(byte[], int, int)
-            // because DataInputStream.readByte() has a compatibility issue on
-            // certain Android builds when called more than 4 times — the
-            // LocalSocket connection is silently reset.
+            // Read exactly 4 bytes. Use readFully() rather than read() because
+            // read() may return fewer bytes even on a healthy local socket,
+            // causing a false client-disconnect detection under load.
             byte[] prefix = new byte[4];
-            int read = in.read(prefix, 0, 4);
-            if (read < 4) {
-                return; // incomplete request
-            }
+            in.readFully(prefix, 0, 4);
 
-            // Determine mode: "dump" (4 bytes) or "sum" (3 bytes + separator).
-            // For "sum", the 4th byte we read is the separator (':' or '\0'),
-            // so we check the first 3 bytes.
+            // Determine mode: "dump" (4 bytes), "sum" (3 bytes + separator),
+            // or "full" (4 bytes). For "sum", the 4th byte we read is the
+            // separator (':' or '\0'), so we check the first 3 bytes.
             boolean summaryMode;
+            boolean fullMode;
             if (Arrays.equals(prefix, DUMP_BYTES)) {
                 summaryMode = false;
+                fullMode = false;
+            } else if (Arrays.equals(prefix, FULL_BYTES)) {
+                summaryMode = false;
+                fullMode = true;
             } else if (prefix[0] == SUM_BYTES[0] && prefix[1] == SUM_BYTES[1] && prefix[2] == SUM_BYTES[2]) {
                 summaryMode = true;
+                fullMode = false;
             } else {
                 Ln.w("phonefast: unknown UI request");
                 // The 4 bytes may contain partial data after the prefix;
                 // we've already consumed them, so just return.
-                return;
+                return true; // protocol error but connection is still alive
             }
 
             // Parse limit from remaining bytes after the prefix.
@@ -176,6 +182,8 @@ public final class UISocketHandler {
             //   "dump:NN\0"  → min(NN, 500)
             //   "sum\0"      → default (100) — 4th byte was '\0'
             //   "sum:NN\0"   → min(NN, 500)
+            //   "full\0"     → default (500)
+            //   "full:NN\0"  → min(NN, 500)
             // The 4th byte of "sum" requests was already read into prefix[3].
             int maxElements = ABSOLUTE_MAX_ELEMENTS;
             int sep;
@@ -183,7 +191,7 @@ public final class UISocketHandler {
                 // For "sum" requests, prefix[3] is the separator
                 sep = prefix[3] & 0xFF;
             } else {
-                // For "dump" requests, read the 5th byte as separator
+                // For "dump" and "full" requests, read the 5th byte as separator
                 sep = in.read();
             }
 
@@ -216,12 +224,19 @@ public final class UISocketHandler {
                 drainUntilNull(in);
             }
 
-            byte[] json = dumpUIHierarchy(maxElements, summaryMode);
+            byte[] json;
+            if (fullMode) {
+                json = dumpFullHierarchy(maxElements);
+            } else {
+                json = dumpUIHierarchy(maxElements, summaryMode);
+            }
             out.writeInt(json.length);
             out.write(json);
             out.flush();
+            return true;
         } catch (IOException e) {
             // socket closed by client or timeout — not an error
+            return false;
         }
     }
 
@@ -434,6 +449,116 @@ public final class UISocketHandler {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
                 collectNodes(child, jw, counter, maxElements, summaryMode);
+            }
+        }
+    }
+
+    // ── full hierarchical dump (all nodes, no filtering) ──────────────────────
+
+    private byte[] dumpFullHierarchy(int maxElements) {
+        UiAutomation ua = uiAutomation;
+        if (ua == null) {
+            return buildError("UiAutomation not available");
+        }
+
+        StringWriter sw = new StringWriter(16384);
+        try {
+            JsonWriter jw = new JsonWriter(sw);
+            jw.beginObject();
+            jw.name("elements");
+            jw.beginArray();
+
+            int[] counter = {0};
+            // Iterate windows in reverse order (topmost first)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                try {
+                    List<AccessibilityWindowInfo> windows = ua.getWindows();
+                    if (windows != null) {
+                        for (int i = windows.size() - 1; i >= 0; i--) {
+                            if (counter[0] >= maxElements) break;
+                            AccessibilityNodeInfo root = windows.get(i).getRoot();
+                            if (root != null) {
+                                collectFullNodes(root, jw, counter, maxElements, -1, 0);
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Ln.w("phonefast: getWindows failed, falling back: " + e.getMessage());
+                }
+            }
+
+            if (counter[0] == 0) {
+                AccessibilityNodeInfo root = ua.getRootInActiveWindow();
+                if (root != null) {
+                    collectFullNodes(root, jw, counter, maxElements, -1, 0);
+                }
+            }
+
+            jw.endArray();
+            jw.endObject();
+            jw.close();
+            return sw.toString().getBytes(StandardCharsets.UTF_8);
+
+        } catch (Exception e) {
+            return buildError(e.getMessage());
+        }
+    }
+
+    /**
+     * Recursively collect ALL nodes (no filtering) with parent/depth metadata.
+     * This is used to generate hierarchical formats (jsonl, simplexml, flatref)
+     * where the full tree structure is needed.
+     */
+    private void collectFullNodes(AccessibilityNodeInfo node, JsonWriter jw, int[] counter,
+                                   int maxElements, int parentId, int depth) throws IOException {
+        if (node == null || counter[0] >= maxElements) return;
+
+        android.graphics.Rect rect = new android.graphics.Rect();
+        node.getBoundsInScreen(rect);
+
+        if (rect.width() > 0 || rect.height() > 0) {
+            int nodeId = counter[0]++;
+
+            CharSequence text = node.getText();
+            CharSequence desc = node.getContentDescription();
+            String resId = node.getViewIdResourceName();
+            CharSequence cls = node.getClassName();
+
+            jw.beginObject();
+            jw.name("id").value(nodeId);
+            jw.name("parent").value(parentId);
+            jw.name("depth").value(depth);
+            jw.name("text").value(text != null ? text.toString() : "");
+            jw.name("content_desc").value(desc != null ? desc.toString() : "");
+            jw.name("resource_id").value(resId != null ? resId : "");
+            jw.name("class_name").value(cls != null ? cls.toString() : "");
+
+            jw.name("bounds");
+            jw.beginArray();
+            jw.value(rect.left); jw.value(rect.top);
+            jw.value(rect.right); jw.value(rect.bottom);
+            jw.endArray();
+
+            jw.name("center");
+            jw.beginArray();
+            jw.value((rect.left + rect.right) / 2);
+            jw.value((rect.top + rect.bottom) / 2);
+            jw.endArray();
+
+            jw.name("clickable").value(node.isClickable());
+            jw.name("enabled").value(node.isEnabled());
+            jw.name("focused").value(node.isFocused());
+            jw.name("selected").value(node.isSelected());
+            jw.endObject();
+
+            // Recurse into children
+            int childCount = node.getChildCount();
+            for (int i = 0; i < childCount; i++) {
+                if (counter[0] >= maxElements) break;
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) {
+                    collectFullNodes(child, jw, counter, maxElements, nodeId, depth + 1);
+                }
             }
         }
     }

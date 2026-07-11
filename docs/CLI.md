@@ -37,8 +37,10 @@ phonefast 是一个高性能 Android 设备控制命令行工具，基于 Go 语
 |------|---------|------|
 | Go | 1.21+ | 编译工具链 |
 | `adb` | — | Android 设备通信 |
-| `ffmpeg` | — | 截图转码（H.264 → PNG） |
 | `git` | — | 版本信息自动注入 |
+| FFmpeg 静态库 | 7.1（默认） | 视频解码（CGO 模式必需） |
+| `nasm` | 可选 | x86 FFmpeg asm 优化 |
+| `zig` | 可选 | 非本机交叉编译 |
 | `upx` | 可选 | 压缩二进制体积 |
 
 ### 构建
@@ -48,16 +50,36 @@ phonefast 是一个高性能 Android 设备控制命令行工具，基于 Go 语
 git clone https://github.com/gezihua123/phonefast.git
 cd phonefast
 
-# 使用构建脚本（推荐）
-bash scripts/build.sh                    # 当前平台构建
-bash scripts/build.sh --all              # 全平台交叉编译
-bash scripts/build.sh --macos            # macOS amd64 + arm64
-bash scripts/build.sh --linux            # Linux amd64 + arm64
-bash scripts/build.sh --windows          # Windows amd64
-bash scripts/build.sh --all --version 1.0.0  # 指定版本号
+# CGO 构建（推荐，视频解码用硬件加速，需 FFmpeg 静态库）
+bash scripts/build.sh                            # 自动下载 FFmpeg + 构建
 
-# 或直接使用 go build
-go build -o phonefast ./cmd/phonefast
+# 无 CGO 构建（无需 FFmpeg，视频解码用子进程方案）
+CGO_ENABLED=0 go build -o phonefast ./cmd/phonefast/
+
+# 全平台
+bash scripts/build.sh --all                      # 全平台交叉编译
+bash scripts/build.sh --macos                    # macOS amd64 + arm64
+bash scripts/build.sh --linux                    # Linux amd64 + arm64
+bash scripts/build.sh --windows                  # Windows amd64
+bash scripts/build.sh --all --version 1.0.0      # 指定版本号
+```
+
+### FFmpeg 静态库准备
+
+CGO 构建需要 FFmpeg 静态库（链接进二进制，无需系统安装 `ffmpeg` 命令）。
+
+```bash
+# 一键准备（下载预编译库，失败自动回退源码编译）
+bash scripts/download-ffmpeg.sh                    # 当前平台
+bash scripts/download-ffmpeg.sh x86_64-linux-gnu   # 指定目标
+bash scripts/download-ffmpeg.sh --all               # 所有平台
+
+# 从源码编译（备选，约 5-15 分钟/目标）
+bash scripts/cross-build-ffmpeg.sh aarch64-darwin
+
+# 手动指定 FFmpeg 路径（跳过脚本）
+export PKG_CONFIG_PATH="$(pwd)/build/cross-ffmpeg/aarch64-darwin/lib/pkgconfig"
+CGO_ENABLED=1 go build -o phonefast ./cmd/phonefast/
 ```
 
 ### 产物结构
@@ -464,54 +486,79 @@ data:image/png;base64,iVBORw0KGgoAAAANS...
 #### `ui` — UI 元素列表
 
 ```bash
-phonefast [--foreground|--daemon] ui [max_elements] [--summary]
+phonefast [--foreground|--daemon] ui [max_elements] [--summary] [--format <fmt>]
 ```
 
-获取当前屏幕所有可交互 UI 元素的信息。
+获取当前屏幕 UI 元素的层级信息。
 
 | 参数 | 描述 | 默认值 |
 |------|------|--------|
 | `max_elements` | 最大显示元素数量 | `100` |
 | `--summary` | 概要模式，过滤纯布局类元素 | — |
+| `--format` | 输出格式：`flat`（默认）、`flatref`、`jsonl`、`simplexml`、`yml` | `flat` |
 
 **示例：**
 ```bash
-# 显示当前屏幕 UI 元素
+# 平铺格式（默认）
 phonefast ui
 
-# 只显示前 20 个元素
-phonefast ui 20
+# 层级引用格式（flatref，每行自包含 parent 引用）
+phonefast ui --format flatref
 
-# 概要模式（过滤无意义的布局容器）
+# JSON Lines 格式（LLM 精确解析）
+phonefast ui --format jsonl
+
+# 概要模式
 phonefast ui --summary
-
-# 直接模式
-phonefast --foreground ui
 ```
 
-**输出格式：**
+**flatref 格式（推荐用于 AI Agent）：**
+
+flatref 是专为 LLM 设计的层级格式，每行一个元素，用 `|` 分隔四个语义列：
+
 ```
-Interactive elements on screen:
-==================================================
-[0] (FrameLayout) bounds=[0,0][488,1080]
-[1] id="content" (FrameLayout) bounds=[0,0][488,1080]
-[2] text="WiFi" (TextView) [clickable] bounds=[20,40][200,80]
-[3] text="设置" id="settings_btn" (Button) [clickable] bounds=[50,120][300,180]
-[4] desc="打开菜单" (ImageButton) [clickable] bounds=[400,50][460,110]
-... and 12 more elements
+#N <身份> | bounds=[l,t][r,b] | [状态] | depth=N parent=#M
 ```
+
+```
+#0 (FrameLayout) | bounds=[0,0][1080,2400] | | depth=0 parent=#-1
+#19 id="back_btn" (ImageButton) | bounds=[0,0][96,96] | [clickable] | depth=3 parent=#18
+#21 text="安装" (TextView) | bounds=[899,432][975,491] | | depth=4 parent=#20
+```
+
+| 列 | 内容 | 说明 |
+|----|------|------|
+| 身份 | `#N text="..." desc="..." id="..." (Class)` | 元素是什么 |
+| 位置 | `bounds=[l,t][r,b]` | 元素在哪 |
+| 状态 | `[clickable] [focused] [selected] [disabled]` | 可否交互 |
+| 层级 | `depth=N parent=#M` | 在树中的位置 |
+
+**其他层级格式：**
+
+| 格式 | 特点 | 适合场景 |
+|------|------|---------|
+| `flatref` | `\|` 分隔四列，token 最省 | AI Agent 日常使用 |
+| `jsonl` | 每行独立 JSON，基准准确率最高 | 精确结构化解析 |
+| `simplexml` | 嵌套 XML，可读性好 | 人工阅读 |
+| `yml` | YAML 缩进层级 | 配置文件风格 |
+| `flat` | 传统平铺格式（默认） | 向后兼容 |
 
 **字段说明：**
 
 | 字段 | 说明 |
 |------|------|
-| `[N]` | 元素索引（用于 `tap_element`） |
+| `#N` | 元素 ID（用于 `parent=#N` 引用） |
 | `text="..."` | 元素文本 |
 | `desc="..."` | 无障碍描述（content-desc） |
 | `id="..."` | 资源 ID（仅显示最后一段） |
-| `(ClassName)` | 元素类名（仅显示最后一段） |
+| `(ClassName)` | 元素类名（简化） |
 | `[clickable]` | 可点击标记 |
-| `bounds=[x1,y1][x2,y2]` | 边界坐标 |
+| `[focused]` | 已聚焦标记 |
+| `[selected]` | 已选中标记 |
+| `[disabled]` | 已禁用标记 |
+| `bounds=[l,t][r,b]` | 边界坐标（左上、右下） |
+| `depth=N` | 层级深度（0=根） |
+| `parent=#M` | 父节点 ID 引用 |
 
 ---
 
@@ -917,7 +964,7 @@ phonefast serve --host 127.0.0.1 --port 8019
 |------|------|------|
 | `list_devices` | — | 列出已连接设备 |
 | `screenshot` | — | 截图（返回 native ImageContent） |
-| `get_ui_elements` | — | 获取可交互 UI 元素 |
+| `get_ui_elements` | `format`（flat/flatref/jsonl/simplexml/yml）、`max_elements` | 获取 UI 层级（支持多格式） |
 | `observe` | — | 截图 + UI 原子操作 |
 | `tap` | `x`, `y` | 点击坐标 |
 | `tap_element` | `index` 或 `text` | 点击 UI 元素 |

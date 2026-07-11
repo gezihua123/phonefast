@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- # UI 元素列表 — Android 手机屏幕 (设置 > 网络与互联网) # 屏幕分辨率: 1080×2400 # 字段: index=编号 depth=层级(0=顶层) parent=父节点(-1=顶层) #       text=文本 class=控件类型 clickable=可点击 -->
+<hierarchy rotation="0" width="1080" height="2400">
+<node index="0" text="Wi‑Fi" class="Preference" clickable="true" bounds="[0,0][1080,130]">
+  <node index="1" text="HomeWiFi" class="TextView" bounds="[100,130][800,170]" />
+  <node index="2" text="已连接" class="TextView" bounds="[820,130][1050,170]" />
+</node>
+<node index="3" text="蓝牙" class="Preference" clickable="true" bounds="[0,180][1080,310]" />
+<node index="4" text="SIM 卡" class="Preference" clickable="true" bounds="[0,320][1080,450]">
+  <node index="5" text="中国移动" class="TextView" bounds="[100,450][700,490]" />
+</node>
+<node index="6" text="流量用量" class="Preference" clickable="true" bounds="[0,500][1080,630]" />
+<node index="7" text="热点与网络共享" class="Preference" clickable="true" bounds="[0,640][1080,770]">
+  <node index="8" text="Wi‑Fi 热点" class="Preference" clickable="true" bounds="[100,770][1080,900]">
+    <node index="9" text="已关闭 / 0 台设备" class="TextView" bounds="[200,900][1080,940]" />
+  </node>
+  <node index="10" text="USB 网络共享" class="Switch" clickable="true" bounds="[100,950][1080,1080]" />
+</node>
+<node index="11" text="VPN" class="Preference" clickable="true" enabled="false" bounds="[0,1090][1080,1220]" />
+</hierarchy>
