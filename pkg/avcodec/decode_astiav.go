@@ -59,7 +59,7 @@ func (d *astiavDecoder) getCodecCtx() (*astiav.CodecContext, error) {
 		return nil, fmt.Errorf("alloc codec context failed")
 	}
 	codecCtx.SetThreadCount(2)
-	codecCtx.SetThreadType(astiav.ThreadTypeFrame | astiav.ThreadTypeSlice)
+	codecCtx.SetThreadType(astiav.ThreadTypeSlice)
 	if err := codecCtx.Open(d.codec, nil); err != nil {
 		codecCtx.Free()
 		return nil, fmt.Errorf("open codec: %w", err)
