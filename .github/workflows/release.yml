@@ -1,0 +1,267 @@
+# phonefast Release Pipeline
+#
+# 触发方式: 推送 v* tag (如 v1.0.0) 到 GitHub
+# 构建方案: 方案3 — 每平台原生 runner 编译 (最稳)
+#   - linux/amd64   → ubuntu-24.04 (amd64, gcc)
+#   - linux/arm64   → ubuntu-24.04-arm (arm64, gcc)
+#   - darwin/amd64  → macos-13 (x86_64, clang)
+#   - darwin/arm64  → macos-14 (arm64, clang)
+#   - windows/amd64 → cross from ubuntu-24.04 (mingw-w64)
+#
+# 前置条件:
+#   仓库中需包含 android/scrcpy-server.jar (已提交)
+#   FFmpeg 源码编译消耗约 5-15 分钟/平台 (已配置缓存加速)
+#
+# 产物:
+#   GitHub Release Assets:
+#     phonefast-<version>-linux-amd64.tar.gz
+#     phonefast-<version>-linux-arm64.tar.gz
+#     phonefast-<version>-darwin-amd64.tar.gz
+#     phonefast-<version>-darwin-arm64.tar.gz
+#     phonefast-<version>-windows-amd64.tar.gz
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ── 所有平台并行构建 ──────────────────────────────────────────────────
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            runner: ubuntu-24.04
+            ffmpeg-target: x86_64-linux-gnu
+            goos: linux
+            goarch: amd64
+            ext: ''
+            deps-apt: build-essential nasm pkg-config
+
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            ffmpeg-target: aarch64-linux-gnu
+            goos: linux
+            goarch: arm64
+            ext: ''
+            deps-apt: build-essential nasm pkg-config
+
+          - name: darwin-amd64
+            runner: macos-13
+            ffmpeg-target: x86_64-darwin
+            goos: darwin
+            goarch: amd64
+            ext: ''
+            deps-brew: nasm pkg-config
+
+          - name: darwin-arm64
+            runner: macos-14
+            ffmpeg-target: aarch64-darwin
+            goos: darwin
+            goarch: arm64
+            ext: ''
+            deps-brew: nasm pkg-config
+
+          - name: windows-amd64
+            runner: ubuntu-24.04
+            ffmpeg-target: x86_64-windows-gnu
+            goos: windows
+            goarch: amd64
+            ext: .exe
+            deps-apt: gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 nasm pkg-config
+            cross-cc: x86_64-w64-mingw32-gcc
+            cross-cxx: x86_64-w64-mingw32-g++
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # ── 安装系统依赖 ──
+      - name: Install dependencies (apt)
+        if: matrix.deps-apt != ''
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ${{ matrix.deps-apt }}
+
+      - name: Install dependencies (brew)
+        if: matrix.deps-brew != ''
+        run: |
+          brew update > /dev/null 2>&1
+          brew install ${{ matrix.deps-brew }}
+
+      # ── FFmpeg 静态库 ──
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: build/cross-ffmpeg/${{ matrix.ffmpeg-target }}
+          key: ffmpeg-${{ matrix.ffmpeg-target }}-${{ hashFiles('scripts/cross-build-ffmpeg.sh') }}
+          restore-keys: |
+            ffmpeg-${{ matrix.ffmpeg-target }}-
+
+      - name: Build FFmpeg static libs (with ASM)
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          echo "::group::FFmpeg build log"
+          bash scripts/cross-build-ffmpeg.sh ${{ matrix.ffmpeg-target }}
+          echo "::endgroup::"
+          # 验证 ASM 是否开启
+          if grep -q 'HAVE_MMX\|HAVE_SSE\|HAVE_AVX' "build/cross-ffmpeg/${{ matrix.ffmpeg-target }}/include/libavcodec/config.h" 2>/dev/null; then
+            echo "[✓] ASM (MMX/SSE/AVX) 已启用 — ${{ matrix.ffmpeg-target }}"
+          else
+            echo "[!] ASM 检测跳过 (aarch64 NEON 内建于工具链)"
+          fi
+
+      - name: Show FFmpeg libs
+        run: |
+          ls -lh "build/cross-ffmpeg/${{ matrix.ffmpeg-target }}/lib/"*.a 2>/dev/null || echo "(libs not found)"
+
+      # ── Android 资源 ──
+      - name: Sync Android assets
+        run: |
+          mkdir -p assets
+          if [ -f android/scrcpy-server.jar ]; then
+            cp android/scrcpy-server.jar assets/
+            echo "[✓] scrcpy-server.jar synced"
+          else
+            echo "[ERROR] android/scrcpy-server.jar not found — commit it first"
+            exit 1
+          fi
+          if [ -f android/scrcpy-server.version ]; then
+            cp android/scrcpy-server.version assets/
+          fi
+
+      # ── 构建 Go 二进制 ──
+      - name: Build phonefast
+        env:
+          CGO_ENABLED: 1
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cross-cc }}
+          CXX: ${{ matrix.cross-cxx }}
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/${{ matrix.ffmpeg-target }}/lib/pkgconfig
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GIT_COMMIT="${GITHUB_SHA::7}"
+          BINARY="phonefast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          LDFLAGS="-s -w \
+            -X main.Version=${VERSION} \
+            -X main.BuildTime=${BUILD_TIME} \
+            -X main.GitCommit=${GIT_COMMIT}"
+
+          echo "Building: ${BINARY}"
+          echo "  Version:    ${VERSION}"
+          echo "  GOOS/ARCH:  ${GOOS}/${GOARCH}"
+          echo "  PKG_CONFIG: ${PKG_CONFIG_PATH}"
+          echo "  CC:         ${CC:-default}"
+
+          go build -trimpath -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
+          file "${BINARY}"
+          ls -lh "${BINARY}"
+
+      # ── 运行测试 ──
+      - name: Run tests
+        env:
+          CGO_ENABLED: 1
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/${{ matrix.ffmpeg-target }}/lib/pkgconfig
+        run: |
+          go test -count=1 -timeout 120s ./...
+
+      # ── 打包 ──
+      - name: Package binary
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BINARY="phonefast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          ARCHIVE="phonefast-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+          tar -czf "${ARCHIVE}" \
+            "${BINARY}" \
+            README.md \
+            docs/ 2>/dev/null || tar -czf "${ARCHIVE}" "${BINARY}" README.md
+          ls -lh "${ARCHIVE}"
+
+      # ── 上传构建产物 ──
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phonefast-${{ matrix.name }}
+          path: phonefast-*.tar.gz
+          retention-days: 7
+
+  # ── 聚合发布到 GitHub Release ────────────────────────────────────────
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Collect release assets
+        run: |
+          mkdir -p assets
+          find release-artifacts -name "*.tar.gz" -exec cp -v {} assets/ \;
+          ls -lh assets/
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          VERSION_NOV="${VERSION#v}"
+          # Build release body with template + sed (preserve formatting, expand variables)
+          cat > release-body.md <<- 'TEMPLATE'
+          ## phonefast __VERSION__
+
+          ### :package: 平台支持
+          | 平台 | 架构 | 文件 |
+          |------|------|------|
+          | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64.tar.gz` |
+          | Linux | arm64 | `phonefast-__VERSION_NOV__-linux-arm64.tar.gz` |
+          | macOS | amd64 (Intel) | `phonefast-__VERSION_NOV__-darwin-amd64.tar.gz` |
+          | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64.tar.gz` |
+          | Windows | amd64 | `phonefast-__VERSION_NOV__-windows-amd64.tar.gz` |
+
+          ### :wrench: 特性
+          - CGO 静态链接 FFmpeg libavcodec (H.264 硬件解码)
+          - x86_64: SSE/AVX/AVX2 SIMD 加速 (nasm asm-on)
+          - ARM64: NEON 优化 (内建于 clang/gcc)
+          - 单文件分发 (jar 内嵌, 即下即用)
+          TEMPLATE
+          sed -i \
+            -e "s/__VERSION__/${VERSION}/g" \
+            -e "s/__VERSION_NOV__/${VERSION_NOV}/g" \
+            release-body.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: phonefast ${{ steps.notes.outputs.version }}
+          body_path: release-body.md
+          files: assets/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
