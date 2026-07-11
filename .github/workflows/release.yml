@@ -173,12 +173,25 @@ jobs:
           ls -lh "${BINARY}"
 
       # ── 运行测试 ──
+      # Windows 交叉编译产物是 PE 格式，无法在 Linux runner 上运行，
+      # 故跳过测试，仅验证二进制存在（见后续 Verify binary 步骤）。
       - name: Run tests
+        if: matrix.goos != 'windows'
         env:
           CGO_ENABLED: 1
           PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/${{ matrix.ffmpeg-target }}/lib/pkgconfig
         run: |
           go test -count=1 -timeout 120s ./...
+
+      # Windows 交叉编译产物为 PE 格式，无法在 Linux runner 上运行测试，
+      # 改为验证二进制文件完整性。
+      - name: Verify binary (Windows cross)
+        if: matrix.goos == 'windows'
+        run: |
+          BINARY="phonefast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          file "${BINARY}"
+          ls -lh "${BINARY}"
+          echo "[✓] Windows PE binary built successfully"
 
       # ── 打包 ──
       - name: Package binary
