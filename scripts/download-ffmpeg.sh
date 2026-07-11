@@ -16,7 +16,7 @@
 #   bash scripts/download-ffmpeg.sh --force               # 强制重新编译
 #
 # 目标列表:
-#   aarch64-darwin     x86_64-darwin
+#   aarch64-darwin
 #   x86_64-linux-gnu   aarch64-linux-gnu
 #   x86_64-windows-gnu
 
@@ -33,7 +33,6 @@ error() { echo -e "${RED}[x]${NC} $*"; }
 
 ALL_TARGETS=(
     "aarch64-darwin"
-    "x86_64-darwin"
     "x86_64-linux-gnu"
     "aarch64-linux-gnu"
     "x86_64-windows-gnu"

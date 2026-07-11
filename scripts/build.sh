@@ -8,7 +8,7 @@
 # 用法:
 #   bash scripts/build.sh                    # 构建本机 darwin-arm64 (默认)
 #   bash scripts/build.sh --all              # 全平台 (zig 交叉编, 方案2)
-#   bash scripts/build.sh --macos            # 仅 darwin arm64+amd64
+#   bash scripts/build.sh --macos            # 仅 darwin arm64
 #   bash scripts/build.sh --linux            # 仅 linux amd64+arm64
 #   bash scripts/build.sh --windows          # 仅 windows amd64
 #   bash scripts/build.sh --version 1.0.0    # 指定版本号
@@ -95,7 +95,6 @@ sync_assets() {
 os_arch_to_zig() {
     local os="$1" arch="$2"
     case "${os}-${arch}" in
-        darwin-amd64)  echo "x86_64-macos-none" ;;
         darwin-arm64)  echo "aarch64-macos-none" ;;
         linux-amd64)   echo "x86_64-linux-gnu" ;;
         linux-arm64)   echo "aarch64-linux-gnu" ;;
@@ -108,7 +107,6 @@ os_arch_to_zig() {
 os_arch_to_ffmpeg_target() {
     local os="$1" arch="$2"
     case "${os}-${arch}" in
-        darwin-amd64)  echo "x86_64-darwin" ;;
         darwin-arm64)  echo "aarch64-darwin" ;;
         linux-amd64)   echo "x86_64-linux-gnu" ;;
         linux-arm64)   echo "aarch64-linux-gnu" ;;
@@ -258,7 +256,7 @@ make_archive() {
 # 本脚本 (build.sh) 在 macOS 上构建:
 #   默认           → 本机 darwin-arm64 (原生 clang + 静态 FFmpeg, 开发日常用)
 #   --all          → 全平台 (zig 交叉编 linux/windows + darwin, 方案2)
-#   --macos        → 仅 darwin (arm64 + amd64)
+#   --macos        → 仅 darwin (arm64)
 #   --linux        → 仅 linux (amd64 + arm64)
 #   --windows      → 仅 windows (amd64)
 #
@@ -270,7 +268,6 @@ PLATFORMS_DEFAULT=(
     "darwin  arm64"
 )
 PLATFORMS_ALL=(
-    "darwin  amd64"
     "darwin  arm64"
     "linux   amd64"
     "linux   arm64"
@@ -283,7 +280,7 @@ build_platforms() {
 
     case "$filter" in
         all)     platforms=("${PLATFORMS_ALL[@]}") ;;
-        macos)   platforms=("darwin amd64" "darwin arm64") ;;
+        macos)   platforms=("darwin arm64") ;;
         linux)   platforms=("linux amd64" "linux arm64") ;;
         windows) platforms=("windows amd64") ;;
     esac

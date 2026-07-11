@@ -112,12 +112,12 @@ phonefast 把 FFmpeg 静态链接进 Go CGO 二进制，实现单文件分发（
 
 #### 方案 2：本地 zig 交叉编译（开发日常用）
 
-在 macOS 上一条命令编出全部 5 个平台二进制。本机 darwin-arm64 用原生 clang，
+在 macOS 上一条命令编出全部 4 个平台二进制。本机 darwin-arm64 用原生 clang，
 其余目标用 zig cc 交叉编译（asm 全开，已验证）。`build_local.sh` 是一键封装：
 
 ```bash
 # 一键全平台 (自动: 环境检查 → 编 FFmpeg 库 → 编 Go 二进制)
-bash scripts/build_local.sh            # 全平台 5 目标
+bash scripts/build_local.sh            # 全平台 4 目标
 bash scripts/build_local.sh --macos    # 仅 darwin
 bash scripts/build_local.sh --linux    # 仅 linux
 bash scripts/build_local.sh --windows  # 仅 windows
@@ -133,14 +133,13 @@ bash scripts/build_env.sh install      # 自动装缺失依赖 (brew)
 
 # 2. 编静态 FFmpeg 库 (每目标一次，缓存于 build/cross-ffmpeg/<target>/)
 bash scripts/cross-build-ffmpeg.sh aarch64-darwin    # mac arm64
-bash scripts/cross-build-ffmpeg.sh x86_64-darwin     # mac amd64
 bash scripts/cross-build-ffmpeg.sh x86_64-linux-gnu  # linux amd64
 bash scripts/cross-build-ffmpeg.sh aarch64-linux-gnu # linux arm64
 bash scripts/cross-build-ffmpeg.sh x86_64-windows-gnu # windows amd64
 
 # 3. 构建
 bash scripts/build.sh            # 仅本机 darwin-arm64 (默认)
-bash scripts/build.sh --all      # 全平台 5 目标
+bash scripts/build.sh --all      # 全平台 4 目标
 bash scripts/build.sh --linux    # 仅 linux
 ```
 
@@ -162,7 +161,7 @@ CI matrix（每平台原生 runner）：
 | 目标 | runner | FFmpeg 工具链 |
 |---|---|---|
 | darwin-arm64 | macos-14 | 原生 clang + nasm |
-| darwin-amd64 | macos-13 | 原生 clang + nasm |
+| darwin-arm64 | macos-14 | 原生 clang |
 | linux-amd64 | ubuntu-latest | 原生 gcc + nasm |
 | linux-arm64 | ubuntu-24.04-arm | 原生 gcc (NEON) |
 | windows-amd64 | windows-latest | 原生 mingw + nasm |
@@ -242,7 +241,7 @@ Release 流程：
 1. 检查工作区干净
 2. 自动 patch 版本号自增 + commit
 3. 创建 Git tag `v${VERSION}`
-4. push tag → **触发 CI** → CI 5 平台原生编译 → 发布 GitHub Release
+4. push tag → **触发 CI** → CI 4 平台原生编译 → 发布 GitHub Release
 
 产物最终位置：GitHub Release 的 Assets
 `https://github.com/gezihua123/phonefast/releases/tag/vX.Y.Z`

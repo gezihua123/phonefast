@@ -4,7 +4,7 @@
 # 构建方案: 方案3 — 每平台原生 runner 编译 (最稳)
 #   - linux/amd64   → ubuntu-24.04 (amd64, gcc)
 #   - linux/arm64   → ubuntu-24.04-arm (arm64, gcc)
-#   - darwin/amd64  → macos-13 (x86_64, clang)
+#   - darwin/arm64  → macos-14 (arm64, clang)
 #   - darwin/arm64  → macos-14 (arm64, clang)
 #   - windows/amd64 → cross from ubuntu-24.04 (mingw-w64)
 #
@@ -16,7 +16,7 @@
 #   GitHub Release Assets:
 #     phonefast-<version>-linux-amd64.tar.gz
 #     phonefast-<version>-linux-arm64.tar.gz
-#     phonefast-<version>-darwin-amd64.tar.gz
+
 #     phonefast-<version>-darwin-arm64.tar.gz
 #     phonefast-<version>-windows-amd64.tar.gz
 
@@ -50,14 +50,6 @@ jobs:
             goarch: arm64
             ext: ''
             deps-apt: build-essential nasm pkg-config
-
-          - name: darwin-amd64
-            runner: macos-13
-            ffmpeg-target: x86_64-darwin
-            goos: darwin
-            goarch: amd64
-            ext: ''
-            deps-brew: nasm pkg-config
 
           - name: darwin-arm64
             runner: macos-14
@@ -253,7 +245,6 @@ jobs:
           |------|------|------|
           | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64.tar.gz` |
           | Linux | arm64 | `phonefast-__VERSION_NOV__-linux-arm64.tar.gz` |
-          | macOS | amd64 (Intel) | `phonefast-__VERSION_NOV__-darwin-amd64.tar.gz` |
           | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64.tar.gz` |
           | Windows | amd64 | `phonefast-__VERSION_NOV__-windows-amd64.tar.gz` |
 

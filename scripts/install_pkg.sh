@@ -78,13 +78,9 @@ detect_platform() {
     *) error "不支持的架构: $(uname -m)" ;;
   esac
 
-  # macOS arm64 不兼容 x86_64
+  # macOS Intel (amd64) 不再支持
   if [ "$os" = "darwin" ] && [ "$arch" = "amd64" ]; then
-    # 检测是否通过 Rosetta 运行
-    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
-      warn "通过 Rosetta 运行，建议下载 arm64 版本"
-      arch="arm64"
-    fi
+    error "phonefast 不再支持 macOS Intel (amd64)。请使用 Apple Silicon (arm64) Mac。"
   fi
 
   # Windows 下检查是否 64 位

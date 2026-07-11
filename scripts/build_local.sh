@@ -2,9 +2,9 @@
 #
 # build_local.sh — 本地全平台构建 (方案2: Mac + zig 交叉编译)
 #
-# 在一台 macOS (arm64) 上, 用本机 clang + zig cc 编出全部 5 个平台二进制:
+# 在一台 macOS (arm64) 上, 用本机 clang + zig cc 编出全部 4 个平台二进制:
 #   darwin-arm64  → 本机 clang (原生)
-#   darwin-amd64  → clang -arch x86_64
+#   仅 darwin-arm64 (macOS Intel 不再支持)
 #   linux-amd64   → zig cc 交叉
 #   linux-arm64   → zig cc 交叉
 #   windows-amd64 → zig cc 交叉
@@ -16,7 +16,7 @@
 # 两者产物可交叉校验。
 #
 # 用法:
-#   bash scripts/build_local.sh           # 全平台 (5 目标)
+#   bash scripts/build_local.sh           # 全平台 (4 目标)
 #   bash scripts/build_local.sh --macos   # 仅 darwin
 #   bash scripts/build_local.sh --linux   # 仅 linux
 #   bash scripts/build_local.sh --windows # 仅 windows
@@ -59,10 +59,10 @@ done
 # 目标 → cross-build-ffmpeg.sh 的 target 名
 targets_for_filter() {
     case "$1" in
-        macos)   echo "x86_64-darwin aarch64-darwin" ;;
+        macos)   echo "aarch64-darwin" ;;
         linux)   echo "x86_64-linux-gnu aarch64-linux-gnu" ;;
         windows) echo "x86_64-windows-gnu" ;;
-        all)     echo "x86_64-darwin aarch64-darwin x86_64-linux-gnu aarch64-linux-gnu x86_64-windows-gnu" ;;
+        all)     echo "aarch64-darwin x86_64-linux-gnu aarch64-linux-gnu x86_64-windows-gnu" ;;
     esac
 }
 

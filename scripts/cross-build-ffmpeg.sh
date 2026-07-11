@@ -6,7 +6,6 @@
 #   bash scripts/cross-build-ffmpeg.sh x86_64-linux-gnu
 #   bash scripts/cross-build-ffmpeg.sh aarch64-linux-gnu
 #   bash scripts/cross-build-ffmpeg.sh x86_64-windows-gnu
-#   bash scripts/cross-build-ffmpeg.sh x86_64-darwin
 #   bash scripts/cross-build-ffmpeg.sh aarch64-darwin
 #
 # 产物:
@@ -43,12 +42,6 @@ declare_target() {
             ARCH="x86_64"
             CONFIG_PATCH="mingw_math"
             ;;
-        x86_64-darwin)
-            ZIG_TRIPLE="x86_64-macos-none"
-            TARGET_OS="darwin"
-            ARCH="x86_64"
-            CONFIG_PATCH=""
-            ;;
         aarch64-darwin)
             ZIG_TRIPLE="aarch64-macos-none"
             TARGET_OS="darwin"
@@ -70,7 +63,7 @@ main() {
         echo "用法: $0 <target-triple>"
         echo "  x86_64-linux-gnu   aarch64-linux-gnu"
         echo "  x86_64-windows-gnu"
-        echo "  x86_64-darwin      aarch64-darwin"
+        echo "  aarch64-darwin"
         exit 1
     fi
 
