@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
-
+	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
 func TestFormatElementsForLLM(t *testing.T) {
-	result := formatElementsForLLM(nil, 100, false)
+	result := format.ElementsForLLM(nil, 100, false)
 	if result != "No interactive elements found on screen." {
 		t.Errorf("expected empty message, got: %s", result)
 	}
@@ -29,42 +29,42 @@ func TestFormatElementsForLLMTruncation(t *testing.T) {
 	}
 
 	t.Run("exactly maxShow 50 → no truncation notice", func(t *testing.T) {
-		got := formatElementsForLLM(makeEls(50), 50, false)
+		got := format.ElementsForLLM(makeEls(50), 50, false)
 		if strings.Contains(got, "more elements") {
 			t.Errorf("50 elements with maxShow=50 should not trigger truncation, got: %s", got)
 		}
 	})
 
 	t.Run("51 with maxShow=50 → shows 1 more", func(t *testing.T) {
-		got := formatElementsForLLM(makeEls(51), 50, false)
+		got := format.ElementsForLLM(makeEls(51), 50, false)
 		if !strings.Contains(got, "... and 1 more elements") {
 			t.Errorf("51 elements should show '1 more', got: %s", got)
 		}
 	})
 
 	t.Run("100 with maxShow=50 → shows 50 more", func(t *testing.T) {
-		got := formatElementsForLLM(makeEls(100), 50, false)
+		got := format.ElementsForLLM(makeEls(100), 50, false)
 		if !strings.Contains(got, "... and 50 more elements") {
 			t.Errorf("100 elements should show '50 more', got: %s", got)
 		}
 	})
 
 	t.Run("show all with -1", func(t *testing.T) {
-		got := formatElementsForLLM(makeEls(5), -1, false)
+		got := format.ElementsForLLM(makeEls(5), -1, false)
 		if strings.Contains(got, "more elements") {
 			t.Errorf("-1 should show all elements, got: %s", got)
 		}
 	})
 
 	t.Run("default maxShow=100 with 80 elements → no truncation", func(t *testing.T) {
-		got := formatElementsForLLM(makeEls(80), 100, false)
+		got := format.ElementsForLLM(makeEls(80), 100, false)
 		if strings.Contains(got, "more elements") {
 			t.Errorf("80 elements with maxShow=100 should not truncate, got: %s", got)
 		}
 	})
 
 	t.Run("default maxShow=100 with 120 → shows 20 more", func(t *testing.T) {
-		got := formatElementsForLLM(makeEls(120), 100, false)
+		got := format.ElementsForLLM(makeEls(120), 100, false)
 		if !strings.Contains(got, "... and 20 more elements") {
 			t.Errorf("120 elements with maxShow=100 should show '20 more', got: %s", got)
 		}
@@ -77,7 +77,7 @@ func TestFormatElementsForLLMResourceIDTrim(t *testing.T) {
 	els := []protocol.UIElement{
 		{Index: 0, ResourceID: "com.android.settings:id/title"},
 	}
-	got := formatElementsForLLM(els, 100, false)
+	got := format.ElementsForLLM(els, 100, false)
 	if !strings.Contains(got, `id="title"`) {
 		t.Errorf("expected id=\"title\", got: %s", got)
 	}
@@ -92,7 +92,7 @@ func TestFormatElementsForLLMClassNameShort(t *testing.T) {
 	els := []protocol.UIElement{
 		{Index: 0, ClassName: "android.widget.TextView"},
 	}
-	got := formatElementsForLLM(els, 100, false)
+	got := format.ElementsForLLM(els, 100, false)
 	if !strings.Contains(got, "(TextView)") {
 		t.Errorf("expected (TextView), got: %s", got)
 	}

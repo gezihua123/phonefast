@@ -160,27 +160,37 @@ func (s *Session) Scroll(x, y int, hScroll, vScroll float32) error {
 	return err
 }
 
-// Observe captures both a screenshot and UI hierarchy in parallel.
+// Observe captures both a screenshot and UI hierarchy concurrently, then
+// waits for both to complete (or a 5s timeout). Running them in separate
+// goroutines cuts wall-clock time to the slower of the two operations
+// (instead of their sum), which matters when the UI dump falls back to
+// the slow ADB uiautomator path (~2-3s).
+//
 // maxElements controls the collection limit on the device side:
 //   - > 0: request that many elements (capped at 500 by the server)
 //   - <= 0: use server default (500 for full, 100 for summary)
 // summary filters out layout containers, returning only meaningful elements.
 func (s *Session) Observe(maxElements int, summary bool) (screenshot []byte, uiElements []protocol.UIElement, err error) {
-	type result struct {
-		pngData   []byte
-		w, h      int
-		elements  []protocol.UIElement
-		screenErr error
-		uiErr     error
+	// Launch screenshot and UI dump concurrently in separate goroutines.
+	type screenResult struct {
+		pngData []byte
+		w, h    int
+		err     error
+	}
+	type uiResult struct {
+		elements []protocol.UIElement
+		err      error
 	}
 
-	ch := make(chan result, 1)
+	screenCh := make(chan screenResult, 1)
+	uiCh := make(chan uiResult, 1)
 
 	go func() {
-		var r result
-		r.pngData, r.w, r.h, r.screenErr = s.Screenshot()
+		png, w, h, err := s.Screenshot()
+		screenCh <- screenResult{png, w, h, err}
+	}()
 
-		// Try fast socket UI dump first, fallback to ADB
+	go func() {
 		var elems []protocol.UIElement
 		var uiErr error
 		if summary {
@@ -191,21 +201,27 @@ func (s *Session) Observe(maxElements int, summary bool) (screenshot []byte, uiE
 		if uiErr != nil {
 			elems, uiErr = s.GetUIElementsFallbackADB(maxElements)
 		}
-		r.elements = elems
-		r.uiErr = uiErr
-
-		ch <- r
+		uiCh <- uiResult{elems, uiErr}
 	}()
 
-	// Wait with timeout
-	select {
-	case r := <-ch:
-		if r.screenErr != nil {
-			return nil, nil, fmt.Errorf("screenshot: %w", r.screenErr)
+	// Collect results with overall timeout.
+	var screen screenResult
+	var ui uiResult
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case screen = <-screenCh:
+		case ui = <-uiCh:
+		case <-timer.C:
+			return nil, nil, fmt.Errorf("observe timeout")
 		}
-		// UI errors are non-fatal — elements may be empty
-		return r.pngData, r.elements, nil
-	case <-time.After(5 * time.Second):
-		return nil, nil, fmt.Errorf("observe timeout")
 	}
+
+	if screen.err != nil {
+		return nil, nil, fmt.Errorf("screenshot: %w", screen.err)
+	}
+	// UI errors are non-fatal — elements may be empty
+	return screen.pngData, ui.elements, nil
 }

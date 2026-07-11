@@ -1,0 +1,194 @@
+# phonefast CI Build
+#
+# 每次 push/PR 验证代码编译 (CGO + FFmpeg ASM)。
+# 覆盖 Linux/macOS/Windows 三平台基本构建能力。
+#
+# 触发方式: main/dev 分支 push 或 PR → main
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Linux amd64 ──
+  build-linux:
+    name: linux-amd64
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential nasm pkg-config
+
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: build/cross-ffmpeg/x86_64-linux-gnu
+          key: ffmpeg-x86_64-linux-gnu-${{ hashFiles('scripts/cross-build-ffmpeg.sh') }}
+          restore-keys: |
+            ffmpeg-x86_64-linux-gnu-
+
+      - name: Build FFmpeg static libs (with ASM)
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: bash scripts/cross-build-ffmpeg.sh x86_64-linux-gnu
+
+      - name: Sync Android assets
+        run: |
+          mkdir -p assets
+          cp android/scrcpy-server.jar assets/
+          [ -f android/scrcpy-server.version ] && cp android/scrcpy-server.version assets/
+
+      - name: Build phonefast
+        env:
+          CGO_ENABLED: 1
+          GOOS: linux
+          GOARCH: amd64
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/x86_64-linux-gnu/lib/pkgconfig
+        run: |
+          BINARY="phonefast-linux-amd64"
+          VERSION="dev"
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GIT_COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-s -w \
+            -X main.Version=${VERSION} \
+            -X main.BuildTime=${BUILD_TIME} \
+            -X main.GitCommit=${GIT_COMMIT}"
+          go build -trimpath -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
+          file "${BINARY}"
+          ls -lh "${BINARY}"
+
+      - name: Run tests
+        env:
+          CGO_ENABLED: 1
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/x86_64-linux-gnu/lib/pkgconfig
+        run: go test -count=1 -timeout 120s ./...
+
+  # ── macOS arm64 (Apple Silicon) ──
+  build-macos:
+    name: darwin-arm64
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install dependencies
+        run: |
+          brew update > /dev/null 2>&1
+          brew install nasm pkg-config
+
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: build/cross-ffmpeg/aarch64-darwin
+          key: ffmpeg-aarch64-darwin-${{ hashFiles('scripts/cross-build-ffmpeg.sh') }}
+          restore-keys: |
+            ffmpeg-aarch64-darwin-
+
+      - name: Build FFmpeg static libs (with NEON ASM)
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: bash scripts/cross-build-ffmpeg.sh aarch64-darwin
+
+      - name: Sync Android assets
+        run: |
+          mkdir -p assets
+          cp android/scrcpy-server.jar assets/
+          [ -f android/scrcpy-server.version ] && cp android/scrcpy-server.version assets/
+
+      - name: Build phonefast
+        env:
+          CGO_ENABLED: 1
+          GOOS: darwin
+          GOARCH: arm64
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/aarch64-darwin/lib/pkgconfig
+        run: |
+          BINARY="phonefast-darwin-arm64"
+          VERSION="dev-ci"
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GIT_COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-s -w \
+            -X main.Version=${VERSION} \
+            -X main.BuildTime=${BUILD_TIME} \
+            -X main.GitCommit=${GIT_COMMIT}"
+          go build -trimpath -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
+          file "${BINARY}"
+          ls -lh "${BINARY}"
+
+  # ── Windows amd64 (跨平台编译, ubuntu + mingw) ──
+  build-windows:
+    name: windows-amd64
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install mingw cross-compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            gcc-mingw-w64-x86-64 \
+            g++-mingw-w64-x86-64 \
+            binutils-mingw-w64-x86-64 \
+            nasm pkg-config
+
+      - name: Cache FFmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: build/cross-ffmpeg/x86_64-windows-gnu
+          key: ffmpeg-x86_64-windows-gnu-${{ hashFiles('scripts/cross-build-ffmpeg.sh') }}
+          restore-keys: |
+            ffmpeg-x86_64-windows-gnu-
+
+      - name: Build FFmpeg static libs (with ASM)
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: bash scripts/cross-build-ffmpeg.sh x86_64-windows-gnu
+
+      - name: Sync Android assets
+        run: |
+          mkdir -p assets
+          cp android/scrcpy-server.jar assets/
+          [ -f android/scrcpy-server.version ] && cp android/scrcpy-server.version assets/
+
+      - name: Build phonefast (Windows cross)
+        env:
+          CGO_ENABLED: 1
+          GOOS: windows
+          GOARCH: amd64
+          CC: x86_64-w64-mingw32-gcc
+          CXX: x86_64-w64-mingw32-g++
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/x86_64-windows-gnu/lib/pkgconfig
+        run: |
+          BINARY="phonefast-windows-amd64.exe"
+          VERSION="dev-ci"
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GIT_COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-s -w \
+            -X main.Version=${VERSION} \
+            -X main.BuildTime=${BUILD_TIME} \
+            -X main.GitCommit=${GIT_COMMIT}"
+          go build -trimpath -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
+          ls -lh "${BINARY}"
+
+      # Windows 交叉测试: 只编译不运行（无法运行 PE 二进制）
+      - name: Verify binary
+        run: |
+          file phonefast-windows-amd64.exe
+          echo "[✓] Windows PE binary built successfully"

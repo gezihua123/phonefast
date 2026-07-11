@@ -140,6 +140,7 @@ done
 echo ""
 echo "=== Build artifacts ==="
 _clean "dist/"                    "$ROOT/dist"
+_clean "build/"                   "$ROOT/build"
 _clean ".build-tmp/"              "$ROOT/.build-tmp"
 _clean "android/build/"           "$ROOT/android/build"
 _clean "android/.gradle/"         "$ROOT/android/.gradle"

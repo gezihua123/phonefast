@@ -1,0 +1,85 @@
+#0 depth=0 (FrameLayout) bounds=[0,0][1080,2400] parent=#-1
+#1 depth=1 (LinearLayout) bounds=[0,0][1080,2400] parent=#0
+#2 depth=2 id="content" (FrameLayout) bounds=[0,0][1080,2400] parent=#1
+#3 depth=3 id="launcher" (FrameLayout) bounds=[0,0][1080,2400] parent=#2
+#4 depth=4 id="capture_blur_view" (View) bounds=[0,0][1080,2400] parent=#3
+#5 depth=4 id="real_wallpaper_blur_view" (View) bounds=[0,0][1080,2400] parent=#3
+#6 depth=4 id="scrim_view" (View) bounds=[0,0][1080,2400] parent=#3
+#7 depth=4 id="drag_layer" (FrameLayout) bounds=[0,0][1080,2400] parent=#3
+#8 depth=5 id="defalt_page_icon_layout" (FrameLayout) bounds=[0,0][1080,2400] parent=#7
+#9 depth=5 id="apptray_view" (FrameLayout) [focused] bounds=[0,0][1080,2400] parent=#7
+#10 depth=6 id="apps_content" (PagedView) bounds=[0,0][1080,2400] parent=#9
+#11 depth=7 (ViewGroup) bounds=[0,80][-1044,2170] parent=#10
+#12 depth=8 (ViewGroup) bounds=[0,272][-1045,2170] parent=#11
+#13 depth=9 text="Samsung" desc="Samsung, 文件夹" id="home_icon" (TextView) [clickable] bounds=[0,272][-1801,646] parent=#12
+#14 depth=9 text="Google" desc="Google, 文件夹" id="home_icon" (TextView) [clickable] bounds=[0,272][-1549,646] parent=#12
+#15 depth=9 text="OneDrive" desc="OneDrive" id="apps_icon" (TextView) [clickable] bounds=[0,272][-1297,646] parent=#12
+#16 depth=9 text="Play 商店" desc="Play 商店, 1 条通知" id="apps_icon" (TextView) [clickable] bounds=[0,272][-1045,646] parent=#12
+#17 depth=9 text="应用商店" desc="应用商店, 1 条通知" id="apps_icon" (TextView) [clickable] bounds=[0,652][-1801,1026] parent=#12
+#18 depth=9 text="电话" desc="电话" id="apps_icon" (TextView) [clickable] bounds=[0,652][-1549,1026] parent=#12
+#19 depth=9 text="信息" desc="信息" id="apps_icon" (TextView) [clickable] bounds=[0,652][-1297,1026] parent=#12
+#20 depth=9 text="相机" desc="相机" id="apps_icon" (TextView) [clickable] bounds=[0,652][-1045,1026] parent=#12
+#21 depth=9 text="相册" desc="相册" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-1801,1406] parent=#12
+#22 depth=9 text="时钟" desc="时钟" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-1549,1406] parent=#12
+#23 depth=9 text="联系人" desc="联系人" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-1297,1406] parent=#12
+#24 depth=9 text="设置" desc="设置" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-1045,1406] parent=#12
+#25 depth=9 text="日历" desc="日历" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-1801,1786] parent=#12
+#26 depth=9 text="游戏中心" desc="游戏中心" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-1549,1786] parent=#12
+#27 depth=9 text="Samsung Free" desc="Samsung Free" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-1297,1786] parent=#12
+#28 depth=9 text="大象" desc="大象" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-1045,1786] parent=#12
+#29 depth=9 text="Meet" desc="Meet" id="apps_icon" (TextView) [clickable] bounds=[0,1792][-1801,2166] parent=#12
+#30 depth=7 (ViewGroup) bounds=[0,80][-1,2170] parent=#10
+#31 depth=8 (ViewGroup) bounds=[0,272][-2,2170] parent=#30
+#32 depth=9 text="TaskFlow" desc="TaskFlow" id="apps_icon" (TextView) [clickable] bounds=[0,272][-758,646] parent=#31
+#33 depth=9 text="实时海拔计" desc="实时海拔计" id="apps_icon" (TextView) [clickable] bounds=[0,272][-506,646] parent=#31
+#34 depth=9 text="Testing" desc="Testing" id="apps_icon" (TextView) [clickable] bounds=[0,272][-254,646] parent=#31
+#35 depth=9 text="Echo" desc="Echo" id="apps_icon" (TextView) [clickable] bounds=[0,272][-2,646] parent=#31
+#36 depth=9 text="像素漫游" desc="像素漫游" id="apps_icon" (TextView) [clickable] bounds=[0,652][-758,1026] parent=#31
+#37 depth=9 text="素数独" desc="素数独" id="apps_icon" (TextView) [clickable] bounds=[0,652][-506,1026] parent=#31
+#38 depth=9 text="EchoLang" desc="EchoLang" id="apps_icon" (TextView) [clickable] bounds=[0,652][-254,1026] parent=#31
+#39 depth=9 text="悬浮文本" desc="悬浮文本" id="apps_icon" (TextView) [clickable] bounds=[0,652][-2,1026] parent=#31
+#40 depth=9 text="WordPopper" desc="WordPopper" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-758,1406] parent=#31
+#41 depth=9 text="Trustamp" desc="Trustamp" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-506,1406] parent=#31
+#42 depth=9 text="Pony Shotter" desc="Pony Shotter" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-254,1406] parent=#31
+#43 depth=9 text="Nomic阅读" desc="Nomic阅读" id="apps_icon" (TextView) [clickable] bounds=[0,1032][-2,1406] parent=#31
+#44 depth=9 text="Celestial Oracle" desc="Celestial Oracle" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-758,1786] parent=#31
+#45 depth=9 text="Matrix To-Do" desc="Matrix To-Do" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-506,1786] parent=#31
+#46 depth=9 text="水印工具" desc="水印工具" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-254,1786] parent=#31
+#47 depth=9 text="FakeChatForWhatsApp" desc="FakeChatForWhatsApp" id="apps_icon" (TextView) [clickable] bounds=[0,1412][-2,1786] parent=#31
+#48 depth=9 text="LogLogic" desc="LogLogic" id="apps_icon" (TextView) [clickable] bounds=[0,1792][-758,2166] parent=#31
+#49 depth=9 text="AA Calculator" desc="AA Calculator" id="apps_icon" (TextView) [clickable] bounds=[0,1792][-506,2166] parent=#31
+#50 depth=9 text="WhatsApp" desc="WhatsApp" id="apps_icon" (TextView) [clickable] bounds=[0,1792][-254,2166] parent=#31
+#51 depth=9 text="Typeless" desc="Typeless" id="apps_icon" (TextView) [clickable] bounds=[0,1792][-2,2166] parent=#31
+#52 depth=7 (ViewGroup) bounds=[38,80][1042,2170] parent=#10
+#53 depth=8 (ViewGroup) bounds=[39,272][1041,2170] parent=#52
+#54 depth=9 text="Life Palmistry" desc="Life Palmistry" id="apps_icon" (TextView) [clickable] bounds=[39,272][285,646] parent=#53
+#55 depth=9 text="Nebula" desc="Nebula" id="apps_icon" (TextView) [clickable] bounds=[291,272][537,646] parent=#53
+#56 depth=9 text="Manus" desc="Manus" id="apps_icon" (TextView) [clickable] bounds=[543,272][789,646] parent=#53
+#57 depth=9 text="Instagram" desc="Instagram" id="apps_icon" (TextView) [clickable] bounds=[795,272][1041,646] parent=#53
+#58 depth=9 text="MNN Chat" desc="MNN Chat" id="apps_icon" (TextView) [clickable] bounds=[39,652][285,1026] parent=#53
+#59 depth=9 text="Keeta" desc="Keeta" id="apps_icon" (TextView) [clickable] bounds=[291,652][537,1026] parent=#53
+#60 depth=9 text="Leaks" desc="Leaks" id="apps_icon" (TextView) [clickable] bounds=[543,652][789,1026] parent=#53
+#61 depth=9 text="Lemon8" desc="Lemon8" id="apps_icon" (TextView) [clickable] bounds=[795,652][1041,1026] parent=#53
+#62 depth=9 text="FlClash" desc="FlClash, 1 条通知" id="apps_icon" (TextView) [clickable] bounds=[39,1032][285,1406] parent=#53
+#63 depth=9 text="Reddit" desc="Reddit" id="apps_icon" (TextView) [clickable] bounds=[291,1032][537,1406] parent=#53
+#64 depth=6 id="apps_searchbar_container" (LinearLayout) bounds=[0,0][1080,227] parent=#9
+#65 depth=7 id="app_search_wrapper" (RelativeLayout) bounds=[0,80][1080,227] parent=#64
+#66 depth=8 id="app_search_bar_bg" (ImageView) bounds=[0,80][1080,227] parent=#65
+#67 depth=8 (LinearLayout) bounds=[0,80][1080,227] parent=#65
+#68 depth=9 id="app_search_edit_text_wrapper" (LinearLayout) [clickable] bounds=[0,80][938,227] parent=#67
+#69 depth=10 text="搜索" id="app_search_edit_text" (TextView) bounds=[26,96][938,211] parent=#68
+#70 depth=9 id="app_search_more_button_wrapper" (LinearLayout) bounds=[938,80][1080,227] parent=#67
+#71 depth=10 id="more_button_container" (FrameLayout) bounds=[938,95][1054,211] parent=#70
+#72 depth=11 id="support_sort_option" (View) bounds=[938,95][1054,95] parent=#71
+#73 depth=11 desc="更多选项" id="more_icon_imageview" (ImageButton) [clickable] bounds=[938,95][1054,211] parent=#71
+#74 depth=6 id="apps_page_indicator" (FrameLayout) bounds=[0,2197][1080,2247] parent=#9
+#75 depth=7 (LinearLayout) bounds=[0,2197][1080,2247] parent=#74
+#76 depth=8 desc="第 1 页，共 3 页" (FrameLayout) [clickable] bounds=[459,2197][513,2247] parent=#75
+#77 depth=9 id="inactive" (ImageView) bounds=[461,2197][511,2247] parent=#76
+#78 depth=9 id="active" (ImageView) bounds=[461,2197][511,2247] parent=#76
+#79 depth=8 desc="第 2 页，共 3 页" (FrameLayout) [clickable] bounds=[513,2197][567,2247] parent=#75
+#80 depth=9 id="inactive" (ImageView) bounds=[515,2197][565,2247] parent=#79
+#81 depth=9 id="active" (ImageView) bounds=[515,2197][565,2247] parent=#79
+#82 depth=8 desc="第 3 页，共 3 页, 当前已是最后一页。" (FrameLayout) [clickable] bounds=[567,2197][621,2247] parent=#75
+#83 depth=9 id="inactive" (ImageView) bounds=[569,2197][619,2247] parent=#82
+#84 depth=9 id="active" (ImageView) bounds=[569,2197][619,2247] parent=#82

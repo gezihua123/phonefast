@@ -1,0 +1,45 @@
+elements:
+- {index: 0, parent: -1, depth: 0, text: "android:id/content", class: FrameLayout, clickable: False}
+- {index: 1, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/launcher", class: FrameLayout, clickable: False}
+- {index: 2, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/drag_layer", class: FrameLayout, clickable: False}
+- {index: 3, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/scrim_view", class: View, clickable: False}
+- {index: 4, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/workspace", class: ScrollView, clickable: False}
+- {index: 5, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/search_container_workspace", class: FrameLayout, clickable: False}
+- {index: 6, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/bc_smartspace_view", class: FrameLayout, clickable: False}
+- {index: 7, parent: -1, depth: 0, text: "资讯一览", class: ViewPager, clickable: False}
+- {index: 8, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/base_template_card_with_date", class: ViewGroup, clickable: True}
+- {index: 9, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/text_group", class: ViewGroup, clickable: False}
+- {index: 10, parent: -1, depth: 0, text: "7月9日周四", class: TextView, clickable: True}
+- {index: 11, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/smartspace_subtitle_group", class: ViewGroup, clickable: False}
+- {index: 12, parent: -1, depth: 0, text: "33°C", class: TextView, clickable: True}
+- {index: 13, parent: -1, depth: 0, text: "Play 商店", class: TextView, clickable: True}
+- {index: 14, parent: -1, depth: 0, text: "Gmail", class: TextView, clickable: True}
+- {index: 15, parent: -1, depth: 0, text: "相册", class: TextView, clickable: True}
+- {index: 16, parent: -1, depth: 0, text: "YouTube", class: TextView, clickable: True}
+- {index: 17, parent: -1, depth: 0, text: "Keeta", class: TextView, clickable: True}
+- {index: 18, parent: -1, depth: 0, text: "大象", class: TextView, clickable: True}
+- {index: 19, parent: -1, depth: 0, text: "Fake Location", class: TextView, clickable: True}
+- {index: 20, parent: -1, depth: 0, text: "Clash", class: TextView, clickable: True}
+- {index: 21, parent: -1, depth: 0, text: "微信", class: TextView, clickable: True}
+- {index: 22, parent: -1, depth: 0, text: "Keeta Tool", class: TextView, clickable: True}
+- {index: 23, parent: -1, depth: 0, text: "主屏幕", class: View, clickable: False}
+- {index: 24, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/page_indicator", class: LinearLayout, clickable: False}
+- {index: 25, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/page_indicator_dots", class: View, clickable: False}
+- {index: 26, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/hotseat", class: ViewGroup, clickable: False}
+- {index: 27, parent: -1, depth: 0, text: "电话", class: TextView, clickable: True}
+- {index: 28, parent: -1, depth: 0, text: "信息", class: TextView, clickable: True}
+- {index: 29, parent: -1, depth: 0, text: "Chrome", class: TextView, clickable: True}
+- {index: 30, parent: -1, depth: 0, text: "相机", class: TextView, clickable: True}
+- {index: 31, parent: -1, depth: 0, text: "Google", class: OseWidgetView, clickable: False}
+- {index: 32, parent: -1, depth: 0, text: "com.google.android.googlequicksearchbox:id/rootView", class: FrameLayout, clickable: False}
+- {index: 33, parent: -1, depth: 0, text: "com.google.android.googlequicksearchbox:id/glance_view_id_000", class: FrameLayout, clickable: True}
+- {index: 34, parent: -1, depth: 0, text: "", class: FrameLayout, clickable: True}
+- {index: 35, parent: -1, depth: 0, text: "Google 应用", class: ImageView, clickable: False}
+- {index: 36, parent: -1, depth: 0, text: "", class: FrameLayout, clickable: True}
+- {index: 37, parent: -1, depth: 0, text: "AI 模式", class: ImageView, clickable: False}
+- {index: 38, parent: -1, depth: 0, text: "", class: FrameLayout, clickable: True}
+- {index: 39, parent: -1, depth: 0, text: "语音搜索", class: ImageView, clickable: False}
+- {index: 40, parent: -1, depth: 0, text: "", class: FrameLayout, clickable: True}
+- {index: 41, parent: -1, depth: 0, text: "拍照搜索", class: ImageView, clickable: False}
+- {index: 42, parent: -1, depth: 0, text: "Google 搜索", class: LinearLayout, clickable: False}
+- {index: 43, parent: -1, depth: 0, text: "com.google.android.apps.nexuslauncher:id/overview_actions_view", class: FrameLayout, clickable: False}

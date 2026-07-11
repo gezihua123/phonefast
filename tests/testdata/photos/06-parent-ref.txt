@@ -1,0 +1,43 @@
+[0] parent=-1 text="com.google.android.apps.photos:id/action_bar_root" (FrameLayout)
+[1] parent=-1 text="android:id/content" (FrameLayout)
+[2] parent=-1 text="com.google.android.apps.photos:id/touch_capture_view" (FrameLayout)
+[3] parent=-1 text="com.google.android.apps.photos:id/photo_container" (FrameLayout)
+[4] parent=-1 text="com.google.android.apps.photos:id/drawer_layout" (DrawerLayout)
+[5] parent=-1 text="com.google.android.apps.photos:id/main_container" (FrameLayout)
+[6] parent=-1 text="com.google.android.apps.photos:id/toolbar_parent" (ViewGroup)
+[7] parent=-1 text="com.google.android.apps.photos:id/touch_capture_view" (FrameLayout)
+[8] parent=-1 text="com.google.android.apps.photos:id/all_photos_coordinator" (ViewGroup)
+[9] parent=-1 text="com.google.android.apps.photos:id/fragment_container" (FrameLayout)
+[10] parent=-1 text="com.google.android.apps.photos:id/fragment_container" (FrameLayout)
+[11] parent=-1 text="com.google.android.apps.photos:id/fragment_container" (FrameLayout)
+[12] parent=-1 text="com.google.android.apps.photos:id/photos_photogrid_date_scrubber_view" (FrameLayout)
+[13] parent=-1 text="com.google.android.apps.photos:id/recycler_view" (RecyclerView)
+[14] parent=-1 text="com.google.android.apps.photos:id/photos_mars_all_photos_promo_id" (FrameLayout)
+[15] parent=-1 text="com.google.android.apps.photos:id/set_up_locked_folder_promo" (CardView)
+[16] parent=-1 text="com.google.android.apps.photos:id/icon" (ImageView)
+[17] parent=-1 text="隐藏敏感照片和视频" (TextView)
+[18] parent=-1 text="设置“加密文件夹”以隐藏和保护敏感照片和视频" (TextView)
+[19] parent=-1 text="以后再说" (Button) [clickable]
+[20] parent=-1 text="开始使用" (Button) [clickable]
+[21] parent=-1 text="com.google.android.apps.photos:id/hats_container" (FrameLayout)
+[22] parent=-1 text="com.google.android.apps.photos:id/protection_layout" (FrameLayout)
+[23] parent=-1 text="com.google.android.apps.photos:id/scrolling_toolbar_container" (FrameLayout)
+[24] parent=-1 text="com.google.android.apps.photos:id/toolbar_container" (LinearLayout)
+[25] parent=-1 text="com.google.android.apps.photos:id/notification_bar_spacer" (View)
+[26] parent=-1 text="com.google.android.apps.photos:id/toolbar" (ViewGroup)
+[27] parent=-1 text="" (View) [clickable]
+[28] parent=-1 text="已完成备份" (TextView)
+[29] parent=-1 text="创作、新内容" (Button) [clickable]
+[30] parent=-1 text="更新" (Button) [clickable]
+[31] parent=-1 text="目前的登录者是yuanhao li yuanhaol281@gmail.com
+账号和设置。" (FrameLayout) [clickable]
+[32] parent=-1 text="com.google.android.apps.photos:id/og_selected_account_disc_apd" (FrameLayout)
+[33] parent=-1 text="com.google.android.apps.photos:id/og_apd_internal_image_view" (ImageView)
+[34] parent=-1 text="com.google.android.apps.photos:id/tab_bar" (FrameLayout)
+[35] parent=-1 text="com.google.android.apps.photos:id/tab_layout" (LinearLayout)
+[36] parent=-1 text="com.google.android.apps.photos:id/photos_tabbar_layout" (LinearLayout)
+[37] parent=-1 text="相册" (Button) [clickable]
+[38] parent=-1 text="合集" (Button) [clickable]
+[39] parent=-1 text="创作" (Button) [clickable]
+[40] parent=-1 text="搜索" (Button) [clickable]
+[41] parent=-1 text="com.google.android.apps.photos:id/fill_under_navigation_bar" (View)

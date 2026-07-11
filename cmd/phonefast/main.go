@@ -841,11 +841,12 @@ func writeScreenshot(args []string, b64 string) {
 }
 
 func uiCmd(args []string) {
-	maxShow, isSummary := parseUIShowArgs(args, 100)
+	maxShow, isSummary, formatType := parseUIShowArgs(args, 100)
 	if useDaemon {
 		result := daemonCall("get_ui_elements", map[string]any{
 			"max_elements": maxShow,
 			"summary":      isSummary,
+			"format":       formatType,
 		})
 		var resp struct {
 			Formatted string `json:"formatted"`
@@ -877,11 +878,12 @@ func uiCmd(args []string) {
 }
 
 func observeCmd(args []string) {
-	maxShow, isSummary := parseUIShowArgs(args, 100)
+	maxShow, isSummary, formatType := parseUIShowArgs(args, 100)
 	if useDaemon {
 		result := daemonCall("observe", map[string]any{
 			"max_elements": maxShow,
 			"summary":      isSummary,
+			"format":       formatType,
 		})
 		var resp struct {
 			Text      string `json:"text"`
@@ -1388,12 +1390,21 @@ func formatElements(elements []protocol.UIElement, maxShow int, isSummary bool) 
 
 // ── Helpers ──
 
-func parseUIShowArgs(args []string, defaultVal int) (int, bool) {
+func parseUIShowArgs(args []string, defaultVal int) (int, bool, string) {
 	summary := false
+	formatType := ""
+	skipNext := false
 	filtered := args[:0]
 	for _, a := range args {
+		if skipNext {
+			formatType = a
+			skipNext = false
+			continue
+		}
 		if a == "--summary" {
 			summary = true
+		} else if a == "--format" {
+			skipNext = true
 		} else {
 			filtered = append(filtered, a)
 		}
@@ -1403,14 +1414,14 @@ func parseUIShowArgs(args []string, defaultVal int) (int, bool) {
 		n, err := strconv.Atoi(args[0])
 		if err == nil {
 			if n < 0 {
-				return -1, summary // show all
+				return -1, summary, formatType // show all
 			}
 			if n > 0 {
-				return n, summary
+				return n, summary, formatType
 			}
 		}
 	}
-	return defaultVal, summary
+	return defaultVal, summary, formatType
 }
 
 func printMessage(result json.RawMessage) {

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
+	"github.com/gezihua123/phonefast/internal/format"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 	"github.com/gezihua123/phonefast/internal/session"
 	"github.com/gezihua123/phonefast/pkg/protocol"
@@ -242,12 +244,34 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
+	formatType := getFormatFromParams(req)
 	maxShow := getMaxElementsFromParams(req, 100)
 	collectMax := maxShow
 	if collectMax < 0 || collectMax > 500 {
 		collectMax = 0 // server default (500 for full, 100 for summary)
 	}
 	isSummary := getSummaryFromParams(req)
+
+	// Handle hierarchical formats via UIFormatter registry
+	if f := format.ByName(formatType); f != nil {
+		fullElements, err := sess.GetUIFull(collectMax)
+		if err != nil {
+			return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("get ui full: %v", err))
+		}
+		if maxShow > 0 && len(fullElements) > maxShow {
+			fullElements = fullElements[:maxShow]
+		}
+
+		formatted := f.Format(fullElements)
+		return newResultResponse(req.ID, map[string]any{
+			"elements":  fullElements,
+			"formatted": formatted,
+			"count":     len(fullElements),
+			"format":    formatType,
+		})
+	}
+
+	// Legacy flat format (no format specified or unknown format)
 	var elements []protocol.UIElement
 	var err error
 	if isSummary {
@@ -262,10 +286,10 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		}
 	}
 
-	formatted := formatElementsForLLM(elements, maxShow, isSummary)
+	legacyFormatted := format.ElementsForLLM(elements, maxShow, isSummary)
 	return newResultResponse(req.ID, map[string]any{
 		"elements":  elements,
-		"formatted": formatted,
+		"formatted": legacyFormatted,
 		"count":     len(elements),
 	})
 }
@@ -287,7 +311,7 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(pngData)
-	formatted := formatElementsForLLM(elements, maxShow, isSummary)
+	formatted := format.ElementsForLLM(elements, maxShow, isSummary)
 
 	return newResultResponse(req.ID, map[string]any{
 		"text":       formatted,
@@ -368,9 +392,9 @@ func handleTapElement(sess *session.Session, req *Request) *Response {
 
 	// Search by text
 	if text := getString(params, "text"); text != "" {
-		textLower := toLower(text)
+		textLower := strings.ToLower(text)
 		for _, el := range elements {
-			if contains(toLower(el.Text), textLower) || contains(toLower(el.ContentDesc), textLower) {
+			if strings.Contains(strings.ToLower(el.Text), textLower) || strings.Contains(strings.ToLower(el.ContentDesc), textLower) {
 				sx, sy := sess.ScaleToDevice(el.Center[0], el.Center[1])
 				if err := sess.Tap(sx, sy); err != nil {
 					return newErrorResponse(req.ID, ErrDevice, err.Error())
@@ -537,71 +561,7 @@ func handleWait(req *Request) *Response {
 	})
 }
 
-// ── Formatting helpers (mirrored from internal/mcp/tools.go) ──
-
-func formatElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) string {
-	if len(elements) == 0 {
-		return "No interactive elements found on screen."
-	}
-
-	if maxShow < 0 || maxShow > len(elements) {
-		maxShow = len(elements)
-	}
-
-	var lines []string
-	lines = append(lines, "Interactive elements on screen:")
-	lines = append(lines, "="+repeatString("=", 49))
-
-	for i, el := range elements {
-		if i >= maxShow {
-			lines = append(lines, fmt.Sprintf("... and %d more elements", len(elements)-maxShow))
-			break
-		}
-
-		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
-			maxShow++ // don't count this filtered element
-			continue
-		}
-
-		var parts []string
-		if el.Text != "" {
-			parts = append(parts, fmt.Sprintf(`text="%s"`, el.Text))
-		}
-		if el.ContentDesc != "" {
-			parts = append(parts, fmt.Sprintf(`desc="%s"`, el.ContentDesc))
-		}
-		if el.ResourceID != "" {
-			simpleID := el.ResourceID
-			if idx := lastIndexByte(simpleID, '/'); idx >= 0 {
-				simpleID = simpleID[idx+1:]
-			}
-			parts = append(parts, fmt.Sprintf(`id="%s"`, simpleID))
-		}
-		if el.ClassName != "" {
-			cn := el.ClassName
-			if idx := lastIndexByte(cn, '.'); idx >= 0 {
-				cn = cn[idx+1:]
-			}
-			parts = append(parts, fmt.Sprintf("(%s)", cn))
-		}
-		if el.Clickable {
-			parts = append(parts, "[clickable]")
-		}
-
-		desc := joinStrings(parts, " ")
-		if desc == "" {
-			desc = fmt.Sprintf("(%s)", el.ClassName)
-		}
-		lines = append(lines, fmt.Sprintf("[%d] %s bounds=[%d,%d][%d,%d]",
-			el.Index, desc,
-			el.Bounds[0], el.Bounds[1], el.Bounds[2], el.Bounds[3]))
-	}
-
-	lines = append(lines, "="+repeatString("=", 49))
-	lines = append(lines, "Use tap_element with index=N or text='...' to interact.")
-
-	return joinStrings(lines, "\n")
-}
+// ── Params extraction helpers ──
 
 func getMaxElementsFromParams(req *Request, defaultVal int) int {
 	params, err := parseParams(req.Params)
@@ -621,6 +581,15 @@ func getMaxElementsFromParams(req *Request, defaultVal int) int {
 	return defaultVal
 }
 
+func getFormatFromParams(req *Request) string {
+	params, err := parseParams(req.Params)
+	if err != nil {
+		return ""
+	}
+	v, _ := params["format"].(string)
+	return strings.ToLower(strings.TrimSpace(v))
+}
+
 func getSummaryFromParams(req *Request) bool {
 	params, err := parseParams(req.Params)
 	if err != nil {
@@ -628,54 +597,4 @@ func getSummaryFromParams(req *Request) bool {
 	}
 	v, ok := params["summary"].(bool)
 	return ok && v
-}
-
-func toLower(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if c >= 'A' && c <= 'Z' {
-			b[i] = c + 32
-		}
-	}
-	return string(b)
-}
-
-func contains(s, substr string) bool {
-	if len(s) < len(substr) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-func lastIndexByte(s string, c byte) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == c {
-			return i
-		}
-	}
-	return -1
-}
-
-func repeatString(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
-	}
-	return result
-}
-
-func joinStrings(parts []string, sep string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += sep + p
-	}
-	return result
 }

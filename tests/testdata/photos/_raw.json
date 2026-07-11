@@ -1,0 +1,884 @@
+[
+  {
+    "index": 0,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/action_bar_root",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 1,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "android:id/content",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 2,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/touch_capture_view",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 3,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/photo_container",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 4,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/drawer_layout",
+    "class_name": "androidx.drawerlayout.widget.DrawerLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 5,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/main_container",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 6,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/toolbar_parent",
+    "class_name": "android.view.ViewGroup",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 7,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/touch_capture_view",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 8,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/all_photos_coordinator",
+    "class_name": "android.view.ViewGroup",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 9,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/fragment_container",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 10,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/fragment_container",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 11,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/fragment_container",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 12,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/photos_photogrid_date_scrubber_view",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 13,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/recycler_view",
+    "class_name": "android.support.v7.widget.RecyclerView",
+    "bounds": [
+      0,
+      0,
+      960,
+      1908
+    ],
+    "center": [
+      480,
+      954
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 14,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/photos_mars_all_photos_promo_id",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      297,
+      960,
+      669
+    ],
+    "center": [
+      480,
+      483
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 15,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/set_up_locked_folder_promo",
+    "class_name": "androidx.cardview.widget.CardView",
+    "bounds": [
+      36,
+      333,
+      924,
+      651
+    ],
+    "center": [
+      480,
+      492
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 16,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/icon",
+    "class_name": "android.widget.ImageView",
+    "bounds": [
+      72,
+      369,
+      126,
+      423
+    ],
+    "center": [
+      99,
+      396
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 17,
+    "text": "隐藏敏感照片和视频",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/title",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      162,
+      369,
+      888,
+      420
+    ],
+    "center": [
+      525,
+      394
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 18,
+    "text": "设置“加密文件夹”以隐藏和保护敏感照片和视频",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/info",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      162,
+      420,
+      888,
+      471
+    ],
+    "center": [
+      525,
+      445
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 19,
+    "text": "以后再说",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/not_now_button",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      436,
+      507,
+      634,
+      615
+    ],
+    "center": [
+      535,
+      561
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 20,
+    "text": "开始使用",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/get_started_button",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      652,
+      507,
+      888,
+      615
+    ],
+    "center": [
+      770,
+      561
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 21,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/hats_container",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      36,
+      2106,
+      924,
+      2106
+    ],
+    "center": [
+      480,
+      2106
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 22,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/protection_layout",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 23,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/scrolling_toolbar_container",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      297
+    ],
+    "center": [
+      480,
+      148
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 24,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/toolbar_container",
+    "class_name": "android.widget.LinearLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      297
+    ],
+    "center": [
+      480,
+      148
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 25,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/notification_bar_spacer",
+    "class_name": "android.view.View",
+    "bounds": [
+      0,
+      0,
+      960,
+      153
+    ],
+    "center": [
+      480,
+      76
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 26,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/toolbar",
+    "class_name": "android.view.ViewGroup",
+    "bounds": [
+      0,
+      153,
+      960,
+      297
+    ],
+    "center": [
+      480,
+      225
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 27,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.view.View",
+    "bounds": [
+      36,
+      172,
+      271,
+      280
+    ],
+    "center": [
+      153,
+      226
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 28,
+    "text": "已完成备份",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      113,
+      208,
+      235,
+      244
+    ],
+    "center": [
+      174,
+      226
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 29,
+    "text": "",
+    "content_desc": "创作、新内容",
+    "resource_id": "com.google.android.apps.photos:id/action_bar_create",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      617,
+      171,
+      725,
+      279
+    ],
+    "center": [
+      671,
+      225
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 30,
+    "text": "",
+    "content_desc": "更新",
+    "resource_id": "com.google.android.apps.photos:id/action_bar_updates_hub",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      725,
+      171,
+      833,
+      279
+    ],
+    "center": [
+      779,
+      225
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 31,
+    "text": "",
+    "content_desc": "目前的登录者是yuanhao li yuanhaol281@gmail.com\n账号和设置。",
+    "resource_id": "com.google.android.apps.photos:id/selected_account_disc",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      833,
+      170,
+      960,
+      279
+    ],
+    "center": [
+      896,
+      224
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 32,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/og_selected_account_disc_apd",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      833,
+      170,
+      942,
+      279
+    ],
+    "center": [
+      887,
+      224
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 33,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/og_apd_internal_image_view",
+    "class_name": "android.widget.ImageView",
+    "bounds": [
+      838,
+      175,
+      937,
+      274
+    ],
+    "center": [
+      887,
+      224
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 34,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/tab_bar",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      1908,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      2025
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 35,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/tab_layout",
+    "class_name": "android.widget.LinearLayout",
+    "bounds": [
+      0,
+      1908,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      2025
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 36,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/photos_tabbar_layout",
+    "class_name": "android.widget.LinearLayout",
+    "bounds": [
+      0,
+      1908,
+      960,
+      2088
+    ],
+    "center": [
+      480,
+      1998
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 37,
+    "text": "相册",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/tab_photos",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      0,
+      1908,
+      240,
+      2088
+    ],
+    "center": [
+      120,
+      1998
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 38,
+    "text": "合集",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/tab_collections",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      240,
+      1908,
+      480,
+      2088
+    ],
+    "center": [
+      360,
+      1998
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 39,
+    "text": "创作",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/tab_aura",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      480,
+      1908,
+      720,
+      2088
+    ],
+    "center": [
+      600,
+      1998
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 40,
+    "text": "搜索",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/search_destination",
+    "class_name": "android.widget.Button",
+    "bounds": [
+      720,
+      1908,
+      960,
+      2088
+    ],
+    "center": [
+      840,
+      1998
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 41,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.photos:id/fill_under_navigation_bar",
+    "class_name": "android.view.View",
+    "bounds": [
+      0,
+      2088,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      2115
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  }
+]

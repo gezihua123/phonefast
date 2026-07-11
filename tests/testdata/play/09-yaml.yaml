@@ -1,0 +1,75 @@
+elements:
+- {index: 0, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: FrameLayout, clickable: False}
+- {index: 1, parent: -1, depth: 0, text: "android:id/content", class: FrameLayout, clickable: False}
+- {index: 2, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: FrameLayout, clickable: False}
+- {index: 3, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: FrameLayout, clickable: False}
+- {index: 4, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: ComposeView, clickable: False}
+- {index: 5, parent: -1, depth: 0, text: "为您推荐", class: TextView, clickable: False}
+- {index: 6, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 7, parent: -1, depth: 0, text: "热门排行榜", class: TextView, clickable: False}
+- {index: 8, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 9, parent: -1, depth: 0, text: "儿童", class: TextView, clickable: False}
+- {index: 10, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 11, parent: -1, depth: 0, text: "类别", class: TextView, clickable: False}
+- {index: 12, parent: -1, depth: 0, text: "升级赛事体验，解锁更多精彩", class: TextView, clickable: False}
+- {index: 13, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 14, parent: -1, depth: 0, text: "为你的球队呐喊助威，与全世界一起高歌", class: TextView, clickable: False}
+- {index: 15, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 16, parent: -1, depth: 0, text: "Smule: 全民K歌神器 - 唱歌录制分享平台
+Smule
+12 岁以上
+星级：4.4
+", class: View, clickable: False}
+- {index: 17, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 18, parent: -1, depth: 0, text: "安装", class: View, clickable: False}
+- {index: 19, parent: -1, depth: 0, text: "安装", class: TextView, clickable: False}
+- {index: 20, parent: -1, depth: 0, text: "包含内购商品", class: TextView, clickable: False}
+- {index: 21, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 22, parent: -1, depth: 0, text: "火热进行中", class: TextView, clickable: False}
+- {index: 23, parent: -1, depth: 0, text: "共迎全球最大的体育赛事", class: TextView, clickable: False}
+- {index: 24, parent: -1, depth: 0, text: "2026 国际足联世界杯™ 重磅开幕", class: TextView, clickable: False}
+- {index: 25, parent: -1, depth: 0, text: "赞助商广告", class: TextView, clickable: False}
+- {index: 26, parent: -1, depth: 0, text: "为您推荐", class: TextView, clickable: False}
+- {index: 27, parent: -1, depth: 0, text: "更多选项", class: View, clickable: True}
+- {index: 28, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 29, parent: -1, depth: 0, text: "Keeta - 外卖送递及自取
+餐饮美食
+外卖
+已安装
+", class: View, clickable: False}
+- {index: 30, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 31, parent: -1, depth: 0, text: "foodpanda - 美食外卖及生鲜杂货外送服务
+餐饮美食
+外卖
+星级：4.2
+", class: View, clickable: False}
+- {index: 32, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 33, parent: -1, depth: 0, text: "他TA星球-語音連結的溫暖宇宙
+社交
+人脉
+星级：3.3
+", class: View, clickable: False}
+- {index: 34, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 35, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 36, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 37, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 38, parent: -1, depth: 0, text: "与“个性化推荐”相符的更多搜索结果", class: Button, clickable: True}
+- {index: 39, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 40, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 41, parent: -1, depth: 0, text: "显示通知和优惠。有 6 个新通知。", class: View, clickable: False}
+- {index: 42, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 43, parent: -1, depth: 0, text: "目前的登录者是yuanhao li yuanhaol281@gmail.com
+账号和设置。", class: FrameLayout, clickable: True}
+- {index: 44, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: FrameLayout, clickable: False}
+- {index: 45, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: ImageView, clickable: False}
+- {index: 46, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 47, parent: -1, depth: 0, text: "游戏", class: TextView, clickable: False}
+- {index: 48, parent: -1, depth: 0, text: "应用", class: TextView, clickable: False}
+- {index: 49, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 50, parent: -1, depth: 0, text: "搜索", class: TextView, clickable: False}
+- {index: 51, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 52, parent: -1, depth: 0, text: "图书", class: TextView, clickable: False}
+- {index: 53, parent: -1, depth: 0, text: "", class: View, clickable: True}
+- {index: 54, parent: -1, depth: 0, text: "我", class: TextView, clickable: False}
+- {index: 55, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: FrameLayout, clickable: False}
+- {index: 56, parent: -1, depth: 0, text: "com.android.vending:id/0_resource_name_obfuscated", class: FrameLayout, clickable: False}

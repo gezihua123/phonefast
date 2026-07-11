@@ -1,0 +1,330 @@
+{
+  "qwen2:0.5b": {
+    "01-flat.txt|v1-direct": {
+      "correct": 3,
+      "total": 15,
+      "rate": 20.0,
+      "avg_time": 0.3
+    },
+    "01-flat.txt|v2-role": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 0.5
+    },
+    "01-flat.txt|v3-structured": {
+      "correct": 8,
+      "total": 15,
+      "rate": 53.3,
+      "avg_time": 0.4
+    },
+    "02-markdown.md|v1-direct": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 0.5
+    },
+    "02-markdown.md|v2-role": {
+      "correct": 7,
+      "total": 15,
+      "rate": 46.7,
+      "avg_time": 0.4
+    },
+    "02-markdown.md|v3-structured": {
+      "correct": 4,
+      "total": 15,
+      "rate": 26.7,
+      "avg_time": 0.3
+    },
+    "03-markdown-full.md|v1-direct": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 0.4
+    },
+    "03-markdown-full.md|v2-role": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 0.6
+    },
+    "03-markdown-full.md|v3-structured": {
+      "correct": 3,
+      "total": 15,
+      "rate": 20.0,
+      "avg_time": 0.3
+    },
+    "04-path-number.txt|v1-direct": {
+      "correct": 8,
+      "total": 15,
+      "rate": 53.3,
+      "avg_time": 0.4
+    },
+    "04-path-number.txt|v2-role": {
+      "correct": 3,
+      "total": 15,
+      "rate": 20.0,
+      "avg_time": 0.6
+    },
+    "04-path-number.txt|v3-structured": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 8.3
+    },
+    "05-breadcrumb.txt|v1-direct": {
+      "correct": 4,
+      "total": 15,
+      "rate": 26.7,
+      "avg_time": 0.4
+    },
+    "05-breadcrumb.txt|v2-role": {
+      "correct": 7,
+      "total": 15,
+      "rate": 46.7,
+      "avg_time": 0.5
+    },
+    "05-breadcrumb.txt|v3-structured": {
+      "correct": 5,
+      "total": 15,
+      "rate": 33.3,
+      "avg_time": 0.4
+    },
+    "06-parent-ref.txt|v1-direct": {
+      "correct": 7,
+      "total": 15,
+      "rate": 46.7,
+      "avg_time": 0.8
+    },
+    "06-parent-ref.txt|v2-role": {
+      "correct": 7,
+      "total": 15,
+      "rate": 46.7,
+      "avg_time": 0.6
+    },
+    "06-parent-ref.txt|v3-structured": {
+      "correct": 7,
+      "total": 15,
+      "rate": 46.7,
+      "avg_time": 0.3
+    },
+    "07-json-lines.jsonl|v1-direct": {
+      "correct": 5,
+      "total": 15,
+      "rate": 33.3,
+      "avg_time": 0.4
+    },
+    "07-json-lines.jsonl|v2-role": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 0.5
+    },
+    "07-json-lines.jsonl|v3-structured": {
+      "correct": 3,
+      "total": 15,
+      "rate": 20.0,
+      "avg_time": 0.3
+    },
+    "08-csv.csv|v1-direct": {
+      "correct": 5,
+      "total": 15,
+      "rate": 33.3,
+      "avg_time": 0.3
+    },
+    "08-csv.csv|v2-role": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 0.3
+    },
+    "08-csv.csv|v3-structured": {
+      "correct": 3,
+      "total": 15,
+      "rate": 20.0,
+      "avg_time": 0.3
+    },
+    "09-yaml.yaml|v1-direct": {
+      "correct": 7,
+      "total": 15,
+      "rate": 46.7,
+      "avg_time": 0.3
+    },
+    "09-yaml.yaml|v2-role": {
+      "correct": 5,
+      "total": 15,
+      "rate": 33.3,
+      "avg_time": 0.4
+    },
+    "09-yaml.yaml|v3-structured": {
+      "correct": 6,
+      "total": 15,
+      "rate": 40.0,
+      "avg_time": 0.3
+    }
+  },
+  "qwen3:0.6b": {
+    "01-flat.txt|v1-direct": {
+      "correct": 10,
+      "total": 15,
+      "rate": 66.7,
+      "avg_time": 1.9
+    },
+    "01-flat.txt|v2-role": {
+      "correct": 13,
+      "total": 15,
+      "rate": 86.7,
+      "avg_time": 2.0
+    },
+    "01-flat.txt|v3-structured": {
+      "correct": 10,
+      "total": 15,
+      "rate": 66.7,
+      "avg_time": 2.6
+    },
+    "02-markdown.md|v1-direct": {
+      "correct": 12,
+      "total": 15,
+      "rate": 80.0,
+      "avg_time": 1.8
+    },
+    "02-markdown.md|v2-role": {
+      "correct": 13,
+      "total": 15,
+      "rate": 86.7,
+      "avg_time": 2.3
+    },
+    "02-markdown.md|v3-structured": {
+      "correct": 9,
+      "total": 15,
+      "rate": 60.0,
+      "avg_time": 1.8
+    },
+    "03-markdown-full.md|v1-direct": {
+      "correct": 12,
+      "total": 15,
+      "rate": 80.0,
+      "avg_time": 2.2
+    },
+    "03-markdown-full.md|v2-role": {
+      "correct": 14,
+      "total": 15,
+      "rate": 93.3,
+      "avg_time": 2.1
+    },
+    "03-markdown-full.md|v3-structured": {
+      "correct": 12,
+      "total": 15,
+      "rate": 80.0,
+      "avg_time": 1.6
+    },
+    "04-path-number.txt|v1-direct": {
+      "correct": 9,
+      "total": 15,
+      "rate": 60.0,
+      "avg_time": 1.4
+    },
+    "04-path-number.txt|v2-role": {
+      "correct": 9,
+      "total": 15,
+      "rate": 60.0,
+      "avg_time": 3.9
+    },
+    "04-path-number.txt|v3-structured": {
+      "correct": 9,
+      "total": 15,
+      "rate": 60.0,
+      "avg_time": 3.1
+    },
+    "05-breadcrumb.txt|v1-direct": {
+      "correct": 13,
+      "total": 15,
+      "rate": 86.7,
+      "avg_time": 1.6
+    },
+    "05-breadcrumb.txt|v2-role": {
+      "correct": 14,
+      "total": 15,
+      "rate": 93.3,
+      "avg_time": 2.8
+    },
+    "05-breadcrumb.txt|v3-structured": {
+      "correct": 9,
+      "total": 15,
+      "rate": 60.0,
+      "avg_time": 2.8
+    },
+    "06-parent-ref.txt|v1-direct": {
+      "correct": 14,
+      "total": 15,
+      "rate": 93.3,
+      "avg_time": 1.9
+    },
+    "06-parent-ref.txt|v2-role": {
+      "correct": 12,
+      "total": 15,
+      "rate": 80.0,
+      "avg_time": 4.3
+    },
+    "06-parent-ref.txt|v3-structured": {
+      "correct": 12,
+      "total": 15,
+      "rate": 80.0,
+      "avg_time": 3.7
+    },
+    "07-json-lines.jsonl|v1-direct": {
+      "correct": 15,
+      "total": 15,
+      "rate": 100.0,
+      "avg_time": 2.0
+    },
+    "07-json-lines.jsonl|v2-role": {
+      "correct": 14,
+      "total": 15,
+      "rate": 93.3,
+      "avg_time": 3.2
+    },
+    "07-json-lines.jsonl|v3-structured": {
+      "correct": 14,
+      "total": 15,
+      "rate": 93.3,
+      "avg_time": 3.5
+    },
+    "08-csv.csv|v1-direct": {
+      "correct": 14,
+      "total": 15,
+      "rate": 93.3,
+      "avg_time": 3.6
+    },
+    "08-csv.csv|v2-role": {
+      "correct": 15,
+      "total": 15,
+      "rate": 100.0,
+      "avg_time": 3.0
+    },
+    "08-csv.csv|v3-structured": {
+      "correct": 13,
+      "total": 15,
+      "rate": 86.7,
+      "avg_time": 1.9
+    },
+    "09-yaml.yaml|v1-direct": {
+      "correct": 15,
+      "total": 15,
+      "rate": 100.0,
+      "avg_time": 1.8
+    },
+    "09-yaml.yaml|v2-role": {
+      "correct": 12,
+      "total": 15,
+      "rate": 80.0,
+      "avg_time": 3.5
+    },
+    "09-yaml.yaml|v3-structured": {
+      "correct": 13,
+      "total": 15,
+      "rate": 86.7,
+      "avg_time": 1.4
+    }
+  }
+}

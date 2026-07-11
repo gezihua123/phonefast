@@ -16,6 +16,11 @@ const UIDumpRequest = "dump"
 // Summary mode filters out layout containers on the server side.
 const UISummaryRequest = "sum"
 
+// UIFullRequest is the full hierarchical-mode request prefix.
+// Full mode returns ALL nodes (no filtering) with parent/depth metadata
+// for generating hierarchical formats (jsonl, simplexml, flatref).
+const UIFullRequest = "full"
+
 // UIElement represents a single UI element on screen.
 // Compatible with phone-mcp UIElement format.
 type UIElement struct {
@@ -35,6 +40,30 @@ type UIElement struct {
 // UIDumpResponse is the parsed response from the ui socket.
 type UIDumpResponse struct {
 	Elements []UIElement `json:"elements"`
+}
+
+// UIFullElement represents a single UI element with hierarchy metadata.
+// Includes parent ID and depth for building tree-based formats.
+type UIFullElement struct {
+	ID          int     `json:"id"`
+	Parent      int     `json:"parent"`
+	Depth       int     `json:"depth"`
+	Text        string  `json:"text"`
+	ContentDesc string  `json:"content_desc"`
+	ResourceID  string  `json:"resource_id"`
+	ClassName   string  `json:"class_name"`
+	Bounds      [4]int  `json:"bounds"` // [left, top, right, bottom]
+	Center      [2]int  `json:"center"`
+	Clickable   bool    `json:"clickable"`
+	Enabled     bool    `json:"enabled"`
+	Focused     bool    `json:"focused,omitempty"`
+	Selected    bool    `json:"selected,omitempty"`
+}
+
+// UIFullResponse is the parsed response from the ui socket in full hierarchical mode.
+type UIFullResponse struct {
+	Elements []UIFullElement `json:"elements"`
+	Error    string          `json:"error,omitempty"`
 }
 
 // ReadUIDumpResponse reads a UI dump response from the ui socket.
@@ -173,4 +202,45 @@ func WriteUISummaryRequest(w io.Writer, maxElements int) error {
 	}
 	_, err := w.Write([]byte(req))
 	return err
+}
+
+// WriteUIFullRequest sends a full hierarchical-mode dump request on the ui socket.
+// Full mode returns ALL nodes with parent/depth metadata.
+// If maxElements > 0, includes a limit: "full:NNN\0".
+// Otherwise sends "full\0" (server uses its default of 500).
+func WriteUIFullRequest(w io.Writer, maxElements int) error {
+	var req string
+	if maxElements > 0 {
+		req = fmt.Sprintf("%s:%d\x00", UIFullRequest, maxElements)
+	} else {
+		req = fmt.Sprintf("%s\x00", UIFullRequest)
+	}
+	_, err := w.Write([]byte(req))
+	return err
+}
+
+// ReadUIFullResponse reads a full hierarchical UI dump response from the ui socket.
+// Protocol: 4-byte big-endian length prefix + JSON payload.
+func ReadUIFullResponse(r io.Reader) (*UIFullResponse, error) {
+	var lenBuf [4]byte
+	if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
+		return nil, fmt.Errorf("read ui full response length: %w", err)
+	}
+
+	length := binary.BigEndian.Uint32(lenBuf[:])
+	if length == 0 || length > 10*1024*1024 { // 10MB sanity cap
+		return nil, fmt.Errorf("invalid ui full response length: %d", length)
+	}
+
+	data := make([]byte, length)
+	if _, err := io.ReadFull(r, data); err != nil {
+		return nil, fmt.Errorf("read ui full response body: %w", err)
+	}
+
+	var resp UIFullResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal ui full response: %w", err)
+	}
+
+	return &resp, nil
 }

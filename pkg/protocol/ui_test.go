@@ -180,6 +180,122 @@ func TestSimplifyClassNameAppCompatVariants(t *testing.T) {
 	}
 }
 
+func TestWriteUIFullRequest(t *testing.T) {
+	t.Run("default (no limit)", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUIFullRequest(&buf, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("full\x00")) {
+			t.Errorf("expected full\\0, got %q", buf.String())
+		}
+	})
+
+	t.Run("with limit", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUIFullRequest(&buf, 300)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("full:300\x00")) {
+			t.Errorf("expected full:300\\0, got %q", buf.String())
+		}
+	})
+
+	t.Run("negative is treated as default", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := WriteUIFullRequest(&buf, -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(buf.Bytes(), []byte("full\x00")) {
+			t.Errorf("expected full\\0 for negative, got %q", buf.String())
+		}
+	})
+}
+
+func TestReadUIFullResponse(t *testing.T) {
+	resp := UIFullResponse{
+		Elements: []UIFullElement{
+			{
+				ID:          19,
+				Parent:      17,
+				Depth:       16,
+				Text:        "",
+				ContentDesc: "",
+				ResourceID:  "",
+				ClassName:   "android.view.View",
+				Bounds:      [4]int{857, 399, 1017, 525},
+				Center:      [2]int{937, 462},
+				Clickable:   true,
+				Enabled:     true,
+			},
+			{
+				ID:          20,
+				Parent:      19,
+				Depth:       17,
+				Text:        "",
+				ContentDesc: "安装",
+				ClassName:   "android.view.View",
+				Bounds:      [4]int{899, 432, 975, 491},
+				Center:      [2]int{937, 461},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	length := uint32(len(jsonData))
+	buf.WriteByte(byte(length >> 24))
+	buf.WriteByte(byte(length >> 16))
+	buf.WriteByte(byte(length >> 8))
+	buf.WriteByte(byte(length))
+	buf.Write(jsonData)
+
+	parsed, err := ReadUIFullResponse(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(parsed.Elements) != 2 {
+		t.Fatalf("expected 2 elements, got %d", len(parsed.Elements))
+	}
+
+	el0 := parsed.Elements[0]
+	if el0.ID != 19 {
+		t.Errorf("expected ID 19, got %d", el0.ID)
+	}
+	if el0.Parent != 17 {
+		t.Errorf("expected Parent 17, got %d", el0.Parent)
+	}
+	if el0.Depth != 16 {
+		t.Errorf("expected Depth 16, got %d", el0.Depth)
+	}
+	if !el0.Clickable {
+		t.Error("expected clickable=true")
+	}
+
+	el1 := parsed.Elements[1]
+	if el1.ContentDesc != "安装" {
+		t.Errorf("expected ContentDesc '安装', got %q", el1.ContentDesc)
+	}
+}
+
+func TestReadUIFullResponseInvalidLength(t *testing.T) {
+	var buf bytes.Buffer
+	buf.Write([]byte{0xFF, 0xFF, 0xFF, 0xFF}) // huge length
+
+	_, err := ReadUIFullResponse(&buf)
+	if err == nil {
+		t.Error("expected error for invalid length")
+	}
+}
+
 func TestIsLayoutClass(t *testing.T) {
 	tests := []struct {
 		input    string

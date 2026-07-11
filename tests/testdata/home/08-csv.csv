@@ -1,0 +1,45 @@
+index,parent,depth,text,class,clickable
+0,-1,0,android:id/content,FrameLayout,False
+1,-1,0,com.google.android.apps.nexuslauncher:id/launcher,FrameLayout,False
+2,-1,0,com.google.android.apps.nexuslauncher:id/drag_layer,FrameLayout,False
+3,-1,0,com.google.android.apps.nexuslauncher:id/scrim_view,View,False
+4,-1,0,com.google.android.apps.nexuslauncher:id/workspace,ScrollView,False
+5,-1,0,com.google.android.apps.nexuslauncher:id/search_container_workspace,FrameLayout,False
+6,-1,0,com.google.android.apps.nexuslauncher:id/bc_smartspace_view,FrameLayout,False
+7,-1,0,资讯一览,ViewPager,False
+8,-1,0,com.google.android.apps.nexuslauncher:id/base_template_card_with_date,ViewGroup,True
+9,-1,0,com.google.android.apps.nexuslauncher:id/text_group,ViewGroup,False
+10,-1,0,7月9日周四,TextView,True
+11,-1,0,com.google.android.apps.nexuslauncher:id/smartspace_subtitle_group,ViewGroup,False
+12,-1,0,33°C,TextView,True
+13,-1,0,Play 商店,TextView,True
+14,-1,0,Gmail,TextView,True
+15,-1,0,相册,TextView,True
+16,-1,0,YouTube,TextView,True
+17,-1,0,Keeta,TextView,True
+18,-1,0,大象,TextView,True
+19,-1,0,Fake Location,TextView,True
+20,-1,0,Clash,TextView,True
+21,-1,0,微信,TextView,True
+22,-1,0,Keeta Tool,TextView,True
+23,-1,0,主屏幕,View,False
+24,-1,0,com.google.android.apps.nexuslauncher:id/page_indicator,LinearLayout,False
+25,-1,0,com.google.android.apps.nexuslauncher:id/page_indicator_dots,View,False
+26,-1,0,com.google.android.apps.nexuslauncher:id/hotseat,ViewGroup,False
+27,-1,0,电话,TextView,True
+28,-1,0,信息,TextView,True
+29,-1,0,Chrome,TextView,True
+30,-1,0,相机,TextView,True
+31,-1,0,Google,OseWidgetView,False
+32,-1,0,com.google.android.googlequicksearchbox:id/rootView,FrameLayout,False
+33,-1,0,com.google.android.googlequicksearchbox:id/glance_view_id_000,FrameLayout,True
+34,-1,0,,FrameLayout,True
+35,-1,0,Google 应用,ImageView,False
+36,-1,0,,FrameLayout,True
+37,-1,0,AI 模式,ImageView,False
+38,-1,0,,FrameLayout,True
+39,-1,0,语音搜索,ImageView,False
+40,-1,0,,FrameLayout,True
+41,-1,0,拍照搜索,ImageView,False
+42,-1,0,Google 搜索,LinearLayout,False
+43,-1,0,com.google.android.apps.nexuslauncher:id/overview_actions_view,FrameLayout,False

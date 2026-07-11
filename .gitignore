@@ -52,3 +52,6 @@ go.work
 go.work.sum
 /phonefast
 .build-tmp
+
+# 交叉编译 FFmpeg 缓存
+/cross-ffmpeg/

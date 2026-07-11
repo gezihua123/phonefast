@@ -1,0 +1,926 @@
+[
+  {
+    "index": 0,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "android:id/content",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 1,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/launcher",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 2,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/drag_layer",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 3,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/scrim_view",
+    "class_name": "android.view.View",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 4,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/workspace",
+    "class_name": "android.widget.ScrollView",
+    "bounds": [
+      0,
+      0,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1071
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 5,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/search_container_workspace",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      44,
+      178,
+      916,
+      400
+    ],
+    "center": [
+      480,
+      289
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 6,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/bc_smartspace_view",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      44,
+      178,
+      916,
+      400
+    ],
+    "center": [
+      480,
+      289
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 7,
+    "text": "",
+    "content_desc": "资讯一览",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/smartspace_card_pager",
+    "class_name": "androidx.viewpager.widget.ViewPager",
+    "bounds": [
+      44,
+      178,
+      916,
+      400
+    ],
+    "center": [
+      480,
+      289
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 8,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/base_template_card_with_date",
+    "class_name": "android.view.ViewGroup",
+    "bounds": [
+      44,
+      178,
+      916,
+      400
+    ],
+    "center": [
+      480,
+      289
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 9,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/text_group",
+    "class_name": "android.view.ViewGroup",
+    "bounds": [
+      64,
+      221,
+      897,
+      357
+    ],
+    "center": [
+      480,
+      289
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 10,
+    "text": "7月9日周四",
+    "content_desc": "7月9日周四",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/date",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      64,
+      221,
+      262,
+      278
+    ],
+    "center": [
+      163,
+      249
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 11,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/smartspace_subtitle_group",
+    "class_name": "android.view.ViewGroup",
+    "bounds": [
+      64,
+      288,
+      897,
+      357
+    ],
+    "center": [
+      480,
+      322
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 12,
+    "text": "33°C",
+    "content_desc": "局部多云，33°C",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/subtitle_text",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      64,
+      288,
+      188,
+      357
+    ],
+    "center": [
+      126,
+      322
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 13,
+    "text": "Play 商店",
+    "content_desc": "“Play 商店”有 1 条通知",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      44,
+      1413,
+      236,
+      1635
+    ],
+    "center": [
+      140,
+      1524
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 14,
+    "text": "Gmail",
+    "content_desc": "Gmail",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      271,
+      1413,
+      463,
+      1635
+    ],
+    "center": [
+      367,
+      1524
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 15,
+    "text": "相册",
+    "content_desc": "相册",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      498,
+      1413,
+      690,
+      1635
+    ],
+    "center": [
+      594,
+      1524
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 16,
+    "text": "YouTube",
+    "content_desc": "YouTube",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      725,
+      1413,
+      916,
+      1635
+    ],
+    "center": [
+      820,
+      1524
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 17,
+    "text": "Keeta",
+    "content_desc": "Keeta",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      990,
+      178,
+      960,
+      400
+    ],
+    "center": [
+      975,
+      289
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 18,
+    "text": "大象",
+    "content_desc": "大象",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      1217,
+      178,
+      960,
+      400
+    ],
+    "center": [
+      1088,
+      289
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 19,
+    "text": "Fake Location",
+    "content_desc": "Fake Location",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      1444,
+      178,
+      960,
+      400
+    ],
+    "center": [
+      1202,
+      289
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 20,
+    "text": "Clash",
+    "content_desc": "Clash",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      1671,
+      178,
+      960,
+      400
+    ],
+    "center": [
+      1315,
+      289
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 21,
+    "text": "微信",
+    "content_desc": "微信",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      990,
+      425,
+      960,
+      647
+    ],
+    "center": [
+      975,
+      536
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 22,
+    "text": "Keeta Tool",
+    "content_desc": "Keeta Tool",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      1217,
+      425,
+      960,
+      647
+    ],
+    "center": [
+      1088,
+      536
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 23,
+    "text": "",
+    "content_desc": "主屏幕",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/accessibility_action_view",
+    "class_name": "android.view.View",
+    "bounds": [
+      0,
+      153,
+      960,
+      2088
+    ],
+    "center": [
+      480,
+      1120
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 24,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/page_indicator",
+    "class_name": "android.widget.LinearLayout",
+    "bounds": [
+      0,
+      1663,
+      960,
+      1717
+    ],
+    "center": [
+      480,
+      1690
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 25,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/page_indicator_dots",
+    "class_name": "android.view.View",
+    "bounds": [
+      455,
+      1676,
+      504,
+      1703
+    ],
+    "center": [
+      479,
+      1689
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 26,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/hotseat",
+    "class_name": "android.view.ViewGroup",
+    "bounds": [
+      0,
+      1717,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1929
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 27,
+    "text": "电话",
+    "content_desc": "电话",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      65,
+      1717,
+      214,
+      1885
+    ],
+    "center": [
+      139,
+      1801
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 28,
+    "text": "信息",
+    "content_desc": "信息",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      292,
+      1717,
+      441,
+      1885
+    ],
+    "center": [
+      366,
+      1801
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 29,
+    "text": "Chrome",
+    "content_desc": "Chrome",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      519,
+      1717,
+      668,
+      1885
+    ],
+    "center": [
+      593,
+      1801
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 30,
+    "text": "相机",
+    "content_desc": "相机",
+    "resource_id": "",
+    "class_name": "android.widget.TextView",
+    "bounds": [
+      746,
+      1717,
+      895,
+      1885
+    ],
+    "center": [
+      820,
+      1801
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 31,
+    "text": "",
+    "content_desc": "Google",
+    "resource_id": "",
+    "class_name": "com.android.launcher3.qsb.OseWidgetView",
+    "bounds": [
+      71,
+      1906,
+      889,
+      2048
+    ],
+    "center": [
+      480,
+      1977
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 32,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.googlequicksearchbox:id/rootView",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      71,
+      1914,
+      889,
+      2040
+    ],
+    "center": [
+      480,
+      1977
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 33,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.googlequicksearchbox:id/glance_view_id_000",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      71,
+      1914,
+      889,
+      2040
+    ],
+    "center": [
+      480,
+      1977
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 34,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      71,
+      1914,
+      190,
+      2040
+    ],
+    "center": [
+      130,
+      1977
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 35,
+    "text": "",
+    "content_desc": "Google 应用",
+    "resource_id": "",
+    "class_name": "android.widget.ImageView",
+    "bounds": [
+      104,
+      1945,
+      167,
+      2008
+    ],
+    "center": [
+      135,
+      1976
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 36,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      551,
+      1914,
+      659,
+      2040
+    ],
+    "center": [
+      605,
+      1977
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 37,
+    "text": "",
+    "content_desc": "AI 模式",
+    "resource_id": "",
+    "class_name": "android.widget.ImageView",
+    "bounds": [
+      573,
+      1945,
+      636,
+      2008
+    ],
+    "center": [
+      604,
+      1976
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 38,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      659,
+      1914,
+      767,
+      2040
+    ],
+    "center": [
+      713,
+      1977
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 39,
+    "text": "",
+    "content_desc": "语音搜索",
+    "resource_id": "",
+    "class_name": "android.widget.ImageView",
+    "bounds": [
+      681,
+      1945,
+      744,
+      2008
+    ],
+    "center": [
+      712,
+      1976
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 40,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      767,
+      1914,
+      889,
+      2040
+    ],
+    "center": [
+      828,
+      1977
+    ],
+    "clickable": true,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 41,
+    "text": "",
+    "content_desc": "拍照搜索",
+    "resource_id": "",
+    "class_name": "android.widget.ImageView",
+    "bounds": [
+      789,
+      1945,
+      852,
+      2008
+    ],
+    "center": [
+      820,
+      1976
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 42,
+    "text": "",
+    "content_desc": "Google 搜索",
+    "resource_id": "",
+    "class_name": "android.widget.LinearLayout",
+    "bounds": [
+      71,
+      1918,
+      889,
+      2035
+    ],
+    "center": [
+      480,
+      1976
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  },
+  {
+    "index": 43,
+    "text": "",
+    "content_desc": "",
+    "resource_id": "com.google.android.apps.nexuslauncher:id/overview_actions_view",
+    "class_name": "android.widget.FrameLayout",
+    "bounds": [
+      0,
+      1751,
+      960,
+      2142
+    ],
+    "center": [
+      480,
+      1946
+    ],
+    "clickable": false,
+    "enabled": true,
+    "_depth": 0,
+    "_parent": -1
+  }
+]

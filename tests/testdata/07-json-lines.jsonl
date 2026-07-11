@@ -1,0 +1,17 @@
+# UI 元素列表 — Android 手机屏幕 (设置 > 网络与互联网)
+# 屏幕分辨率: 1080×2400
+# 字段: index=编号 depth=层级(0=顶层) parent=父节点(-1=顶层)
+#       text=文本 class=控件类型 clickable=可点击
+
+{"i": 0, "t": "Wi‑Fi", "c": "Preference", "p": -1, "dp": 0, "b": [0, 0, 1080, 130], "x": 540, "y": 65, "clk": true, "en": true}
+{"i": 1, "t": "HomeWiFi", "c": "TextView", "p": 0, "dp": 1, "b": [100, 130, 800, 170], "x": 450, "y": 150, "clk": false, "en": true}
+{"i": 2, "t": "已连接", "c": "TextView", "p": 0, "dp": 1, "b": [820, 130, 1050, 170], "x": 935, "y": 150, "clk": false, "en": true}
+{"i": 3, "t": "蓝牙", "c": "Preference", "p": -1, "dp": 0, "b": [0, 180, 1080, 310], "x": 540, "y": 245, "clk": true, "en": true}
+{"i": 4, "t": "SIM 卡", "c": "Preference", "p": -1, "dp": 0, "b": [0, 320, 1080, 450], "x": 540, "y": 385, "clk": true, "en": true}
+{"i": 5, "t": "中国移动", "c": "TextView", "p": 4, "dp": 1, "b": [100, 450, 700, 490], "x": 400, "y": 470, "clk": false, "en": true}
+{"i": 6, "t": "流量用量", "c": "Preference", "p": -1, "dp": 0, "b": [0, 500, 1080, 630], "x": 540, "y": 565, "clk": true, "en": true}
+{"i": 7, "t": "热点与网络共享", "c": "Preference", "p": -1, "dp": 0, "b": [0, 640, 1080, 770], "x": 540, "y": 705, "clk": true, "en": true}
+{"i": 8, "t": "Wi‑Fi 热点", "c": "Preference", "p": 7, "dp": 1, "b": [100, 770, 1080, 900], "x": 590, "y": 835, "clk": true, "en": true}
+{"i": 9, "t": "已关闭 / 0 台设备", "c": "TextView", "p": 8, "dp": 2, "b": [200, 900, 1080, 940], "x": 640, "y": 920, "clk": false, "en": true}
+{"i": 10, "t": "USB 网络共享", "c": "Switch", "p": 7, "dp": 1, "b": [100, 950, 1080, 1080], "x": 590, "y": 1015, "clk": true, "en": true}
+{"i": 11, "t": "VPN", "c": "Preference", "p": -1, "dp": 0, "b": [0, 1090, 1080, 1220], "x": 540, "y": 1155, "clk": true, "en": false}
