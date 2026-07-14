@@ -100,6 +100,40 @@ phonefast serve
 
 ---
 
+## Demo
+
+![phonefast 4x speed demo](assets/phonefast_demo.gif)
+
+> phonefast in action — observe, tap, swipe, and type on an Android device with sub-30ms latency.
+
+---
+
+## Performance
+
+phonefast's daemon mode delivers consistently low latency across all operations. Below are the results from a **12-hour stress test** (v1.0.11, 145,843 operations, 100% success rate, zero reconnects):
+
+| Operation | P50 | P95 | P99 | Notes |
+|-----------|:---:|:---:|:---:|-------|
+| `tap` | **13ms** | 13ms | 14ms | Touch at coordinates |
+| `back` / `home` / `press_key` | **12-13ms** | 13ms | 14ms | Hardware key events |
+| `screenshot` | **28ms** | 126ms | 128ms | H.264 keyframe → PNG |
+| `observe` | **28ms** | 126ms | 129ms | Screenshot + UI (atomic) |
+| `get_ui_elements` | **46ms** | 132ms | 151ms | UI tree via UISocketHandler |
+| `swipe` | **318ms** | 322ms | 323ms | Gesture (includes 300ms duration) |
+| `type_text` / `launch_app` / `status` | **1ms** | 1-2ms | 2-4ms | Fire-and-forget semantics |
+| `wait` | **33ms** | 33ms | 33ms | Sleep command |
+
+**Key benchmarks:**
+- Daemon mode response time: **<13ms** for touch and key operations
+- Screenshot P50: **28ms** (4.3x faster than v1.0.0's 121ms)
+- Real physical memory: **~16MB** steady-state (verified via vmmap)
+- 12-hour stress test: **145,843 ops, 100% success, 0 reconnects**
+- 200 consecutive screenshots: **P50 = 12ms, P95 = 13ms** (hot decoder)
+
+> Detailed benchmark history, version comparison, and methodology at [docs/benchmark.md](docs/benchmark.md).
+
+---
+
 ## Command Reference
 
 ### Format

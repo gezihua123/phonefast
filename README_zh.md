@@ -100,6 +100,40 @@ phonefast serve
 
 ---
 
+## 演示
+
+![phonefast 4x 速度演示](assets/phonefast_demo.gif)
+
+> phonefast 真实操作演示 — 亚 30ms 延迟完成观察、点击、滑动、文本输入。
+
+---
+
+## 性能
+
+phonefast daemon 模式在所有操作上均保持稳定低延迟。以下数据来自 **12 小时长稳压测**（v1.0.11，145,843 次操作，100% 成功率，零断连）：
+
+| 操作 | P50 | P95 | P99 | 说明 |
+|------|:---:|:---:|:---:|------|
+| `tap` | **13ms** | 13ms | 14ms | 坐标点击 |
+| `back` / `home` / `press_key` | **12-13ms** | 13ms | 14ms | 硬件按键 |
+| `screenshot` | **28ms** | 126ms | 128ms | H.264 关键帧 → PNG |
+| `observe` | **28ms** | 126ms | 129ms | 截图 + UI（原子操作） |
+| `get_ui_elements` | **46ms** | 132ms | 151ms | UI 树（UISocketHandler） |
+| `swipe` | **318ms** | 322ms | 323ms | 滑动（含 300ms 时长） |
+| `type_text` / `launch_app` / `status` | **1ms** | 1-2ms | 2-4ms | 即发即弃语义 |
+| `wait` | **33ms** | 33ms | 33ms | 等待命令 |
+
+**关键指标：**
+- Daemon 模式触控延迟：**<13ms**
+- 截图 P50：**28ms**（比 v1.0.0 的 121ms 快 **4.3 倍**）
+- 真实物理内存：**~16MB** 稳态（vmmap 验证）
+- 12 小时压测：**145,843 次操作、100% 成功、0 次断连**
+- 连续 200 次截图：**P50 = 12ms、P95 = 13ms**（解码器热机后）
+
+> 完整 benchmark 历史、版本对比和测试方法详见 [docs/benchmark.md](docs/benchmark.md)。
+
+---
+
 ## 命令参考
 
 ### 格式说明

@@ -10,7 +10,7 @@
 
 ### 📝 文档
 - `docs/DEV.md`: 新增 H.264 截图解码架构文档（astiav CGO + ffmpeg CLI 降级双路径）
-- `docs/BENCHMARK_HISTORY.md`: 更新基准测试时间线，标注 v1.0.11 发布
+- `docs/benchmark.md`: 更新基准测试时间线，标注 v1.0.11 发布
 - 网站 `_tabs/phonefast.md`: 更新速度对比数据、内存行、架构设计、长稳压测
 
 ### 🛠️ 构建
