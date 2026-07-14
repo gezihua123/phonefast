@@ -1,6 +1,6 @@
-# phonefast — Fast Android Device Control
+# phonefast — Phone as a Native Device for AI Agents
 
-phonefast 是一个快速 Android 设备控制命令行工具，结合 scrcpy 视频流与手机友好的操作语义，支持 MCP 协议集成与本地 CLI 两种使用方式。
+phonefast 让你的 Android 手机成为 AI Agent 的原生设备——如同键盘、鼠标、显示器是人类操作电脑的原生外设一样。它结合 scrcpy 视频流与手机友好的操作语义，支持 MCP 协议集成与本地 CLI 两种使用方式。
 
 **核心特性：**
 - 🚀 **Daemon 模式** — 后台常驻进程，Unix Socket JSON-RPC，命令即时响应
