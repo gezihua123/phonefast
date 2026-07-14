@@ -29,7 +29,6 @@
 | [docs/CLI.md](docs/CLI.md) | 🇬🇧 | **命令行工具完整使用手册**（英文），含中文版 [docs/CLI_zh.md](docs/CLI_zh.md) |
 | [docs/DEV.md](docs/DEV.md) | 🇨🇳 | **开发笔记** — LocalSocket 4字节读取限制（Android 14）的排查与修复过程、H.264 截图解码架构设计（astiav CGO + ffmpeg CLI 双路径）、交叉编译踩坑记录（仅中文，内部开发用） |
 | [docs/benchmark.md](docs/benchmark.md) | 🇬🇧 | **Benchmark 历史记录**（英文），含中文版 [docs/benchmark_zh.md](docs/benchmark_zh.md) |
-| [docs/install.md](docs/install.md) | 🇬🇧 | **安装下载链接**（英文），含中文版 [docs/install_zh.md](docs/install_zh.md) |
 | [docs/phonefast.md](docs/phonefast.md) | 🇬🇧 | **产品横向对比**（英文），含中文版 [docs/phonefast_zh.md](docs/phonefast_zh.md) |
 
 ---
