@@ -1,113 +1,113 @@
-# phonefast Development Notes
+# phonefast 开发笔记
 
-> Investigation records, architectural decisions, and hard-earned lessons from the development process.
+> 开发过程中的排查记录、架构决策和踩坑经验。
 
-## Table of Contents
+## 目录
 
-- [LocalSocket 4-byte Read Limit (Android 14)](#localsocket-4-byte-read-limit-android-14)
-- [Build and Release](#build-and-release)
+- [LocalSocket 4字节读取限制（Android 14）](#localsocket-4字节读取限制android-14)
+- [构建与发布](#构建与发布)
 
 ---
 
-## LocalSocket 4-byte Read Limit (Android 14)
+## LocalSocket 4字节读取限制（Android 14）
 
-### Problem
+### 问题
 
-In `UISocketHandler.handleClient`, the code uses `DataInputStream.readByte()` to read requests byte-by-byte from a `LocalSocket`. When a request exceeds **4 characters** (i.e., `readByte()` is called more than 4 times), Android 14 devices **silently reset the connection**:
+`UISocketHandler` 的 `handleClient` 中，使用 `DataInputStream.readByte()` 逐字节从 `LocalSocket` 读取请求。当请求超过 **4个字符**（即调用 `readByte()` 超过4次）时，Android 14 设备会**静默重置连接**：
 
 ```
-dump\0    (4 readByte calls + \0) → ✓ OK
-dump.\0   (5 readByte calls + \0) → ✗ Connection reset
-dump:5\0  (6 readByte calls + \0) → ✗ Connection reset
-dumpp\0   (5 readByte calls + \0) → ✗ Connection reset
+dump\0    (4次 readByte + \0) → ✓ 正常
+dump.\0   (5次 readByte + \0) → ✗ 连接被重置
+dump:5\0  (6次 readByte + \0) → ✗ 连接被重置
+dumpp\0   (5次 readByte + \0) → ✗ 连接被重置
 ```
 
-### Investigation Process
+### 排查过程
 
-1. **Initial observation**: Users reported `get ui elements` returning `exit status 137` (ADB uiautomator dump killed by OOM). But daemon status showed `ui: true`, indicating the fast socket channel was already established.
+1. **初步观察**：用户反馈 `get ui elements` 报 `exit status 137`（ADB uiautomator dump 被 OOM 杀死）。但 daemon 状态显示 `ui: true`，说明快速 socket 通道已建立。
 
-2. **Fallback identified**: Code analysis revealed that `handleGetUIElements` first attempts the fast socket, then falls back to ADB uiautomator dump on failure. The error message only showed the ADB failure; the fast socket's original error was silently swallowed.
+2. **定位到 fallback**：分析代码发现 `handleGetUIElements` 先尝试快速 socket，失败后 fallback 到 ADB uiautomator dump。错误只显示 ADB 的失败信息，快速 socket 的原始错误被吞掉了。
 
-3. **Confirmed socket works**: Using Python to directly connect to the ADB-forwarded port (`localhost:27246`), `dump\0` successfully returned 10KB+ of UI data.
+3. **确认 socket 可用**：用 Python 直接连接 ADB 转发的端口 (`localhost:27246`)，发现 `dump\0` 能正常返回 10KB+ 的 UI 数据。
 
-4. **Narrowing down**: Comparative testing showed:
+4. **缩小范围**：对比测试发现：
    - `dump\0` → OK
-   - `dump:5\0` → Connection closed immediately
-   - `dump:500\0` → Connection closed immediately
-   - Even `dump.\0` (5 characters) → Connection closed immediately
+   - `dump:5\0` → 连接立即关闭
+   - `dump:500\0` → 连接立即关闭
+   - 甚至 `dump.\0`（5个字符） → 连接立即关闭
 
-5. **Key finding**: **Any request exceeding 4 bytes would fail**. Confirmed it was a problem with the number of `readByte()` calls, not the content.
+5. **关键发现**：**任何超过4字节的请求都会失败**。确认是 `readByte()` 调用次数的问题，而非内容。
 
-6. **Root cause**: A compatibility bug in Android 14's `LocalSocket` + `DataInputStream.readByte()`. After more than 4 consecutive `readByte()` calls, the underlying native `read()` call causes the socket connection to be silently reset. This differs from `read(byte[], int, int)` bulk reads, which use a different native code path.
+6. **根因**：Android 14 的 `LocalSocket` + `DataInputStream.readByte()` 存在兼容性 BUG。连续 `readByte()` 超过4次后，底层 native `read()` 调用会导致 socket 连接被静默重置。这与 `read(byte[], int, int)` 批量读取不同——后者使用不同的 native 路径。
 
-### Fix
+### 修复方案
 
-**Core approach**: Use `InputStream.read(byte[], int, int)` to read the first 4 bytes in batch (1 native call), then use `read()` byte-by-byte for the remaining portion.
+**核心思路**：用 `InputStream.read(byte[], int, int)` 批量读取前4字节（1次 native call），之后才用 `read()` 逐字节读取剩余部分。
 
 ```java
-// Before (problematic byte-by-byte reading):
-byte[] req = readUntilNull(in); // Internally loops calling readByte()
+// Before (有问题的逐字节读取):
+byte[] req = readUntilNull(in); // 内部循环调用 readByte()
 
-// After (bulk read first 4 bytes + byte-by-byte for the rest):
+// After (批量读前4字节 + 逐字节读后续):
 byte[] prefix = new byte[4];
-in.read(prefix, 0, 4);        // Bulk read, 1 native call
-int sep = in.read();           // Separator (':' or '\0')
+in.read(prefix, 0, 4);        // 批量读取，1次 native call
+int sep = in.read();           // 分隔符（':' 或 '\0'）
 if (sep == ':') {
-    // Parse number byte-by-byte
+    // 逐字节解析数字
     int b = in.read();
     ...
 }
 ```
 
-**Protocol remains compatible**: `dump:N\0` format unchanged; Go side still sends `:N` parameters as before. Java side parses using the new read method.
+**协议保持兼容**：`dump:N\0` 格式不变，Go 侧照常发送 `:N` 参数。Java 侧解析时用新的读取方式。
 
-**Files involved**:
-- `android/phonefast-agent/UISocketHandler.java` — Java-side fix
-- `pkg/protocol/ui.go` — Go-side request writing (format unchanged)
-- `internal/session/ui.go` — Client-side defensive truncation
-- `scripts/build-server.sh` — Auto-overwrites with latest source during build
+**涉及文件**：
+- `android/phonefast-agent/UISocketHandler.java` — Java 侧修复
+- `pkg/protocol/ui.go` — Go 侧写请求（格式不变）
+- `internal/session/ui.go` — 客户端兜底截断
+- `scripts/build-server.sh` — 构建时自动用最新源文件覆盖
 
-### Verification
+### 验证
 
-| Request | Expected | Result |
+| 请求 | 预期 | 结果 |
 |---|---|---|
-| `dump\0` | Default 500 elements | ✓ |
-| `dump:5\0` | 5 elements | ✓ |
-| `dump:500\0` | 500 elements | ✓ |
-| `dump:10000\0` | Parse 10000 → cap at 500 | ✓ |
-| `dump:-5\0` | Invalid character → default 500 | ✓ |
-| `dump:5a\0` | Partial parse → default 500 | ✓ |
-| `sum\0` | 50 elements (summary) | ✓ |
-| `sum:3\0` | 3 elements (summary) | ✓ |
+| `dump\0` | 默认 500 元素 | ✓ |
+| `dump:5\0` | 5 个元素 | ✓ |
+| `dump:500\0` | 500 个元素 | ✓ |
+| `dump:10000\0` | 解析到 10000 → cap 500 | ✓ |
+| `dump:-5\0` | 非法字符 → 默认 500 | ✓ |
+| `dump:5a\0` | 部分解析 → 默认 500 | ✓ |
+| `sum\0` | 50 元素 (summary) | ✓ |
+| `sum:3\0` | 3 元素 (summary) | ✓ |
 
-### Lessons Learned
+### 经验教训
 
-- **Never assume `DataInputStream.readByte()` behaves consistently across all devices**. Android fragmentation is severe; the underlying `SocketInputStream` implementation varies by vendor customization.
-- **The fast socket error was swallowed by the fallback path**, causing users to only see `exit 137`. Original errors should be logged when falling back.
-- **Using Python/nc to directly connect to the socket is an excellent debugging technique** — it bypasses the Go code's fallback logic and lets you observe the Java server's raw behavior directly.
+- **不要假设 `DataInputStream.readByte()` 在所有设备上行为一致**。Android 碎片化严重，底层 `SocketInputStream` 的实现因厂商定制而异。
+- **快速 socket 的错误被 fallback 路径吞掉了**，导致用户只看到 `exit 137`。应该在 fallback 时同时日志记录原始错误。
+- **本地用 Python/nc 直连 socket 是极佳的调试手段**，能绕过 Go 代码的 fallback 逻辑，直接看到 Java 服务器的原始行为。
 
 ---
 
-## Build and Release
+## 构建与发布
 
-### H.264 Screenshot Decoding Architecture (v1.0.11)
+### H.264 截图解码架构 (v1.0.11)
 
-phonefast's screenshot pipeline extracts IDR keyframes from the Android device's scrcpy H.264 video stream and decodes them into PNG images.
-There are two paths, selected at compile time:
+phonefast 的截图管线从 Android 设备 scrcpy H.264 视频流中提取 IDR 关键帧，解码为 PNG 图片。
+有两条路径，编译时选择：
 
-#### Primary Path: astiav CGO In-Process Decoding (default)
+#### 主路径：astiav CGO 进程内解码（默认）
 
-`pkg/avcodec/decode_astiav.go` — Uses the go-astiav library to directly call the libavcodec/libswscale C API.
+`pkg/avcodec/decode_astiav.go` — 通过 go-astiav 库直接调用 libavcodec/libswscale C API。
 
 ```go
 import "github.com/asticode/go-astiav"
 
 decoder, _ := astiav.NewDecoder(codecID)
 ctx := astiav.AllocCodecContext(codec)
-ctx.SetThreadCount(1)  // Single-frame IDR doesn't need multi-threading
+ctx.SetThreadCount(1)  // 单帧 IDR 无需多线程
 ctx.Open(decoder, nil)
 
-// Each screenshot:
+// 每次截图:
 pkt := astiav.AllocPacket()
 pkt.SetData(keyframe)  // H.264 AnnexB bytes
 ctx.SendPacket(pkt)
@@ -121,14 +121,14 @@ sws.Scale(frame, rgbaFrame)
 astiav.EncodeImage(rgbaFrame, pngBytes, astiav.FormatPNG)
 ```
 
-**Key optimizations**:
-- ThreadCount=1: A single 488×1080 frame has minimal decoding workload; multi-thread slice synchronization overhead exceeds the decoding itself
-- Persistent CodecContext: Not reusing it would cost an extra +55ms each time (SPS/PPS re-parsing + DPB reconstruction)
-- Simplified frame loop: IDR outputs exactly 1 frame, no need for the older AllocFrame probe loop
+**关键优化**：
+- ThreadCount=1：单帧 488×1080 解码量极小，多线程切片同步开销 > 解码本身
+- 持久 CodecContext：不复用每次 +55ms（SPS/PPS 重解析 + DPB 重建）
+- 帧循环简化：IDR 刚好输出 1 帧，无需旧版本的 AllocFrame 探测循环
 
-#### Fallback Path: ffmpeg CLI Subprocess (CGO_ENABLED=0)
+#### 降级路径：ffmpeg CLI subprocess（CGO_ENABLED=0）
 
-`internal/session/video.go` — Launches an ffmpeg subprocess via `exec.CommandContext`, passing data through stdin/stdout pipes.
+`internal/session/video.go` — `exec.CommandContext` 起 ffmpeg 子进程，stdin/stdout 管道传数据。
 
 ```go
 cmd := exec.CommandContext(ctx, "ffmpeg",
@@ -146,169 +146,185 @@ pngBytes, _ := io.ReadAll(stdout)
 cmd.Wait()
 ```
 
-**Overhead**: fork+exec ~50-80ms + SPS/PPS re-parsing + pipe memcpy ≈ 100-200ms/request
+**开销**：fork+exec 约 50-80ms + SPS/PPS 重解析 + pipe memcpy ≈ 100-200ms/次
 
-#### Code Structure
+#### 代码结构
 
 ```
 pkg/avcodec/
-├── avcodec.go         — Package docs + public types (ImageFormat, DecodeError, ErrNotAvailable)
-├── decode.go          — Decoder interface definition
-├── decode_astiav.go   — Primary path: CGO decoder (build tag: cgo)
-├── decode_nocgo.go    — Fallback stub: returns ErrNotAvailable (build tag: !cgo)
-├── decode_test.go     — Tests (go test + fuzz)
-└── testdata/          — Test fixtures
+├── avcodec.go         — 包文档 + 公共类型 (ImageFormat, DecodeError, ErrNotAvailable)
+├── decode.go          — Decoder 接口定义
+├── decode_astiav.go   — 主路径: CGO 解码器 (build tag: cgo)
+├── decode_nocgo.go    — 降级桩: 返回 ErrNotAvailable (build tag: !cgo)
+├── decode_test.go     — 测试 (go test + fuzz)
+└── testdata/          — 测资
 
 internal/session/
-└── video.go           — keyframeToPNG + decodeViaFFmpeg (fallback path)
+└── video.go           — keyframeToPNG + decodeViaFFmpeg (降级路径)
 ```
 
-Build-time selection via build tag:
+构建时通过 build tag 选择实现：
 
 ```bash
-go build -tags cgo ./cmd/phonefast/    # Primary path (default, CGO_ENABLED=1)
-CGO_ENABLED=0 go build ./cmd/phonefast/ # Fallback path (requires ffmpeg on system)
+go build -tags cgo ./cmd/phonefast/    # 主路径 (默认, CGO_ENABLED=1)
+CGO_ENABLED=0 go build ./cmd/phonefast/ # 降级路径 (需要系统有 ffmpeg)
 ```
 
-### Building the Server Jar
+### 构建 server jar
 
 ```bash
 bash scripts/build-server.sh
 ```
 
-Process:
-1. Clone scrcpy v3.3.4
-2. Apply `android/patches/0001-phonefast-uisocket.patch`
-3. Overwrite with `android/phonefast-agent/UISocketHandler.java` (keeping latest version)
-4. Gradle builds the server APK
-5. Copy to `android/scrcpy-server.jar` and `assets/scrcpy-server.jar`
+流程：
+1. 克隆 scrcpy v3.3.4
+2. 应用 `android/patches/0001-phonefast-uisocket.patch`
+3. 用 `android/phonefast-agent/UISocketHandler.java` 覆盖（保持最新）
+4. Gradle 构建 server APK
+5. 复制到 `android/scrcpy-server.jar` 和 `assets/scrcpy-server.jar`
 
-**Note**: The patches in `android/patches/` are baseline versions; the latest code lives in `android/phonefast-agent/`. The build script auto-overwrites during the process.
+**注意**：`android/patches/` 中的 patch 是基线版本，最新代码在 `android/phonefast-agent/` 中。构建脚本会自动覆盖。
 
-### Cross-Platform Build
+### 全平台构建
 
-phonefast statically links FFmpeg into the Go CGO binary, enabling single-file distribution (jar + FFmpeg all embedded).
-There are two build paths:
+phonefast 把 FFmpeg 静态链接进 Go CGO 二进制，实现单文件分发（jar + FFmpeg 全部内嵌）。
+有两条构建路径：
 
-#### Option 2: Local Zig Cross-Compilation (daily development)
+#### 方案 2：本地 zig 交叉编译（开发日常用）
 
-Build all 4 platform binaries with a single command on macOS. The native darwin-arm64 target uses native clang;
-other targets use zig cc for cross-compilation (asm fully enabled, verified). `build_local.sh` provides a one-click wrapper:
+在 macOS 上一条命令编出全部 4 个平台二进制。本机 darwin-arm64 用原生 clang，
+其余目标用 zig cc 交叉编译（asm 全开，已验证）。`build_local.sh` 是一键封装：
 
 ```bash
-# One-click all platforms (auto: env check → build FFmpeg libs → build Go binaries)
-bash scripts/build_local.sh            # All 4 targets
-bash scripts/build_local.sh --macos    # darwin only
-bash scripts/build_local.sh --linux    # linux only
-bash scripts/build_local.sh --windows  # windows only
-bash scripts/build_local.sh --clean    # Clean dist/ before building
+# 一键全平台 (自动: 环境检查 → 编 FFmpeg 库 → 编 Go 二进制)
+bash scripts/build_local.sh            # 全平台 4 目标
+bash scripts/build_local.sh --macos    # 仅 darwin
+bash scripts/build_local.sh --linux    # 仅 linux
+bash scripts/build_local.sh --windows  # 仅 windows
+bash scripts/build_local.sh --clean    # 构建前清理 dist/
 ```
 
-Underlying steps (automated by build_local.sh, but can also be run manually):
+底层步骤（build_local.sh 自动完成，也可手动）：
 
 ```bash
-# 1. Check/install build environment (nasm/zig/clang/go)
-bash scripts/build_env.sh check        # Check
-bash scripts/build_env.sh install      # Auto-install missing deps (brew)
+# 1. 检测/安装构建环境 (nasm/zig/clang/go)
+bash scripts/build_env.sh check        # 检测
+bash scripts/build_env.sh install      # 自动装缺失依赖 (brew)
 
-# 2. Build static FFmpeg libraries (one per target, cached in build/cross-ffmpeg/<target>/)
+# 2. 编静态 FFmpeg 库 (每目标一次，缓存于 build/cross-ffmpeg/<target>/)
 bash scripts/cross-build-ffmpeg.sh aarch64-darwin    # mac arm64
 bash scripts/cross-build-ffmpeg.sh x86_64-linux-gnu  # linux amd64
 bash scripts/cross-build-ffmpeg.sh aarch64-linux-gnu # linux arm64
 bash scripts/cross-build-ffmpeg.sh x86_64-windows-gnu # windows amd64
 
-# 3. Build
-bash scripts/build.sh            # Native darwin-arm64 only (default)
-bash scripts/build.sh --all      # All 4 targets
-bash scripts/build.sh --linux    # linux only
+# 3. 构建
+bash scripts/build.sh            # 仅本机 darwin-arm64 (默认)
+bash scripts/build.sh --all      # 全平台 4 目标
+bash scripts/build.sh --linux    # 仅 linux
 ```
 
-Artifacts go to `dist/dev/`: `phonefast-<os>-<arch>[.exe]` + `.tar.gz`.
+产物在 `dist/dev/`：`phonefast-<os>-<arch>[.exe]` + `.tar.gz`。
 
-#### Option 3: CI Native Runners (official releases)
+#### 方案 3：CI 原生 runner（正式 release 用）
 
-Each platform uses a native GitHub Actions runner for its architecture — zero emulation, full asm support, maximum reliability.
-Pushing a `v*` tag triggers automatically: `.github/workflows/release.yml`.
+每个平台用对应架构的原生 GitHub Actions runner，零模拟、asm 全开、最稳。
+推 `v*` tag 自动触发：`.github/workflows/release.yml`。
 
 ```bash
-# Push a tag locally to trigger CI full-platform build + release
+# 本地打 tag 推送即触发 CI 全平台构建 + 发版
 git tag v1.0.8 && git push origin v1.0.8
-# Or manually run workflow from Actions tab (enter version number)
+# 或 Actions 页面手动 Run workflow (输入版本号)
 ```
 
-CI matrix (native runner per platform):
+CI matrix（每平台原生 runner）：
 
-| Target | runner | FFmpeg Toolchain |
+| 目标 | runner | FFmpeg 工具链 |
 |---|---|---|
-| darwin-arm64 | macos-14 | Native clang + nasm |
-| darwin-arm64 | macos-14 | Native clang |
-| linux-amd64 | ubuntu-latest | Native gcc + nasm |
-| linux-arm64 | ubuntu-24.04-arm | Native gcc (NEON) |
-| windows-amd64 | windows-latest | Native mingw + nasm |
+| darwin-arm64 | macos-14 | 原生 clang + nasm |
+| darwin-arm64 | macos-14 | 原生 clang |
+| linux-amd64 | ubuntu-latest | 原生 gcc + nasm |
+| linux-arm64 | ubuntu-24.04-arm | 原生 gcc (NEON) |
+| windows-amd64 | windows-latest | 原生 mingw + nasm |
 
-> Public repository CI is fully free (including macOS runners and arm64 linux runners).
+> 公开仓库 CI 全免费（含 macOS runner 和 arm64 linux runner）。
 
-### Build Environment and ASM Detection
+### 构建环境与 asm 判定
 
-`scripts/build_env.sh` is the unified environment detection/installation entry point:
+`scripts/build_env.sh` 是统一的环境检测/安装入口：
 
 ```bash
-bash scripts/build_env.sh           # Report
-bash scripts/build_env.sh check     # Check, returns non-zero if deps missing
-bash scripts/build_env.sh install   # Auto-install missing deps via brew (nasm/zig/go)
+bash scripts/build_env.sh           # 报告
+bash scripts/build_env.sh check     # 检测，缺依赖返回非 0
+bash scripts/build_env.sh install   # brew 自动装缺失 (nasm/zig/go)
 ```
 
-**ASM detection logic** (`cross-build-ffmpeg.sh`):
-- `x86_64` targets: require nasm (SSE/AVX/AVX2/AVX-512). If available, enable; otherwise fall back to `--disable-asm` (pure C, 2-4× slower).
-- `aarch64` targets: NEON uses assembler (zig built-in / clang gas), no nasm required, always enabled.
-- Install nasm for full-platform asm-on: `bash scripts/build_env.sh install`.
+**asm 判定逻辑**（`cross-build-ffmpeg.sh`）：
+- `x86_64` 目标：需 nasm（SSE/AVX/AVX2/AVX-512）。有则开，无则降级 `--disable-asm`（纯 C 慢 2-4×）。
+- `aarch64` 目标：NEON 走 assembler（zig 内置 / clang gas），无需 nasm，始终开。
+- 装好 nasm 即全平台 asm-on：`bash scripts/build_env.sh install`。
 
-### Key Pitfalls in Static FFmpeg Compilation
+### 静态 FFmpeg 编译的关键坑
 
-Pitfalls encountered and fixed in `cross-build-ffmpeg.sh` (for future reference):
+`cross-build-ffmpeg.sh` 踩过并修复的坑（供后人排查）：
 
-1. **zig + nasm with asm enabled**: Early versions hardcoded `--disable-asm` because nasm wasn't installed. After installing nasm, zig cc auto-detects it, resulting in full-platform asm-on. Runtime verification: asm-off logs `No accelerated colorspace conversion found`; after asm-on, the warning disappears for amd64 targets.
+1. **zig + nasm 开 asm**：早期版本因没装 nasm 硬编码 `--disable-asm`。装 nasm 后 zig cc
+   自动探测，全平台 asm-on。运行时验证：asm-off 报 `No accelerated colorspace conversion found`，
+   asm-on 后 amd64 目标警告消失。
 
-2. **Darwin forced to use Apple native ar/ranlib**: If GNU binutils (`brew install binutils`) is on PATH, its ar produces GNU-format `.a` archives (symbol table member named `/`), which Apple's ld rejects with `archive member '/' not a mach-o file`. The darwin branch forces using `/usr/bin/ar`, `/usr/bin/ranlib`, and `/usr/bin/nm` to produce BSD-format `.a` archives, eliminating the need for libtool re-wrapping.
+2. **darwin 强制 Apple 原生 ar/ranlib**：若 PATH 上有 GNU binutils（`brew install binutils`），
+   其 ar 产出 GNU 格式 `.a`（符号表成员名为 `/`），Apple ld 不认 →
+   `archive member '/' not a mach-o file`。darwin 分支强制 `/usr/bin/ar`、`/usr/bin/ranlib`、`/usr/bin/nm`
+   产 BSD 格式 `.a`，无需 libtool 重封装。
 
-3. **Cannot use libtool to re-wrap darwin .a**: Earlier, `ar -x` + `libtool -static *.o` was used to re-wrap archives to fix SYMDEF. However, `ar -x` causes `.o` files with the same name in aarch64 and the root directory (e.g., `aarch64/swscale.o` vs `swscale.o`) to overwrite each other, losing the NEON init symbol → `symbol(s) not found for architecture arm64`. Since Apple's native ar already generates valid SYMDEF, the re-wrapping step has been removed.
+3. **不能 libtool 重封装 darwin .a**：早期用 `ar -x` + `libtool -static *.o` 重封装修复 SYMDEF，
+   但 `ar -x` 会让 aarch64 与根目录同名的 `.o`（如 `aarch64/swscale.o` vs `swscale.o`）互相覆盖，
+   丢 NEON init 符号 → `symbol(s) not found for architecture arm64`。Apple 原生 ar 已生成有效 SYMDEF，
+   重封装步骤已删除。
 
-4. **MinGW C99 math conflict** (windows target): Under zig-mingw, all configure math function probes fail (`HAVE_TRUNC/ROUND/CBRT/...=0`). FFmpeg's `libm.h` redefines these with static inline, conflicting with mingw math.h's extern declarations → `static declaration follows non-static declaration`. The `mingw_math` patch flips those `HAVE_*` values to 1 (using mingw system versions) and comments out the conflicting `#define getenv(x) NULL`.
+4. **mingw C99 math 冲突**（windows 目标）：zig-mingw 下 configure 的 math 函数探测全失败
+   （`HAVE_TRUNC/ROUND/CBRT/...=0`），FFmpeg `libm.h` 用 static inline 重定义，与 mingw math.h 的
+   extern 声明冲突 → `static declaration follows non-static declaration`。`mingw_math` patch 把这些
+   `HAVE_*` 翻成 1（用 mingw 系统版本），并注释掉冲突的 `#define getenv(x) NULL`。
 
-5. **GCC + PIC + x86 inline asm** (Linux-host branch): `--enable-pic` + GCC triggers `impossible constraint in 'asm'` (mathops.h NEG_USR32). Linux static libraries linked into Go do not need PIC (the Go linker handles relocation itself), so the Linux-host branch does not enable PIC. The zig branch is unaffected by this (PIC works fine, verified).
+5. **GCC + PIC + x86 inline asm**（Linux-host 分支）：`--enable-pic` + GCC 会触发
+   `impossible constraint in 'asm'`（mathops.h NEG_USR32）。Linux 静态库链进 Go 不需要 PIC
+   （Go 链接器自行重定位），Linux-host 分支不开 PIC。zig 分支不受此影响（已验证 PIC 可用）。
 
-### Why Not Use Docker
+### 为什么不用 docker
 
-Building amd64 on an arm64 Mac with Docker requires QEMU emulation. When GCC compiles FFmpeg's SIMD/asm under emulation, it triggers `internal compiler error: Segmentation fault` (QEMU+GCC is a known unstable combination with no reliable workaround). Industry consensus: if cross-compilation is available, avoid emulation. Therefore, linux/windows targets use zig cross-compilation (Option 2) or CI native runners (Option 3); the Docker approach has been removed.
+arm64 Mac 上用 docker 编 amd64 必走 qemu 模拟，gcc 编 FFmpeg 的 SIMD/asm 会
+`internal compiler error: Segmentation fault`（qemu+gcc 已知不稳，无可靠 workaround）。
+业界共识：能交叉编译就别用模拟。故 linux/windows 目标走 zig 交叉（方案2）或 CI 原生 runner（方案3），
+docker 路线已移除。
 
 ### GitHub Release
 
-`release.sh` is only responsible for triggering CI — it does not build locally or directly create a Release.
-After pushing a `v*` tag, GitHub Actions (Option 3) compiles natively on all platforms and publishes the release.
+`release.sh` 只负责触发 CI，不本地构建、不直接创建 Release。
+推 `v*` tag 后，GitHub Actions（方案3）全平台原生编译并发布。
 
 ```bash
-# Dry-run preview (no tag, no CI trigger)
+# dry-run 预览 (不打 tag, 不触发 CI)
 bash scripts/release.sh --dry-run
 
-# Auto-version-bump + trigger CI release
+# 自动版本自增 + 触发 CI 发版
 bash scripts/release.sh
 
-# Specify a version
+# 指定版本
 bash scripts/release.sh 1.0.8
 ```
 
-Prerequisites:
-- Git (required, for pushing tags)
-- gh (optional, for checking CI/Release status afterward)
+前置条件：
+- Git（必须，推 tag 用）
+- gh（可选，事后查看 CI/Release）
 
-Release flow:
-1. Check working directory is clean
-2. Auto-patch version number increment + commit
-3. Create Git tag `v${VERSION}`
-4. Push tag → **triggers CI** → CI builds natively on 4 platforms → publishes GitHub Release
+Release 流程：
+1. 检查工作区干净
+2. 自动 patch 版本号自增 + commit
+3. 创建 Git tag `v${VERSION}`
+4. push tag → **触发 CI** → CI 4 平台原生编译 → 发布 GitHub Release
 
-Final artifacts: GitHub Release Assets
+产物最终位置：GitHub Release 的 Assets
 `https://github.com/gezihua123/phonefast/releases/tag/vX.Y.Z`
 
-> Use `bash scripts/build_local.sh` (Option 2) for local manual packaging (without publishing).
-> CI artifacts and local artifacts can be cross-verified.
+> 本地手动出包（不发布）用 `bash scripts/build_local.sh`（方案2）。
+> CI 产物与本地产物可交叉校验。
