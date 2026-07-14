@@ -13,9 +13,10 @@ phonefast is a fast Android device control CLI that combines scrcpy video stream
 
 ## Demo
 
-![phonefast 4x speed demo](assets/phonefast_demo.gif)
+![phonefast 4x speed — real Claude Code + phonefast execution](assets/phonefast_demo.gif)
 
-> phonefast in action — observe, tap, swipe, and type on an Android device with sub-30ms latency.
+> **4x speed** — Real execution of Claude Code + phonefast.  
+> Prompt: `使用phonefast skill，打开GP 安装Instagram`
 
 ---
 
