@@ -481,10 +481,10 @@ phonefast serve --transport stdio
 
 | 文档 | 内容 |
 |------|------|
-| [docs/CLI.md](docs/CLI.md) | 完整 CLI 手册：安装、命令、Daemon、MCP、架构、日志、故障恢复 |
-| [docs/DEV.md](docs/DEV.md) | 开发笔记：架构决策、构建与发布、交叉编译 |
-| [docs/benchmark.md](docs/benchmark.md) | 完整 benchmark 历史：版本对比、测试方法、内存分析 |
-| [docs/phonefast.md](docs/phonefast.md) | 产品对比：phonefast vs agent-device vs adb |
+| [docs/CLI_zh.md](docs/CLI_zh.md) | 完整 CLI 手册：安装、命令、Daemon、MCP、架构、日志、故障恢复 |
+| [docs/DEV_zh.md](docs/DEV_zh.md) | 开发笔记：架构决策、构建与发布、交叉编译 |
+| [docs/benchmark_zh.md](docs/benchmark_zh.md) | 完整 benchmark 历史：版本对比、测试方法、内存分析 |
+| [docs/phonefast_zh.md](docs/phonefast_zh.md) | 产品对比：phonefast vs agent-device vs adb |
 | [CHANGELOG.md](CHANGELOG.md) | 版本发布历史 |
 
 ---

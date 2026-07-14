@@ -1,32 +1,32 @@
-# phonefast Benchmark 历史记录
+# phonefast Benchmark History
 
-> 从 Claude Code 会话缓存、git 历史、test_runs 目录中恢复的完整 benchmark 记录。
+> Complete benchmark records recovered from Claude Code session caches, git history, and the test_runs directory.
 
 ---
 
-## 测试时间线
+## Test Timeline
 
-| 日期 | 版本 | 设备 | 模式 | 测试工具 | 时长 |
+| Date | Version | Device | Mode | Test Tool | Duration |
 |---|---|---|---|---|---|
-| 2026-06-15 19:18 | pre-git (≈v0.x) | 13709314CF044927 | MCP-STDIO | `tests/benchmark.py` | 10 轮 |
-| 2026-07-10 17:16 | v1.0.8-dev | RF8RB05GQ3L | Daemon RPC | 临时 shell 脚本 | ~5h |
-| 2026-07-10 17:49 | v1.0.8-dev | RF8RB05GQ3L | Daemon RPC | 临时 shell 脚本 | ~1h |
-| 2026-07-13 12:53 | **v1.0.0** | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` | **60 分钟** |
-| 2026-07-13 10:41 | v1.0.10 | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` | 60 分钟 |
-| 2026-07-13 12:02 | **v1.0.0** | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` --quick | **5 分钟** |
-| 2026-07-13 12:07 | **v1.0.10** | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` --quick | **5 分钟** |
-| 2026-07-13 14:19 | **优化版** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | 自定义 RPC 脚本 | 100 次截图+observe |
-| 2026-07-13 14:46 | **优化版** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | 自定义 RPC 脚本 | 200 次纯截图 |
-| 2026-07-13 19:25 | **优化版** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` | **12 小时** |
-| 2026-07-14 21:10 | **v1.0.11** (ThreadCount=1 + 帧循环简化) | 13709314CF044927 | Daemon RPC | 正式发布 (含 §6/§7 优化) | 继承 12h 压测数据 |
+| 2026-06-15 19:18 | pre-git (≈v0.x) | 13709314CF044927 | MCP-STDIO | `tests/benchmark.py` | 10 rounds |
+| 2026-07-10 17:16 | v1.0.8-dev | RF8RB05GQ3L | Daemon RPC | Temporary shell script | ~5h |
+| 2026-07-10 17:49 | v1.0.8-dev | RF8RB05GQ3L | Daemon RPC | Temporary shell script | ~1h |
+| 2026-07-13 12:53 | **v1.0.0** | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` | **60 minutes** |
+| 2026-07-13 10:41 | v1.0.10 | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` | 60 minutes |
+| 2026-07-13 12:02 | **v1.0.0** | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` --quick | **5 minutes** |
+| 2026-07-13 12:07 | **v1.0.10** | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` --quick | **5 minutes** |
+| 2026-07-13 14:19 | **Optimized** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | Custom RPC script | 100 screenshot+observe |
+| 2026-07-13 14:46 | **Optimized** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | Custom RPC script | 200 pure screenshots |
+| 2026-07-13 19:25 | **Optimized** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` | **12 hours** |
+| 2026-07-14 21:10 | **v1.0.11** (ThreadCount=1 + frame loop simplification) | 13709314CF044927 | Daemon RPC | Official release (includes §6/§7 optimizations) | Inherits 12h stress test data |
 
 ---
 
-## 1. 6/15 MCP-STDIO Benchmark（基准线）
+## 1. 6/15 MCP-STDIO Benchmark (Baseline)
 
-**来源**: Claude Code session `cabac5fc` @ `/Users/mulei/Desktop/phonefast`
+**Source**: Claude Code session `cabac5fc` @ `/Users/mulei/Desktop/phonefast`
 
-**条件**: MCP STDIO 模式，串行执行，每操作 10 轮，`benchmark.py` 脚本。
+**Conditions**: MCP STDIO mode, serial execution, 10 rounds per operation, `benchmark.py` script.
 
 ```
 Device: 13709314CF044927
@@ -34,9 +34,9 @@ Screen: 488x1080
 Cold start: 19ms
 ```
 
-### 各操作延迟
+### Per-Operation Latency
 
-| 操作 | Avg | P50 | P95 | P99 | Min | Max | 数据量 |
+| Operation | Avg | P50 | P95 | P99 | Min | Max | Data Size |
 |---|---|---|---|---|---|---|---|
 | list_devices | 9.1ms | 9.4ms | 10ms | 10ms | 7.7ms | 10ms | — |
 | screenshot | 63ms | 64ms | 75ms | 80ms | 52ms | 81ms | 54KB |
@@ -51,66 +51,66 @@ Cold start: 19ms
 | launch_app | 0.1ms | 0.1ms | 0.2ms | 0.3ms | 0.1ms | 0.3ms | — |
 | wait | 52ms | 52ms | 52ms | 53ms | 51ms | 53ms | — |
 
-**关键参数**:
+**Key parameters**:
 - `swipe.duration_ms = 200`
-- `get_ui_elements` 返回纯文本，avg 1202 bytes
-- `back`/`type_text`/`launch_app` 使用 fire-and-forget 语义（不等待设备确认）
+- `get_ui_elements` returns plain text, avg 1202 bytes
+- `back`/`type_text`/`launch_app` use fire-and-forget semantics (no wait for device acknowledgment)
 
 ---
 
-## 2. 7/10 Daemon 中间测试（UI Socket 优化验证）
+## 2. 7/10 Daemon Intermediate Test (UI Socket Optimization Verification)
 
-**来源**: Claude Code session `ad3127af` @ `/Users/mulei/Downloads/phonefast`
+**Source**: Claude Code session `ad3127af` @ `/Users/mulei/Downloads/phonefast`
 
-**条件**: 设备 RF8RB05GQ3L (488x1080)，daemon RPC 直连，持续 observe+screenshot 循环。
+**Conditions**: Device RF8RB05GQ3L (488x1080), daemon RPC direct connection, continuous observe+screenshot loop.
 
-### TCP per-request 基线
+### TCP Per-Request Baseline
 
-| 指标 | 截图 | observe |
+| Metric | Screenshot | Observe |
 |---|---|---|
 | avg | 59ms | 80ms |
 | p50 | 59ms | 75ms |
 | p95 | 66ms | 86ms |
-| p99 | 69ms | **393ms** (TCP 握手尖刺) |
-| 迭代 | 345 | 344 |
-| 失败 | 0 | 0 |
+| p99 | 69ms | **393ms** (TCP handshake spike) |
+| Iterations | 345 | 344 |
+| Failures | 0 | 0 |
 
-### 持久连接修复后（热机稳态，排除 IDR 帧聚簇）
+### After Persistent Connection Fix (Warm Steady State, Excluding IDR Frame Clustering)
 
-| 指标 | 截图 | observe |
+| Metric | Screenshot | Observe |
 |---|---|---|
 | p50 | — | 64ms |
 | p95 | — | 84ms |
 | p99 | — | 199ms |
 
-### 关键发现
+### Key Findings
 
-- TCP 每次新建连接会导致 p99 出现 393ms 尖刺
-- 持久连接修复后 p99 从 393ms → 199ms（但仍有 IDR 帧聚簇导致的毛刺）
-- 排除 IDR 帧聚簇后的稳态 observe p50=64ms, p95=84ms
+- Opening a new TCP connection per request causes a 393ms p99 spike
+- After fixing persistent connections, p99 dropped from 393ms to 199ms (but IDR frame clustering jitter remains)
+- Steady state observe excluding IDR frame clustering: p50=64ms, p95=84ms
 
 ---
 
-## 3. 7/13 v1.0.10 1 小时压测（完整数据）
+## 3. 7/13 v1.0.10 1-Hour Stress Test (Full Data)
 
-**来源**: `test_runs/stress_1h_20260713_104147/summary.json`
+**Source**: `test_runs/stress_1h_20260713_104147/summary.json`
 
-**条件**: Daemon RPC 直连，6 阶段变强度（Warmup→Steady→Burst A→Mixed→Burst B→Cooldown），60 分钟。
+**Conditions**: Daemon RPC direct connection, 6-phase variable intensity (Warmup→Steady→Burst A→Mixed→Burst B→Cooldown), 60 minutes.
 
-### 总览
+### Overview
 
-| 指标 | 数值 |
+| Metric | Value |
 |---|---|
-| 设备 | 13709314CF044927 |
-| 时长 | 3601s (60min) |
-| 总操作 | 12,437 |
-| 成功 | 12,437 (100%) |
-| 重连 | 0 |
-| 内存 | 15.2MB → 42.2MB (Δ+27MB, 峰值 58.3MB) |
+| Device | 13709314CF044927 |
+| Duration | 3601s (60min) |
+| Total Operations | 12,437 |
+| Successful | 12,437 (100%) |
+| Reconnections | 0 |
+| Memory | 15.2MB → 42.2MB (Δ+27MB, peak 58.3MB) |
 
-### 各操作延迟
+### Per-Operation Latency
 
-| 操作 | 次数 | P50 | P95 | P99 | Avg | Max |
+| Operation | Count | P50 | P95 | P99 | Avg | Max |
 |---|---|---|---|---|---|---|
 | tap | 4,278 | 12ms | 13ms | 15ms | 12ms | 32ms |
 | back | 1,427 | 12ms | 13ms | 15ms | 12ms | 26ms |
@@ -125,33 +125,33 @@ Cold start: 19ms
 | type_text | 351 | 0.5ms | 2ms | 3ms | 1ms | 6ms |
 | status | 350 | 0.5ms | 1ms | 3ms | 1ms | 7ms |
 
-**关键参数**:
+**Key parameters**:
 - `swipe.duration_ms = 300`
-- daemon RPC handler 同时返回 `elements` (JSON) + `formatted` (文本)
-- 高并发场景（12,437 次操作/小时，平均 3.5 ops/s）
+- Daemon RPC handler returns both `elements` (JSON) + `formatted` (text)
+- High concurrency scenario (12,437 operations/hour, avg 3.5 ops/s)
 
 ---
 
-## 4. v1.0.0 1 小时压测（完整数据）
+## 4. v1.0.0 1-Hour Stress Test (Full Data)
 
-**来源**: `phonefast-v1.0.0/test_runs/stress_1h_20260713_125353/summary.json`
+**Source**: `phonefast-v1.0.0/test_runs/stress_1h_20260713_125353/summary.json`
 
-**条件**: Daemon RPC 直连，6 阶段变强度，60 分钟。
+**Conditions**: Daemon RPC direct connection, 6-phase variable intensity, 60 minutes.
 
-### 总览
+### Overview
 
-| 指标 | 数值 |
+| Metric | Value |
 |---|---|
-| 设备 | 13709314CF044927 |
-| 时长 | 3600s (60min) |
-| 总操作 | 12,271 |
-| 成功 | 12,271 (100%) |
-| 重连 | 0 |
-| 内存 | 15.1MB → 19.7MB (Δ+4.6MB) |
+| Device | 13709314CF044927 |
+| Duration | 3600s (60min) |
+| Total Operations | 12,271 |
+| Successful | 12,271 (100%) |
+| Reconnections | 0 |
+| Memory | 15.1MB → 19.7MB (Δ+4.6MB) |
 
-### 各操作延迟
+### Per-Operation Latency
 
-| 操作 | 次数 | P50 | P95 | P99 | Avg | Max |
+| Operation | Count | P50 | P95 | P99 | Avg | Max |
 |---|---|---|---|---|---|---|
 | tap | 4,225 | 12ms | 14ms | 16ms | 12ms | 22ms |
 | back | 1,409 | 12ms | 14ms | 16ms | 12ms | 18ms |
@@ -168,30 +168,30 @@ Cold start: 19ms
 
 ---
 
-## 5. v1.0.0 vs v1.0.10 同条件对比
+## 5. v1.0.0 vs v1.0.10 Same-Condition Comparison
 
-### 5a. Quick 冒烟 5 分钟
+### 5a. Quick Smoke Test (5 Minutes)
 
-**条件**: 同一设备 13709314CF044927，同一脚本 `stress_test_rpc.py --quick`，Daemon RPC 直连，5 分钟。
+**Conditions**: Same device 13709314CF044927, same script `stress_test_rpc.py --quick`, Daemon RPC direct connection, 5 minutes.
 
-### 核心延迟对比 (P50)
+### Core Latency Comparison (P50)
 
-| 操作 | v1.0.0 | v1.0.10 | 变化 | 结论 |
+| Operation | v1.0.0 | v1.0.10 | Change | Verdict |
 |---|---|---|---|---|
-| tap | 12ms | 12ms | 持平 | ✅ |
-| back/home/press_key | 12-13ms | 12ms | 持平 | ✅ |
-| swipe | 317ms | 317ms | 持平 | ✅ |
-| type_text/launch_app/status | 1ms | 1ms | 持平 | ✅ |
-| wait | 32ms | 32ms | 持平 | ✅ |
-| **observe** | **131ms** | **30ms** | **-77% 🚀** | **4.4x 变快** |
-| **screenshot** | **114ms** | **36ms** | **-68% 🚀** | **3.2x 变快** |
-| get_ui_elements | 58ms | 51ms | -12% | 略快 |
+| tap | 12ms | 12ms | Unchanged | ✅ |
+| back/home/press_key | 12-13ms | 12ms | Unchanged | ✅ |
+| swipe | 317ms | 317ms | Unchanged | ✅ |
+| type_text/launch_app/status | 1ms | 1ms | Unchanged | ✅ |
+| wait | 32ms | 32ms | Unchanged | ✅ |
+| **observe** | **131ms** | **30ms** | **-77% 🚀** | **4.4x faster** |
+| **screenshot** | **114ms** | **36ms** | **-68% 🚀** | **3.2x faster** |
+| get_ui_elements | 58ms | 51ms | -12% | Slightly faster |
 
-### 完整数据
+### Full Data
 
 #### v1.0.0 (commit 121530b, 7.9MB binary)
 
-| 操作 | 次数 | P50 | P95 | P99 | Avg | Max |
+| Operation | Count | P50 | P95 | P99 | Avg | Max |
 |---|---|---|---|---|---|---|
 | tap | 378 | 12ms | 13ms | 14ms | 12ms | 19ms |
 | back | 126 | 12ms | 13ms | 14ms | 12ms | 17ms |
@@ -206,11 +206,11 @@ Cold start: 19ms
 | launch_app | 34 | 1ms | 1ms | 2ms | 1ms | 2ms |
 | wait | 91 | 32ms | 33ms | 34ms | 32ms | 34ms |
 
-**内存**: 14.9MB → 21.3MB (Δ+6.4MB) | 成功率: **100%** (1118/1118)
+**Memory**: 14.9MB → 21.3MB (Δ+6.4MB) | Success rate: **100%** (1118/1118)
 
 #### v1.0.10 (commit 11b5e98, 11MB binary)
 
-| 操作 | 次数 | P50 | P95 | P99 | Avg | Max |
+| Operation | Count | P50 | P95 | P99 | Avg | Max |
 |---|---|---|---|---|---|---|
 | tap | 381 | 12ms | 13ms | 14ms | 12ms | 14ms |
 | back | 126 | 12ms | 13ms | 14ms | 12ms | 14ms |
@@ -225,170 +225,170 @@ Cold start: 19ms
 | launch_app | 34 | 1ms | 3ms | 3ms | 1ms | 3ms |
 | wait | 91 | 32ms | 33ms | 33ms | 32ms | 33ms |
 
-**内存**: 15.4MB → 34.2MB (Δ+18.8MB，中间峰值 51MB 后 GC 回收) | 成功率: **100%** (1123/1123)
+**Memory**: 15.4MB → 34.2MB (Δ+18.8MB, intermediate peak 51MB then GC reclaimed) | Success rate: **100%** (1123/1123)
 
-### 关键发现
+### Key Findings
 
-1. **observe/screenshot 快了 3-4x**: v1.0.0 的截图需要 114ms，v1.0.10 只需 36ms。这是 v1.0.3→v1.0.4 之间 `0447ff8` (Android 14 LocalSocket 4-byte 限制修复) 以及后续 H.264 decoder 线程优化 (`7c51a06`) 的累积效果。
+1. **observe/screenshot 3-4x faster**: v1.0.0 screenshots took 114ms, v1.0.10 only 36ms. This is the cumulative effect of `0447ff8` (Android 14 LocalSocket 4-byte read limit fix, between v1.0.3→v1.0.4) and subsequent H.264 decoder thread optimization (`7c51a06`).
 
-2. **get_ui_elements 基本持平**: 58ms vs 51ms，都在同一量级。v1.0.10 的 P95 略好（166ms vs 177ms）。
+2. **get_ui_elements roughly unchanged**: 58ms vs 51ms, both in the same range. v1.0.10's P95 is slightly better (166ms vs 177ms).
 
-3. **内存增长模式不同**: v1.0.0 增长平缓（+6.4MB），v1.0.10 增长更多（+18.8MB）但中间有 GC 主动回收（51MB → 34MB 骤降），说明 v1.0.10 分配更激进但 GC 更有效。
+3. **Different memory growth patterns**: v1.0.0 grows steadily (+6.4MB), v1.0.10 grows more (+18.8MB) but with active GC reclamation (51MB → 34MB drop), indicating v1.0.10 allocates more aggressively but GC is more effective.
 
-4. **swipe 尾部刺**: v1.0.10 出现一次 1270ms 的 swipe（P99=1270ms），v1.0.0 则非常稳定（max=322ms）。可能和 v1.0.10 的 swipe 并发场景下偶尔排队有关。
+4. **Swipe tail latency spike**: v1.0.10 shows one 1270ms swipe (P99=1270ms), while v1.0.0 is very stable (max=322ms). Possibly related to occasional queuing under concurrent swipe scenarios in v1.0.10.
 
 ---
 
-## 差异根因分析
+## Root Cause Analysis of Differences
 
 ### swipe: 210ms → 311ms (+101ms)
 
-| 因素 | 6/15 (MCP) | 7/13 (RPC) | 差异 |
+| Factor | 6/15 (MCP) | 7/13 (RPC) | Difference |
 |---|---|---|---|
-| `duration_ms` 参数 | **200** | **300** | +100ms |
-| RPC 开销 | ~10ms | ~11ms | +1ms |
-| **合计** | **210ms** | **311ms** | **+101ms** |
+| `duration_ms` parameter | **200** | **300** | +100ms |
+| RPC overhead | ~10ms | ~11ms | +1ms |
+| **Total** | **210ms** | **311ms** | **+101ms** |
 
-**结论**: 完全由参数差异导致，`benchmark.py` 写死了 200ms，`stress_test_rpc.py` 写死了 300ms。不是性能退化。
+**Conclusion**: Entirely caused by parameter differences — `benchmark.py` hardcoded 200ms, `stress_test_rpc.py` hardcoded 300ms. Not a performance regression.
 
 ### get_ui_elements: 11ms → 54ms (+43ms)
 
-| 因素 | 影响 |
+| Factor | Impact |
 |---|---|
-| **响应体膨胀** (MCP 只返回纯文本 ≈1KB，daemon RPC 返回 JSON+formatted 双份 ≈10KB+) | **主因** |
-| **并发竞争** (串行 vs 12437 次/小时高频混合) | P95 从 20ms → 140ms |
-| **GC 拖尾** (RSS 15→42MB，持续分配 JSON 序列化内存) | 尾部延迟 |
-| **设备 UI 复杂度** (不同时间屏幕元素数不同) | 次要 |
+| **Response body inflation** (MCP returns only plain text ≈1KB, daemon RPC returns JSON+formatted dual format ≈10KB+) | **Primary cause** |
+| **Concurrency contention** (serial vs 12437 ops/hour high-frequency mixed) | P95 from 20ms → 140ms |
+| **GC tail latency** (RSS 15→42MB, continuous JSON serialization memory allocation) | Tail latency |
+| **Device UI complexity** (different screen element counts at different times) | Minor |
 
-**结论**: 主要由响应体大小差异和并发场景不同导致，非代码性能退化。
+**Conclusion**: Primarily caused by response size differences and different concurrency scenarios, not code performance regression.
 
 ### back/type_text/launch_app: <1ms → ~12ms
 
-**结论**: 测量口径不同。6/15 MCP 模式对部分操作使用 fire-and-forget（不等待 Android 端确认），7/13 daemon RPC 等待完整往返。实际使用中 ~12ms 才是真实延迟。
+**Conclusion**: Different measurement methodology. The 6/15 MCP mode used fire-and-forget for some operations (no waiting for Android-side acknowledgment), while the 7/13 daemon RPC waits for a full round trip. In practice, ~12ms is the real latency.
 
-### v1.0.0 → v1.0.10 1小时截屏性能飞跃
+### v1.0.0 → v1.0.10 1-Hour Screenshot Performance Leap
 
-同一设备 13709314CF044927，同一压测脚本，同一 60 分钟时长：
+Same device 13709314CF044927, same stress test script, same 60-minute duration:
 
-| 操作 | v1.0.0 P50 | v1.0.10 P50 | 加速 | v1.0.0 P99 | v1.0.10 P99 |
+| Operation | v1.0.0 P50 | v1.0.10 P50 | Speedup | v1.0.0 P99 | v1.0.10 P99 |
 |---|---|---|---|---|---|
 | **observe** | 138ms | 32ms | **4.3x** 🚀 | 237ms | 137ms |
 | **screenshot** | 121ms | 31ms | **3.9x** 🚀 | 276ms | 135ms |
 | **get_ui_elements** | 78ms | 54ms | **1.4x** | 216ms | 176ms |
-| tap | 12ms | 12ms | 持平 | 16ms | 15ms |
-| swipe | 314ms | 311ms | 持平 | 326ms | 318ms |
-| 内存增长 | Δ+4.6MB | Δ+27MB | — | 峰值 19.7MB | 峰值 58.3MB |
+| tap | 12ms | 12ms | Unchanged | 16ms | 15ms |
+| swipe | 314ms | 311ms | Unchanged | 326ms | 318ms |
+| Memory growth | Δ+4.6MB | Δ+27MB | — | Peak 19.7MB | Peak 58.3MB |
 
-**结论**: v1.0.10 截屏/observe 快了约 4 倍，代价是内存多用了约 5 倍但仍在可控范围。性能增长来自 `0447ff8`（Android 14 LocalSocket 读取修复）和 `7c51a06`（H.264 decoder 线程优化）。
+**Conclusion**: v1.0.10 screenshot/observe is approximately 4x faster, at the cost of approximately 5x more memory usage, which remains within acceptable limits. Performance gains come from `0447ff8` (Android 14 LocalSocket read fix) and `7c51a06` (H.264 decoder thread optimization).
 
 ---
 
-## 6. 优化版 → v1.0.11（ThreadCount=1 + 帧循环简化）
+## 6. Optimized Version → v1.0.11 (ThreadCount=1 + Frame Loop Simplification)
 
-> **2026-07-14**: 以 v1.0.11 正式发布。commit `d071608`，对应 GitHub Release [v1.0.11](https://github.com/gezihua123/phonefast/releases/tag/v1.0.11)。
+> **2026-07-14**: Officially released as v1.0.11. Commit `d071608`, corresponding to GitHub Release [v1.0.11](https://github.com/gezihua123/phonefast/releases/tag/v1.0.11).
 
-**改动**（`pkg/avcodec/decode_astiav.go`）：
-1. **帧循环简化**：单帧 IDR 解码从 2 次 `AllocFrame`+`ReceiveFrame` 探测循环 → 1 次接收，省一次 CGO 调用和帧分配
-2. **ThreadCount 2→1**：单帧 488×1080 太小，多线程切片同步开销 > 解码本身；单线程消除 DPB 翻倍分配和 slice-merge 开销
+**Changes** (`pkg/avcodec/decode_astiav.go`):
+1. **Frame loop simplification**: Single-frame IDR decoding reduced from 2 `AllocFrame`+`ReceiveFrame` probe loops → 1 receive, saving one CGO call and frame allocation
+2. **ThreadCount 2→1**: Single frame at 488×1080 is too small; multi-thread slice sync overhead > decoding itself; single thread eliminates DPB double allocation and slice-merge overhead
 
-> 注：中途试过 `SendPacket(nil)` flush 释放 DPB，但实测每次 decode 多 55ms（解码器被 drained 后重新初始化 SPS/PPS + DPB），得不偿失，已回退。也评估过 cache frame/packet、SkipLoopFilter、Flag2Fast、RGBA frame 复用等方案，均因收益不抵风险回退。
+> Note: Experimented with `SendPacket(nil)` flush to release DPB, but each decode took an extra 55ms (decoder reinitializes SPS/PPS + DPB after drain), not worth the cost — reverted. Also evaluated cache frame/packet, SkipLoopFilter, Flag2Fast, RGBA frame reuse, etc., all reverted as risks outweighed benefits.
 
-### 6a. 三版截图性能对比（100 次 screenshot+observe，RPC 间隔 0.5s）
+### 6a. Three-Version Screenshot Performance Comparison (100 screenshot+observe, RPC interval 0.5s)
 
-| 指标 | 原版 (T=2 旧循环) | 帧循环简化 (T=2) | **优化版 (T=1)** |
+| Metric | Original (T=2 old loop) | Frame loop simplified (T=2) | **Optimized (T=1)** |
 |---|---|---|---|
 | **screenshot P50** | 36ms | 32ms | **33ms** |
 | **screenshot P95** | 120ms | 35ms | **36ms** |
 | observe P50 | 30ms | 33ms | **33ms** |
 | observe P95 | — | 42ms | **36ms** |
-| RSS 峰值 | 51MB | 47MB | **48MB** |
+| RSS peak | 51MB | 47MB | **48MB** |
 
-### 6b. 200 次纯截图 RPC 专项测试
+### 6b. 200 Pure Screenshot RPC Specialized Test
 
-**条件**: ThreadCount=1 优化版，daemon RPC 直连，200 次连续 `screenshot`，间隔由 RPC 往返决定（无 sleep）。
+**Conditions**: ThreadCount=1 optimized version, daemon RPC direct connection, 200 consecutive `screenshot` calls, interval determined by RPC round-trip (no sleep).
 
 ```
 Device: 13709314CF044927 | RSS start: 13MB | 200 screenshots
-  #1     19ms   24MB   ← 冷启动
-  #21    12ms   45MB   ← decoder 热机完成
+  #1     19ms   24MB   ← cold start
+  #21    12ms   45MB   ← decoder warmed up
   #41    12ms   48MB
   #100   12ms   53MB
-  #200   12ms   53MB   ← 稳态
+  #200   12ms   53MB   ← steady state
 ```
 
-| 指标 | 数值 |
+| Metric | Value |
 |---|---|
 | **P50** | **12ms** |
 | **P95** | **13ms** |
 | **P99** | **14ms** |
 | avg | 12ms |
-| min/max | 11ms / 19ms（冷启动） |
-| RSS 起→止 | 13MB → 53MB（Δ+40MB） |
-| RSS 峰值 | 53MB |
+| min/max | 11ms / 19ms (cold start) |
+| RSS start→end | 13MB → 53MB (Δ+40MB) |
+| RSS peak | 53MB |
 
-**对比原版 v1.0.10**：screenshot P50 从 36ms → **12ms（3x 提速）**，P95 从 120ms → 13ms（稳定性大幅提升）。
+**Comparison to original v1.0.10**: screenshot P50 from 36ms → **12ms (3x speedup)**, P95 from 120ms → 13ms (dramatic stability improvement).
 
-### 6c. 真实内存分析（vmmap，修正 RSS 认知）
+### 6c. Real Memory Analysis (vmmap, Corrected RSS Understanding)
 
-> 用 `vmmap` 分析单次截图后的 daemon 进程，发现 `ps RSS` 严重虚高，真实物理内存远低于此前所有估算。
+> Using `vmmap` to analyze the daemon process after a single screenshot revealed that `ps RSS` is significantly inflated — real physical memory is far lower than all previous estimates.
 
-| 区域 | VSIZE | RSS | 说明 |
+| Region | VSIZE | RSS | Description |
 |---|---|---|---|
-| MALLOC_MEDIUM | 128MB | 2.6MB | macOS malloc 预留，实际占用很少 |
-| MALLOC_NANO | 512MB | 640KB | tiny 分配区，几乎未用 |
-| VM_ALLOCATE | 1.2GB | 6.2MB | Go runtime 预留虚拟地址空间 |
-| __TEXT (库代码段) | 237MB | 0 | 共享库，多进程共享不独占 |
-| Stack | 96MB | 272KB | goroutine 栈预留 |
-| **Physical footprint** | — | **15.8MB** | ← 真实物理内存 |
-| **Physical footprint (peak)** | — | **16.9MB** | ← 真实峰值 |
-| `ps RSS` | — | 26MB | 含共享库页，虚高 |
+| MALLOC_MEDIUM | 128MB | 2.6MB | macOS malloc reservation, actual usage minimal |
+| MALLOC_NANO | 512MB | 640KB | Tiny allocation zone, barely used |
+| VM_ALLOCATE | 1.2GB | 6.2MB | Go runtime virtual address space reservation |
+| __TEXT (library code segments) | 237MB | 0 | Shared libraries, shared across processes, not exclusive |
+| Stack | 96MB | 272KB | goroutine stack reservation |
+| **Physical footprint** | — | **15.8MB** | ← Actual physical memory |
+| **Physical footprint (peak)** | — | **16.9MB** | ← Actual peak |
+| `ps RSS` | — | 26MB | Includes shared library pages, inflated |
 
-**关键修正**：
-1. **`ps RSS` 26MB 是虚高**——包含共享库 `__TEXT` 等多进程共享页，非独占内存
-2. **真实物理内存才 15.8MB**（单次截图后），峰值 16.9MB
-3. **FFmpeg 静态链接**，无独立 libav/libsws 映射，代码段在 `__TEXT`（共享，0 独占 RSS）
-4. **VM_ALLOCATE 1.2GB 是 Go 预留虚拟空间**，物理只占 6.2MB——Go runtime 正常行为
-5. 此前所有压测的"58MB 峰值"基于 `ps RSS`，真实物理内存估计 **30-40MB**
+**Key Corrections**:
+1. **`ps RSS` 26MB is inflated** — includes shared library `__TEXT` pages shared across multiple processes, not exclusive memory
+2. **Real physical memory is only 15.8MB** (after single screenshot), peak 16.9MB
+3. **FFmpeg statically linked**, no separate libav/libsws mappings, code segments in `__TEXT` (shared, 0 exclusive RSS)
+4. **VM_ALLOCATE 1.2GB is Go reserved virtual space**, only 6.2MB physically resident — normal Go runtime behavior
+5. All previous stress test "58MB peak" based on `ps RSS`; real physical memory estimated at **30-40MB**
 
-### 6d. 优化结论
+### 6d. Optimization Conclusions
 
-| 方向 | 评估 | 决定 |
+| Direction | Evaluation | Decision |
 |---|---|---|
-| ThreadCount 2→1 | 速度 3x，内存持平 | ✅ 保留 |
-| 帧循环简化 | P95 大幅改善，速度微升 | ✅ 保留 |
-| SendPacket(nil) flush | 每次 +55ms，得不偿失 | ❌ 回退 |
-| cache frame/packet | 收益 1-2MB，4 个坑 | ❌ 回退 |
-| RGBA frame 复用 | 收益 1-2MB，状态同步复杂 | ❌ 回退 |
-| SkipLoopFilter | 省 CPU 但降画质，影响 AI 识别 | ❌ 不做 |
-| Flag2Fast | 对 H.264 解码无效（仅编码有效） | ❌ 不做 |
-| `debug.SetMemoryLimit` | 真实物理内存已极低，无必要 | ❌ 不做 |
+| ThreadCount 2→1 | 3x speedup, memory unchanged | ✅ Keep |
+| Frame loop simplification | P95 dramatically improved, slight speed increase | ✅ Keep |
+| SendPacket(nil) flush | +55ms per operation, not worth the cost | ❌ Reverted |
+| cache frame/packet | 1-2MB benefit, 4 pitfalls | ❌ Reverted |
+| RGBA frame reuse | 1-2MB benefit, complex state synchronization | ❌ Reverted |
+| SkipLoopFilter | Saves CPU but degrades image quality, affects AI recognition | ❌ Not implemented |
+| Flag2Fast | Ineffective for H.264 decoding (encoding only) | ❌ Not implemented |
+| `debug.SetMemoryLimit` | Real physical memory already extremely low, unnecessary | ❌ Not implemented |
 
-**最终状态**：ThreadCount=1 + 帧循环简化。截图 P50=12ms，真实物理内存 15.8MB。FFmpeg 解码侧优化到此为止——真实内存已极优，继续优化是负 ROI。
+**Final state**: ThreadCount=1 + frame loop simplification. Screenshot P50=12ms, real physical memory 15.8MB. FFmpeg decoding-side optimization concluded — real memory is already excellent, further optimization has negative ROI.
 
 ---
 
-## 7. 优化版 12 小时压测（v1.0.11 最终验证）
+## 7. Optimized Version 12-Hour Stress Test (v1.0.11 Final Validation)
 
-> **2026-07-14**: 该优化版已以 v1.0.11 正式发布。12 小时压测即 v1.0.11 的发布前最终验证。
+> **2026-07-14**: This optimized version has been officially released as v1.0.11. The 12-hour stress test serves as the pre-release final validation for v1.0.11.
 
-**来源**: `test_runs/stress_1h_20260713_192539/summary.json`
+**Source**: `test_runs/stress_1h_20260713_192539/summary.json`
 
-**条件**: 优化版（ThreadCount=1 + 帧循环简化），daemon RPC 直连，6 阶段变强度，12 小时。
+**Conditions**: Optimized version (ThreadCount=1 + frame loop simplification), daemon RPC direct connection, 6-phase variable intensity, 12 hours.
 
-### 总览
+### Overview
 
-| 指标 | 数值 |
+| Metric | Value |
 |---|---|
-| 设备 | 13709314CF044927 |
-| 时长 | 43,200s (720min / 12h) |
-| 总操作 | 145,843 |
-| 成功 | 145,843 (100%) |
-| 重连 | 0 |
-| 内存 | 14.7MB → 62.0MB (Δ+47.3MB) |
+| Device | 13709314CF044927 |
+| Duration | 43,200s (720min / 12h) |
+| Total Operations | 145,843 |
+| Successful | 145,843 (100%) |
+| Reconnections | 0 |
+| Memory | 14.7MB → 62.0MB (Δ+47.3MB) |
 
-### 各操作延迟
+### Per-Operation Latency
 
-| 操作 | 次数 | P50 | P95 | P99 | Avg | Max |
+| Operation | Count | P50 | P95 | P99 | Avg | Max |
 |---|---|---|---|---|---|---|
 | tap | 49,943 | 13ms | 13ms | 14ms | 12ms | 453ms |
 | back | 16,639 | 13ms | 13ms | 14ms | 12ms | 474ms |
@@ -403,38 +403,38 @@ Device: 13709314CF044927 | RSS start: 13MB | 200 screenshots
 | **observe** | **4,188** | **28ms** | **126ms** | **129ms** | **51ms** | **134ms** |
 | **get_ui_elements** | **4,189** | **46ms** | **132ms** | **151ms** | **61ms** | **192ms** |
 
-### 全版本演进对比
+### Full Version Evolution Comparison
 
-| 指标 | v1.0.0 (1h) | v1.0.10 (1h) | **优化版 (12h)** | 总加速 |
+| Metric | v1.0.0 (1h) | v1.0.10 (1h) | **Optimized (12h)** | Total Speedup |
 |---|---|---|---|---|
 | screenshot P50 | 121ms | 31ms | **28ms** | **4.3x** 🚀 |
 | screenshot P95 | 202ms | 125ms | **126ms** | — |
 | observe P50 | 138ms | 32ms | **28ms** | **4.9x** 🚀 |
 | observe P95 | 212ms | 126ms | **126ms** | — |
 | get_ui_elements P50 | 78ms | 54ms | **46ms** | **1.7x** |
-| tap P50 | 12ms | 12ms | **13ms** | 持平 |
-| 总操作数 | 12,271 | 12,437 | **145,843** | — |
-| 成功率 | 100% | 100% | **100%** | — |
-| RSS 峰值 | 19.7MB | 58.3MB | **62.0MB** | — |
+| tap P50 | 12ms | 12ms | **13ms** | Unchanged |
+| Total Operations | 12,271 | 12,437 | **145,843** | — |
+| Success Rate | 100% | 100% | **100%** | — |
+| RSS Peak | 19.7MB | 58.3MB | **62.0MB** | — |
 
-### 结论
+### Conclusions
 
-1. **12 小时零故障**：145,843 次操作，0 错误，0 重连，证明了优化版的生产级稳定性
-2. **screenshot 4.3x 提速**：从 v1.0.0 的 121ms → 28ms，帧循环简化 + ThreadCount=1 的组合效果
-3. **内存健康**：12h 峰值 62MB 与 1h 峰值 58MB 仅差 4MB，无泄漏趋势——长期运行内存收敛
-4. **get_ui_elements 亦受益**：P50 从 78ms → 46ms（1.7x），减轻了 scrcpy UI socket 竞争
+1. **12 hours, zero failures**: 145,843 operations, 0 errors, 0 reconnections, proving production-grade stability of the optimized version
+2. **screenshot 4.3x speedup**: From v1.0.0's 121ms → 28ms, the combined effect of frame loop simplification + ThreadCount=1
+3. **Memory healthy**: 12h peak 62MB vs 1h peak 58MB, only 4MB difference — no leak trend, memory converges during long runs
+4. **get_ui_elements also benefits**: P50 from 78ms → 46ms (1.7x), reducing scrcpy UI socket contention
 
 ---
 
-## 历史数据来源
+## Historical Data Sources
 
-| 数据 | 位置 |
+| Data | Location |
 |---|---|
 | 6/15 MCP benchmark | `~/.claude/projects/-Users-mulei-Desktop-phonefast/cabac5fc-*.jsonl` |
-| 7/10 中间测试 | `~/.claude/projects/-Users-mulei-Downloads-phonefast/ad3127af-*.jsonl` |
-| 7/13 临时冒烟 | `~/.claude/projects/-Users-mulei-Downloads-phonefast/9bca5fcc-*.jsonl` |
-| 7/13 1h 压测 | `test_runs/stress_1h_20260713_104147/` |
+| 7/10 intermediate test | `~/.claude/projects/-Users-mulei-Downloads-phonefast/ad3127af-*.jsonl` |
+| 7/13 temporary smoke test | `~/.claude/projects/-Users-mulei-Downloads-phonefast/9bca5fcc-*.jsonl` |
+| 7/13 1h stress test | `test_runs/stress_1h_20260713_104147/` |
 | 7/13 v1.0.0 quick | `phonefast-v1.0.0/test_runs/stress_1h_20260713_120229/` |
 | 7/13 v1.0.10 quick | `test_runs/stress_1h_20260713_120747/` |
-| 7/13 优化版 200 截图 | 对话内 RPC 专项测试（见 §6b） |
-| 7/13 优化版 12h | `test_runs/stress_1h_20260713_192539/` |
+| 7/13 optimized 200 screenshot | In-session RPC specialized test (see §6b) |
+| 7/13 optimized 12h | `test_runs/stress_1h_20260713_192539/` |

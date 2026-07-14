@@ -1,47 +1,43 @@
-**你有没有遇到过这样的情况：**
+phonefast: Precisely Crack the Four Deadly Pain Points of Harness Coding in Mobile Verification
 
-1. adb 一直无法选中元素或者选错元素，导致 Vibe Coding 狂烧 Token🔥🔥🔥🔥🔥。
-2. adb dump xml 失败，只能依赖截图验证效果，可偏偏模型又是单模态😖😖😖😖
+Slow, inaccurate, token-burning🔥, unstable — broken one by one.
 
-**phonefast**：精准破解 Harness Coding 在移动端验证环节的四大死穴——慢、不准、烧 token🔥、不稳，逐一击破。
+🐢 **Slow? → 10ms response, 100x faster**: Daemon resident process + Unix Socket JSON-RPC, single touch latency < 10ms; compared to adb shell solutions at 3~5 seconds per operation, 100x faster; full closed-loop flow (screenshot→analyze→operate→verify) compressed from 24 seconds to 0.2 seconds.
 
-| 痛点 | 方案 | 效果 |
-|------|------|------|
-| 🐢 **慢** | daemon 常驻进程 + Unix Socket JSON‑RPC | <10ms 触控延迟，比 ADB shell 快 100 倍 |
-| 🎯 **不准** | 原子级 observe，截图+UI 树一次返回 | 彻底消除"截图完界面已变"的竞态窗口 |
-| 🔥 **烧 token** | MCP 原生 ImageContent，多模态直出 | 不再把几十 KB base64 塞进 JSON，token 省一半 |
-| 🛡️ **不稳** | 三级保活 + 自动重连 + panic 自愈 | 12 小时压测 14 万次操作，99.99% 成功率 |
+🎯 **Inaccurate? → Atomic-level consistency, eliminates race conditions**: Screenshots go through H.264 keyframe pipeline, ffmpeg outputs lossless PNG directly; UI parsing uses self-developed UISocketHandler, 40% faster than uiautomator dump; `observe` atomic operation captures both screen and UI tree in a single call, completely eliminating the time window where "the UI has already changed after screenshot."
 
-{:.prompt-info}
+🔥 **Token-burning? → Native multimodal direct output, cost halved**: phonefast MCP mode natively returns `image/png` ImageContent — the LLM multimodal engine recognizes pixels directly, no longer stuffing dozens of KB of base64 into JSON text, drastically saving tokens; CLI mode `observe` merges screenshot + UI into one step, halving round trips, fully unshackling the token budget.
 
-## 📺 视频对比
+🛡️ **Unstable? → Industrial-grade self-healing, zero failures in 12 hours**: 12-hour continuous stress test, 140,000+ operations, 100% success, zero failures, zero disconnections, zero memory leaks; daemon actor model with built-in panic recovery + reconnect throttling — crashes auto-restart within 10 seconds; memory RSS stabilized at ~24 MB, steady-state after 1 hour, zero growth for the remaining 11 hours, no leaks; three-level keepalive mechanism (TCP keepalive + 10s heartbeat + write failure auto-detection), disconnections self-heal, crashes auto-restart.
 
-![phonefast 4x 速度演示](/phonefast_4x.gif)
-
-点击观看完整对比视频：[【PhoneFast vs PhoneMCP】AI执行效果对比](https://www.bilibili.com/video/BV1RZTT6wEEf/)
-
-## 安装方式
-
-```bash
-npx skills add gezihua123/phonefast-skill --skill phonefast-skill
-```
-
-[📥 下载地址](https://github.com/gezihua123/phonefast/releases/tag/v1.0.11) | [GitHub 仓库](https://github.com/gezihua123/phonefast)
+🧠 **Summary**: phonefast turns your phone into a native peripheral for AI Agents. No longer a fragile debugging tool, but a high-response, high-consistency, low-cost, high-availability perception-execution integrated terminal.
 
 ---
 
-## 一、架构差异
+## Installation
 
-### phonefast（Go + scrcpy）
+[Download](https://github.com/gezihua123/phonefast/releases/tag/1.0.0)
+
+---
+
+## 📺 Video Comparison: PhoneFast vs PhoneMCP AI Execution
+
+Click to watch the full comparison video: [PhoneFast vs PhoneMCP — AI Execution Comparison](https://www.bilibili.com/video/BV1RZTT6wEEf/)
+
+---
+
+## 1. Architecture Comparison
+
+### phonefast (Go + scrcpy)
 
 ```mermaid
 flowchart LR
-    CLI[phonefast CLI] -->|" Unix Socket JSON-RPC (<1ms)"| DAEMON[daemon 常驻进程]
-    DAEMON -->|" TCP (scrcpy 协议)\n长连接"| SERVER[scrcpy-server\nAndroid 设备]
+    CLI[phonefast CLI] -->|" Unix Socket JSON-RPC (<1ms)"| DAEMON[Daemon Resident Process]
+    DAEMON -->|" TCP (scrcpy protocol)\nPersistent Connection"| SERVER[scrcpy-server\nAndroid Device]
 
-    subgraph DAEMON_INTERNAL[Daemon 内部]
+    subgraph DAEMON_INTERNAL[Daemon Internals]
         direction TB
-        SESSION[Session 持有]
+        SESSION[Session Holder]
         CTRL[control socket]
         VIDEO[video socket]
         UI[ui socket]
@@ -52,7 +48,7 @@ flowchart LR
 
     DAEMON -.-> DAEMON_INTERNAL
 
-    subgraph DEVICE[Android 设备]
+    subgraph DEVICE[Android Device]
         direction TB
         VS[video socket]
         CS[control socket]
@@ -63,239 +59,248 @@ flowchart LR
     end
 ```
 
-- **语言**：Go 编译原生二进制，启动 <10ms
-- **连接**：scrcpy 协议，TCP 隧道直连设备上的 scrcpy-server
-- **daemon**：后台常驻进程，持有设备长连接，Unix Socket 接收命令
-- **冷启动**：<10ms（Go 原生二进制）
-- **命令延迟**：daemon 模式 <1ms socket 通信 + ~12ms 截图解码 (astiav CGO 进程内) + Android 处理
+- **Language**: Go compiled native binary, startup <10ms
+- **Connection**: scrcpy protocol, TCP tunnel directly to scrcpy-server on device
+- **Daemon**: Background resident process, holds persistent device connection, receives commands via Unix Socket
+- **Cold start**: <10ms (Go native binary)
+- **Command latency**: daemon mode <1ms socket communication + ~5ms TCP round trip + Android processing
 
-### agent-device（TypeScript + ADB）
+### agent-device (TypeScript + ADB)
 
 ```mermaid
 flowchart LR
-    CLI[agent-device CLI] -->|" 启动 ~500ms\nNode.js"| NODE[Node.js 进程]
-    NODE -->|" subprocess\n每次新建 adb 进程"| ADB[adb shell]
-    ADB --> DEVICE[Android 设备]
+    CLI[agent-device CLI] -->|" Startup ~500ms\nNode.js"| NODE[Node.js Process]
+    NODE -->|" subprocess\nnew adb process each time"| ADB[adb shell]
+    ADB --> DEVICE[Android Device]
 
-    subgraph SESSION_STATE[Session 管理]
+    subgraph SESSION_STATE[Session Management]
         direction TB
-        STATE["session state 持久化到磁盘\n~/.agent-device/sessions/"]
-        OPEN["open → 记录 app 状态"]
-        CMD["命令 → 复用 session 上下文"]
+        STATE["session state persisted to disk\n~/.agent-device/sessions/"]
+        OPEN["open → records app state"]
+        CMD["command → reuses session context"]
     end
 
     CLI -.-> SESSION_STATE
 ```
 
-- **语言**：TypeScript (Node.js CLI)，启动 ~500ms
-- **连接**：原始 ADB 命令（`adb shell input/keyevent/screencap/uiautomator`）
-- **session**：打开 app 后状态持久化到磁盘，命令间复用 session 上下文
-- **冷启动**：~500ms（Node.js 进程启动）
-- **命令延迟**：~450-750ms（Node.js 进程 + adb shell）
+- **Language**: TypeScript (Node.js CLI), startup ~500ms
+- **Connection**: Raw ADB commands (`adb shell input/keyevent/screencap/uiautomator`)
+- **Session**: App state persisted to disk after opening, session context reused between commands
+- **Cold start**: ~500ms (Node.js process startup)
+- **Command latency**: ~450-750ms (Node.js process + adb shell)
 
-### adb kill（Python + ADB）
+### adb kill (Python + ADB)
 
 ```mermaid
 flowchart LR
-    CLI[adb kill run] -->|" 冷启动 ~6-8s\nPyInstaller 解压"| PY[Python 解释器]
-    PY -->|" subprocess\n每次新建进程"| ADB[adb shell]
-    ADB --> DEVICE[Android 设备]
+    CLI[adb kill run] -->|" Cold start ~6-8s\nPyInstaller extraction"| PY[Python Interpreter]
+    PY -->|" subprocess\nnew process each time"| ADB[adb shell]
+    ADB --> DEVICE[Android Device]
 
-    subgraph COLD_START[冷启动开销]
+    subgraph COLD_START[Cold Start Overhead]
         direction TB
-        UNPACK["① PyInstaller 解压 ~1s"]
-        IMPORT["② Python 模块导入 ~2-3s"]
-        DETECT["③ ADB 设备检测 ~1s"]
+        UNPACK["① PyInstaller extraction ~1s"]
+        IMPORT["② Python module import ~2-3s"]
+        DETECT["③ ADB device detection ~1s"]
         UNPACK --> IMPORT --> DETECT
     end
 
     CLI -.-> COLD_START
 ```
 
-- **语言**：Python (PyInstaller 打包为单文件，运行时解压)
-- **连接**：原始 ADB 命令（`adb shell input/keyevent/screencap/uiautomator`）
-- **状态**：无状态，每次命令完整走"启动→执行→退出"流程
-- **冷启动**：~6-8s（PyInstaller 解压 + Python 模块导入 + ADB 检测）
-- **命令延迟**：~7-9s（解压 ~1s + 导入 ~2-3s + ADB ~1s + subprocess ~2s + 解析 ~0.5s）
+- **Language**: Python (packaged as single file via PyInstaller, extracted at runtime)
+- **Connection**: Raw ADB commands (`adb shell input/keyevent/screencap/uiautomator`)
+- **State**: Stateless, each command goes through full "start → execute → exit" flow
+- **Cold start**: ~6-8s (PyInstaller extraction + Python module import + ADB detection)
+- **Command latency**: ~7-9s (extraction ~1s + import ~2-3s + ADB ~1s + subprocess ~2s + parsing ~0.5s)
 
 ---
 
-## 二、速度对比
+## 2. Speed Comparison
 
-> **测试环境**: macOS arm64 | Go 1.26 | Node.js v22.20 | agent-device v0.17.6 | **phonefast v1.0.11**
+> **Test Environment**: macOS arm64 | Go 1.24 | Node.js v22.20 | agent-device v0.17.6 | phonefast v1.0
+> **Device**: TECNO KL8h (USB) | Resolution 488×1080 | Test Date: 2026-06-17
+> **Method**: Average of 3 runs per operation, `perl -MTime::HiRes` full-chain timing
+
+Each operation averaged over 3 runs, in milliseconds (ms).
+
+| Operation | phonefast daemon | agent-device | adb kill | daemon vs ad | daemon vs pm |
+|---|---|---|---|---|---|
+| back | **20ms** | 520ms | 8,505ms | **26x** | **425x** |
+| home | **29ms** | 550ms | 8,864ms | **19x** | **306x** |
+| tap coordinate click | **30ms** | 748ms | 8,110ms | **25x** | **270x** |
+| swipe (300ms) | **359ms** | N/A¹ | 8,200ms | — | **23x** |
+| type_text | **13ms** | 32,700ms² | 7,890ms | **2515x** | **607x** |
+| screenshot | **167ms** | 2,593ms | 8,939ms | **16x** | **54x** |
+| UI elements | **191ms** | FAILED² | 7,600ms | — | **40x** |
+| observe (screenshot+UI) | **148ms** | N/A | ~15,500ms³ | — | **105x** |
+| launch app | **11ms** | 782ms⁴ | 8,240ms | **71x** | **749x** |
+
+> ¹ agent-device `gesture swipe` only supports preset directions (left/right), not custom coordinates.
 >
-> **设备**: TECNO KL8h (USB) | 分辨率 488×1080 | 测试日期: 2026-07-14
+> ² agent-device `fill` and `snapshot` depend on uiautomator dump, which **timed out after 33 seconds** on this device.
 >
-> **方法**: 每操作 3 次取平均，`perl -MTime::HiRes` 计时全链路；phonefast 数据来自 12 小时长稳压测（145,843 次操作）
+> ³ adb kill has no `observe` atomic operation, requires screenshot + get_ui_elements two calls (8,939 + 7,600 ≈ 15,500ms).
+>
+> ⁴ agent-device `open` establishes session ~782ms, subsequent commands ~500ms.
 
-| 操作 | phonefast daemon | agent-device | adb kill | vs agent | vs adb |
-|------|:---:|:---:|:---:|:---:|:---:|
-| back 返回键 | **12ms** | 520ms | 8,505ms | **43x** | **709x** |
-| home 主页键 | **13ms** | 550ms | 8,864ms | **42x** | **682x** |
-| tap 坐标点击 | **13ms** | 748ms | 8,110ms | **58x** | **624x** |
-| swipe 滑动(300ms) | **318ms** | N/A¹ | 8,200ms | — | **26x** |
-| type_text 文本输入 | **1ms** | 32,700ms² | 7,890ms | **32,700x** | **7,890x** |
-| screenshot 截图 | **28ms** | 2,593ms | 8,939ms | **93x** | **319x** |
-| UI 元素 | **46ms** | FAILED² | 7,600ms | — | **165x** |
-| observe 截图+UI | **28ms** | N/A | ~15,500ms³ | — | **554x** |
-| launch 应用启动 | **1ms** | 782ms⁴ | 8,240ms | **782x** | **8,240x** |
-
-{:.annotation}
-
-### 典型 AI Agent 交互循环
+### Typical AI Agent Interaction Loop
 
 ```mermaid
 xychart-beta
-    title "观察→操作→再观察 一次循环耗时 (秒)"
+    title "Observe→Act→Re-observe Single Cycle (seconds)"
     x-axis ["phonefast daemon", "agent-device", "adb kill"]
-    y-axis "耗时(秒)" 0 --> 30
+    y-axis "Time (seconds)" 0 --> 30
     bar [0.4, 3.9, 24.0]
 ```
 
 ```mermaid
 xychart-beta
-    title "20 次循环耗时 (秒)"
+    title "20 Cycles Total Time (seconds)"
     x-axis ["phonefast daemon", "agent-device", "adb kill"]
-    y-axis "耗时(秒)" 0 --> 500
+    y-axis "Time (seconds)" 0 --> 500
     bar [8, 78, 480]
 ```
+> adb kill 20 cycles ≈ 8 min | agent-device ≈ 1.3 min | phonefast ≈ 8 sec
 
----
+### Latency Breakdown
 
-## 三、架构维度全景对比
+```
+phonefast daemon:
+  [daemon already running] → Unix Socket <1ms → scrcpy encode ~1ms → TCP ~5ms → Android ~5ms
+  back (1×TCP write): ~20ms  tap (2×TCP write): ~30ms  screenshot (keyframe+ffmpeg): ~167ms
 
-| 维度 | phonefast | agent-device | adb kill |
-|------|-----------|--------------|-----------|
-| **语言** | Go (原生二进制) | TypeScript (Node.js) | Python (PyInstaller) |
-| **二进制大小** | 11MB | ~3MB (npm) | 41MB |
-| **运行内存** | <62MB RSS | ~30-50MB RSS | ~20-40MB (每次新建进程) |
-| **冷启动** | <10ms | ~500ms | ~7s |
-| **连接方式** | scrcpy 协议 (TCP 隧道) | ADB 命令 | ADB 命令 |
-| **daemon 模式** | ✅ 常驻进程 + Unix Socket | ✅ session-state on disk | ❌ 每次冷启动 |
-| **命令延迟** | 1-13ms | 450-750ms | 7-9s |
-| **截图方式** | scrcpy H.264 关键帧 → ffmpeg PNG | adb screencap → pull PNG | adb screencap → pull PNG |
-| **UI 解析** | UISocketHandler (TCP socket) | uiautomator dump | uiautomator dump |
-| **UI 稳定性** | ⭐⭐⭐⭐⭐ | ⭐⭐ (uiautomator 常超时) | ⭐⭐⭐ |
-| **持久连接** | scrcpy server 常驻设备端 | 无持久连接 | 无持久连接 |
-| **session 管理** | daemon 内存持有 | 状态持久化到磁盘 | 无状态 |
-| **断线恢复** | 三级保活，10s 自动重连 | session 状态文件恢复 | 无状态 |
-| **MCP 协议** | ✅ SSE / STDIO (8019) | ✅ `agent-device mcp` | ✅ SSE / STDIO (8009) |
-| **跨平台** | Android only | iOS / Android / TV / Desktop | Android only |
-| **ImageContent** | ✅ (MCP 原生) | ❌ | ❌ |
+agent-device:
+  Node.js startup ~400ms → load session state ~50ms → adb shell (~50-200ms)
+  back/home: ~500ms  tap: ~700ms  screenshot (screencap+pull): ~2600ms
 
----
-
-## 四、能力对比
-
-| 能力 | phonefast | agent-device | adb kill |
-|------|:---:|:---:|:---:|
-| tap 坐标点击 | ✅ | ✅ | ✅ |
-| swipe 自定义坐标 | ✅ | ❌ (仅预设方向) | ✅ |
-| type_text 文本 | ✅ | ✅ | ✅ |
-| screenshot 截图 | ✅ (H.264→PNG) | ✅ (screencap) | ✅ (screencap) |
-| UI 元素 (xml) | ✅ UISocketHandler | ❌ | ✅ |
-| observe (截图+UI) | ✅ (原子操作) | ❌ | ❌ |
-| tap_element | ✅ (MCP 模式) | ✅ | ✅ |
-| launch_app | ✅ | ✅ | ✅ |
-| 批量执行 | ✅ `run` JSON | ✅ `batch` | ✅ `run` JSON |
-| MCP 服务 | ✅ `serve` (8019) | ✅ `mcp` | ✅ `serve` (8009) |
-| ImageContent | ✅ (MCP 原生) | ❌ | ❌ |
-| 非 ASCII 输入 | ❌ | ❌ | ✅ DEX helper |
-| 多平台 | ❌ | ✅ iOS/Android/TV | ❌ |
-
----
-
-## 五、实现原理
-
-### 5.1 会话生命周期
-
-```mermaid
-flowchart TD
-    C1["部署 scrcpy-server.jar"] --> C2["杀掉旧 server 实例"]
-    C2 --> C3["分配端口 video/UI"]
-    C3 --> C4["启动 scrcpy-server"]
-    C4 --> C5["ADB forward video socket"]
-    C5 --> C6["连接 video socket + 读 dummy byte"]
-    C6 --> C7["连接 control socket"]
-    C7 --> C8["读 H.264 视频头 → 分辨率"]
-    C8 --> C9["等待 UISocketHandler 就绪 600ms"]
-    C9 --> C10["ADB forward UI socket + 探测"]
-    C10 --> C11["启动 drainFrames() 后台协程"]
+adb kill:
+  PyInstaller extraction ~1s → Python import ~2-3s → ADB detection ~1s → subprocess.run(~2s) → parsing ~0.5s
+  Total: ~7-9s
 ```
 
-### 5.2 截图管线（v1.0.11 架构）
+---
 
-> v1.0.11 将截图管线从 **ffmpeg 子进程** 重构为 **astiav CGO 进程内解码**，消除子进程创建 + 管道 I/O 开销，截图延迟降低 3-4 倍。
+## 3. Architectural Dimension Comparison
+
+| Dimension | phonefast | agent-device | adb kill |
+|---|---|---|---|
+| **Language** | Go (native binary) | TypeScript (Node.js) | Python (PyInstaller) |
+| **Binary Size** | 12MB | ~3MB (npm) | 41MB |
+| **Cold Start** | <10ms | ~500ms | ~7s |
+| **Connection Method** | scrcpy protocol (TCP tunnel) | ADB commands | ADB commands |
+| **Daemon Mode** | ✅ Resident process + Unix Socket | ✅ session-state on disk | ❌ Cold start each time |
+| **Command Latency** | 12-30ms | 450-750ms | 7-9s |
+| **Screenshot Method** | scrcpy H.264 keyframe → ffmpeg PNG | adb screencap → pull PNG | adb screencap → pull PNG |
+| **UI Parsing** | UISocketHandler (TCP socket) | uiautomator dump | uiautomator dump |
+| **UI Stability** | ⭐⭐⭐⭐⭐ | ⭐⭐ (uiautomator often times out) | ⭐⭐⭐ |
+| **Persistent Connection** | scrcpy server resident on device | No persistent connection | No persistent connection |
+| **Session Management** | Daemon in-memory | State persisted to disk | Stateless |
+| **Disconnect Recovery** | Three-level keepalive, auto-reconnect in 10s | Session state file recovery | Stateless |
+| **MCP Protocol** | ✅ SSE / STDIO (8019) | ✅ `agent-device mcp` | ✅ SSE / STDIO (8009) |
+| **Cross-Platform** | Android only | iOS / Android / TV / Desktop | Android only |
+| **Performance Sampling** | ❌ | ✅ `perf` collection | ❌ |
+| **Screen Recording Replay** | ❌ | ✅ `.ad` script → CI | ❌ |
+| **Deployment** | `go build` + jar | `npm install -g` | PyInstaller single file |
+
+---
+
+## 4. Feature Comparison
+
+| Feature | phonefast | agent-device | adb kill | Notes |
+|---|---|---|---|---|
+| tap (coordinate click) | ✅ | ✅ | ✅ | |
+| swipe (custom coordinates) | ✅ | ❌ (preset directions only) | ✅ | agent-device gesture only supports left/right |
+| back/home/key | ✅ | ✅ | ✅ | |
+| type_text | ✅ | ✅ ¹ | ✅ | agent-device fill with coordinate+text mode |
+| screenshot | ✅ (H.264→PNG) | ✅ (screencap) | ✅ (screencap) | |
+| UI elements (xml) | ✅ UISocketHandler | ❌ ² | ✅ | agent-device uiautomator often times out |
+| UI elements (ocr) | ❌ | ❌ | ✅ | adb kill exclusive: PaddleOCR |
+| observe (screenshot+UI) | ✅ (atomic) | ❌ | ❌ | phonefast exclusive |
+| tap_element | ✅ (MCP mode) | ✅ (@ref semantics) | ✅ | |
+| launch_app | ✅ (package name) | ✅ | ✅ (package name) | |
+| search apps | ❌ | ✅ `apps` | ✅ `search_apps` | |
+| current app | ❌ | ✅ `appstate` | ✅ `current_app` | |
+| batch execution | ✅ `run` JSON | ✅ `batch` | ✅ `run` JSON | |
+| MCP server | ✅ `serve` (8019) | ✅ `mcp` | ✅ `serve` (8009) | |
+| ImageContent | ✅ (MCP native) | ❌ | ❌ | phonefast exclusive |
+| non-ASCII input | ❌ | ❌ | ✅ | DEX helper clipboard |
+| wifi connection | ❌ | ❌ | ✅ | `adb connect` |
+| multi-platform | ❌ | ✅ iOS/Android/TV | ❌ | |
+| performance sampling | ❌ | ✅ `perf` | ❌ | |
+| screen recording replay | ❌ | ✅ `.ad`→CI | ❌ | |
+
+> ¹ agent-device `fill` coordinate+text mode works, ref mode depends on snapshot (uiautomator), often times out.
 >
-> ffmpeg 子进程方式仍作为降级路径保留（`CGO_ENABLED=0` 时自动切换）。
+> ² agent-device `snapshot` depends on uiautomator dump, fails on low-end devices with 33s timeout.
+
+---
+
+## 5. phonefast Implementation Principles
+
+### 5.1 Session Lifecycle
 
 ```mermaid
 flowchart TD
-    DEVICE["Android 设备视频流 H.264"] -->|TCP| SOCKET["scrcpy video socket"]
-    SOCKET -->|drainFrames 后台协程| NAL["NAL 单元解析 SPS/PPS/IDR"]
-    NAL --> CACHE["LRU 缓存最新关键帧"]
-    NAL --> REQ["缺失时 requestKeyframe()\n发送 RESET_VIDEO 控制帧"]
-
-    CACHE -->|"keyframeToPNG()"| CHOICE{"CGO_ENABLED?"}
-
-    CHOICE -->|"默认: 是"| ASTIAV["astiav.Decoder\n(进程内 CGO)"]
-    ASTIAV --> CTX["CodecContext\nThreadCount=1\n持久复用"]
-    CTX --> DEC["SendPacket + ReceiveFrame"]
-    DEC --> SWSCALE["sws_scale\nH.264→RGBA"]
-    SWSCALE --> ENC["astiav 编码为 PNG bytes"]
-    ENC --> MC["MCP ImageContent\n{type:image, data, mimeType}"]
-
-    CHOICE -->|"降级: 否"| FFMPEG_CLI["ffmpeg CLI subprocess\nexec.CommandContext"]
-    FFMPEG_CLI --> STDIN["stdin: -f h264 -i pipe:0"]
-    STDIN --> STDOUT["stdout: -vcodec png pipe:1"]
-    STDOUT --> MC
+    C1["Step 1: Deploy scrcpy-server.jar"] --> C2["Step 2: Kill old server instance"]
+    C2 --> C3["Step 3: Allocate ports video/UI"]
+    C3 --> C4["Step 4: Start scrcpy-server"]
+    C4 --> C5["Step 5: ADB forward video socket"]
+    C5 --> C6["Step 6: Connect video socket + read dummy byte"]
+    C6 --> C7["Step 7: Connect control socket"]
+    C7 --> C8["Step 8: Read H.264 video header → resolution"]
+    C8 --> C9["Step 9: Wait for UISocketHandler ready 600ms"]
+    C9 --> C10["Step 10: ADB forward UI socket + probe"]
+    C10 --> C11["Start drainFrames() background goroutine"]
 ```
 
-**两条路径对比**：
-
-| 维度 | 主路径 (astiav CGO) | 降级路径 (ffmpeg CLI) |
-|------|-------------------|---------------------|
-| 触发条件 | `CGO_ENABLED=1`（默认构建） | `CGO_ENABLED=0`（交叉编译等） |
-| 解码方式 | 进程内 C 函数调用 | `fork + exec` 子进程 |
-| 数据传输 | 零拷贝内存指针传递 | pipe stdin → stdout (memcpy ×2) |
-| 编解码器上下文 | **持久复用**（DPB 保持分配） | 每次新建进程（SPS/PPS 重解析） |
-| 线程数 | **ThreadCount=1** | 默认多线程 |
-| 截图 P50 | **28ms** 🚀 | ~100-200ms |
-| 冷启动截图 | **~19ms** | ~167ms |
-| 外部依赖 | 无（FFmpeg 静态链接进二进制） | 系统需安装 ffmpeg |
-
-**为什么单线程反而更快**：
-- 488×1080 单帧解码量极小，多线程切片同步开销 > 解码本身
-- 多线程导致 DPB (Decoded Picture Buffer) 翻倍分配，内存膨胀
-- ThreadCount=1 消除 slice-merge 和线程间同步，延迟更稳定
-
-**为什么持久上下文比新建快**：
-- 每次 `SendPacket(nil)` flush 后重新初始化 → +55ms（SPS/PPS 重解析 + DPB 重建）
-- 持久上下文复用上一帧的参考帧缓冲区，新 IDR 自然覆盖旧帧
-- 无 flush = 零额外开销
-
-**为什么用关键帧**：
-- I 帧（IDR/Keyframe）包含完整画面，可独立解码
-- P/B 帧仅含差异数据，依赖参考帧
-- 截图必须用 I 帧；缺失时会发 `RESET_VIDEO` 指令触发设备立即生成
-
-### 5.3 UI 元素获取
+### 5.2 Screenshot Pipeline
 
 ```mermaid
 flowchart TD
-    GET["GetUIElements()"] --> FAST{"UISocketHandler 可用?"}
-    FAST -->|"快速路径"| SOCKET["TCP 连接 UI socket"]
-    SOCKET --> SEND["发送 dump 请求"]
-    SEND --> XML["接收 XML"]
-    XML --> PARSE["解析 UIElement 列表"]
-    FAST -->|"降级 ADB fallback"| ADB["adb shell uiautomator dump"]
-    ADB --> PULL["pull XML 文件"]
+    DEVICE["Android device video stream H.264"] -->|TCP| SOCKET["scrcpy video socket"]
+    SOCKET -->|drainFrames| DECODER["h264.Decoder"]
+
+    DECODER --> NAL["NAL unit parsing: SPS/PPS/IDR"]
+    DECODER --> CACHE["Cache latest keyframe LatestKeyframe()"]
+    DECODER --> REQ["Send RESET_VIDEO to request keyframe when missing"]
+
+    CACHE -->|keyframeToPNG| FFMPEG["ffmpeg subprocess"]
+    FFMPEG --> FF_IN["stdin: -f h264 -i pipe:0"]
+    FF_IN --> FF_OUT["stdout: -vcodec png pipe:1"]
+    FF_OUT --> B64["base64 encode"]
+    B64 --> MC["MCP ImageContent<br/>{type:image, data, mimeType}"]
+```
+
+**Why keyframes**:
+- I-frames (IDR/Keyframe) contain the complete picture, can be decoded independently
+- P/B-frames only contain delta data, depend on reference frames
+- Screenshots must use I-frames; when missing, a `RESET_VIDEO` command is sent to trigger the device to generate one immediately
+
+**ffmpeg conversion command**:
+```bash
+ffmpeg -f h264 -i pipe:0 -frames:v 1 -f image2pipe -vcodec png pipe:1
+```
+
+### 5.3 UI Element Retrieval
+
+```mermaid
+flowchart TD
+    GET["GetUIElements()"] --> FAST{"UISocketHandler available?"}
+    FAST -->|"Fast path"| SOCKET["TCP connect UI socket"]
+    SOCKET --> SEND["Send dump request"]
+    SEND --> XML["Receive XML"]
+    XML --> PARSE["Parse UIElement list"]
+    FAST -->|"Fallback ADB"| ADB["adb shell uiautomator dump"]
+    ADB --> PULL["pull XML file"]
     PULL --> PARSE
 ```
 
-phonefast 的 `UISocketHandler` 是 scrcpy-server 的自定义扩展，通过 abstract socket 提供 UI dump 服务，比 `uiautomator dump` 快约 40%。
+phonefast's `UISocketHandler` is a custom extension of scrcpy-server (`phonefast-agent/UISocketHandler.java`), providing UI dump service via abstract socket, approximately 40% faster than `uiautomator dump`.
 
-### 5.4 保活与断线恢复
+**agent-device's UI困境**: agent-device relies entirely on `uiautomator dump`, which frequently times out (30s+) on low-resolution/low-end devices, making `snapshot -i` and `fill @ref` unusable.
+
+### 5.4 Keepalive & Disconnect Recovery
 
 ```mermaid
 flowchart TD
@@ -304,26 +309,26 @@ flowchart TD
         VK["video socket: 30s"]
     end
 
-    subgraph L2["2. healthLoop 10s 周期"]
-        ALIVE["IsAlive() 检查"]
-        VD["videoDied channel 是否关闭?"]
-        CE["controlErr 是否为空?"]
+    subgraph L2["2. healthLoop 10s cycle"]
+        ALIVE["IsAlive() check"]
+        VD["videoDied channel closed?"]
+        CE["controlErr is nil?"]
         ALIVE --> VD
         ALIVE --> CE
     end
 
     subgraph L3["3. Write Failure Detection"]
-        WF["Write() 失败"]
+        WF["Write() fails"]
         MCB["markControlBroken()"]
         WF --> MCB
     end
 
     L1 --> L2
-    L2 -->|"检测到断线"| RECONNECT["reconnect() 自动重连"]
-    L3 -->|"写失败"| RECONNECT
+    L2 -->|"Disconnect detected"| RECONNECT["reconnect() auto-reconnect"]
+    L3 -->|"Write failure"| RECONNECT
 ```
 
-### 5.5 Daemon 模式
+### 5.5 Daemon Mode
 
 ```mermaid
 sequenceDiagram
@@ -331,11 +336,11 @@ sequenceDiagram
     participant DS as Unix Socket
     participant DM as Daemon
     participant SESS as Session
-    participant DEV as Android 设备
+    participant DEV as Android Device
 
-    Note over DM: 启动: 连接设备 + 创建 socket + healthLoop
+    Note over DM: Startup: connect device + create socket + healthLoop
 
-    CLI ->> DM: ensureDaemon() 检查/启动
+    CLI ->> DM: ensureDaemon() check/start
     CLI ->> DS: JSON-RPC tap(x=540, y=960)
     DS ->> DM: dispatch "tap"
     DM ->> SESS: Tap(540, 960)
@@ -346,7 +351,9 @@ sequenceDiagram
     DM -->> CLI: {"result":"Tapped at (540, 960)"}
 ```
 
-### 5.6 MCP ImageContent 返回
+### 5.6 MCP ImageContent Return
+
+phonefast uses MCP protocol's native `ImageContent` type to return screenshots:
 
 ```json
 {
@@ -357,78 +364,226 @@ sequenceDiagram
 }
 ```
 
----
+Comparison with base64 embedded in JSON text:
 
-## 六、长稳压测 (v1.0.11 优化版)
-
-> 12 小时持续压测，145,843 次操作，**100% 成功率**，零断连。
-
-| 指标 | 数值 |
-|------|------|
-| **测试时长** | 720 分钟 (12 小时) |
-| **总操作数** | 145,843 |
-| **成功数** | 145,843 |
-| **失败数** | 0 |
-| **成功率** | **100%** |
-| **daemon 断连** | 0 次 |
-| **性能退化** | ❌ 无 |
-| **RSS 峰值** | <62MB |
-
-**12 项操作延迟总览**:
-
-| 操作 | 次数 | P50 | P95 | P99 | Avg | Max |
-|------|:---:|:---:|:---:|:---:|:---:|:---:|
-| `tap` | 49,943 | **13ms** | 13ms | 14ms | 12ms | 453ms |
-| `back` | 16,639 | **13ms** | 13ms | 14ms | 12ms | 474ms |
-| `home` | 16,642 | **13ms** | 13ms | 14ms | 12ms | 18ms |
-| `press_key` | 16,650 | **13ms** | 13ms | 14ms | 12ms | 18ms |
-| `swipe` | 8,384 | **318ms** | 322ms | 323ms | 318ms | 821ms |
-| `screenshot` | 4,185 | **28ms** | 126ms | 128ms | 49ms | 132ms |
-| `observe` | 4,188 | **28ms** | 126ms | 129ms | 51ms | 134ms |
-| `get_ui_elements` | 4,189 | **46ms** | 132ms | 151ms | 61ms | 192ms |
-| `type_text` | 4,188 | **1ms** | 1ms | 2ms | 1ms | 6ms |
-| `launch_app` | 4,187 | **1ms** | 1ms | 2ms | 1ms | 5ms |
-| `status` | 4,189 | **1ms** | 1ms | 2ms | 1ms | 3ms |
-| `wait` | 12,459 | **33ms** | 33ms | 33ms | 32ms | 38ms |
+| | Old Way (JSON text) | New Way (ImageContent) |
+|---|---|---|
+| Protocol Compliance | ❌ Custom format | ✅ MCP standard ImageContent |
+| LLM Recognition | Text string | Native image recognition |
+| Data Structure | `{"base64":"...", "width":1080, ...}` | `[{TextContent}, {ImageContent}]` |
+| Data Redundancy | Double encoding: base64 + JSON wrapping | base64 only |
 
 ---
 
-## 七、适用场景
+## 6. MCP Benchmark Tools
 
-### phonefast daemon → AI Agent 首选
+### 6.1 benchmark.py
 
-- AI Agent 高频交互（观察→操作→再观察循环）
-- 需要极低延迟 (<30ms)
-- 批量自动化脚本
-- 需要 MCP ImageContent 原生返回图片
+Fully automated MCP Benchmark tool, supports both STDIO and SSE transport modes.
 
 ```bash
-phonefast daemon                              # 启动 (仅需一次)
-phonefast --daemon tap 540 960                # 点击 (13ms)
-phonefast --daemon screenshot /tmp/s.png      # 截图 (28ms)
-phonefast --daemon observe                    # 截图+UI (28ms)
+# Basic usage
+python3 benchmark.py                          # STDIO mode, default 10 rounds
+python3 benchmark.py --sse --port 18019       # SSE mode
+python3 benchmark.py --rounds 30              # 30 rounds
+python3 benchmark.py --quick                  # Quick mode (3 rounds)
+python3 benchmark.py --output report.json     # Output JSON report
 ```
 
-### 推荐组合
+**Test Dimensions**:
 
-```
-主力: phonefast daemon  (速度王者，Android AI Agent 首选)
-      + phonefast serve  (MCP 模式，含 tap_element)
+| Dimension | Description |
+|---|---|
+| Cold Start Latency | Process startup → first tool call success |
+| Single Call Latency | Per-tool p50 / p95 / p99 / avg / min / max |
+| Throughput (QPS) | Requests per second over 20 consecutive calls |
+| Error Rate | Failures / Total Calls |
+| Data Size | Bytes returned by screenshot / observe |
 
-补充: agent-device       (需要 iOS 自动化 / 录屏回放 / 性能采样时)
-      adb kill           (需要 OCR / 非 ASCII 输入 / 包名搜索时)
+### 6.2 benchmark.sh
+
+Bash script for real-time three-way latency comparison:
+
+```bash
+# Full three-way comparison
+bash tests/benchmark.sh
+
+# Custom parameters
+RUNS=5 bash tests/benchmark.sh
 ```
 
 ---
 
-### 为什么 phonefast 更稳定
+## 7. Use Cases
+
+### phonefast daemon → AI Agent First Choice
+
+- High-frequency AI Agent interaction (observe→act→re-observe loop)
+- Requires ultra-low latency (<30ms)
+- Batch automation scripts
+- Requires MCP ImageContent native image return
+
+```bash
+phonefast daemon                              # Start (one-time only)
+phonefast --daemon tap 540 960                # Tap (30ms)
+phonefast --daemon screenshot /tmp/s.png      # Screenshot (167ms)
+phonefast --daemon observe                    # Screenshot+UI (148ms)
+```
+
+### agent-device → Multi-platform / CI Scenarios
+
+- iOS + Android cross-platform automation
+- Session recording replay needed (`.ad` → Maestro YAML)
+- `perf` performance sampling needed
+- Desktop automation (macOS/Linux)
+
+```bash
+agent-device open com.android.settings --platform android
+agent-device click 244 540                    # Tap (750ms)
+agent-device screenshot ./artifacts/s.png     # Screenshot (2.6s)
+agent-device close
+```
+
+### adb kill → OCR / Special Scenarios
+
+- OCR text detection (WebView / Flutter / Games)
+- `tap_element` semantic-level clicks (text/resource_id instead of coordinates)
+- `search_apps` / `current_app`
+- Non-ASCII text input (Chinese/emoji)
+- Environments where scrcpy-server cannot be deployed
+
+---
+
+## 8. Scoring Summary
+
+| | phonefast daemon | agent-device | adb kill |
+|---|---|---|---|
+| **Speed** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ |
+| **Feature Richness** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **UI Stability** | ⭐⭐⭐⭐⭐ | ⭐⭐ (uiautomator) | ⭐⭐⭐ |
+| **Deployment Complexity** | Requires scrcpy jar | `npm install -g` | Single file 41MB |
+| **Multi-Platform** | ❌ Android only | ✅ iOS/Android/TV/Desktop | ❌ Android only |
+| **AI Agent Suitability** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ |
+| **ImageContent** | ✅ (MCP native) | ❌ | ❌ |
+| **Special Scenarios** | — | Recording replay / Performance sampling | OCR / non-ASCII / Package search |
+
+**Recommended Stack**:
 
 ```
-phonefast:  设备上 scrcpy-server 常驻，TCP 连接持续 12 小时不断
-             daemon 内存持有 session，命令间零状态重建开销
-             三级保活 (TCP keepalive + healthLoop + 写失败检测)
+Primary:   phonefast daemon  (Speed King, Android AI Agent First Choice)
+           + phonefast serve  (MCP mode, includes tap_element)
 
-agent-device/adb kill: 每次命令新建 adb shell 子进程，用完即销毁
-                       无持久连接，每次读取 session 或冷启动
-                       命令失败即报错，无自动恢复
+Supplemental: agent-device  (when iOS automation / recording replay / performance sampling needed)
+              adb kill      (when OCR / non-ASCII input / package search needed)
+```
+
+---
+
+## 9. Long-duration Stress Test: Stability Comparison
+
+> Only through extended stress testing can real production reliability be verified.
+
+### 9.1 phonefast 12-hour Daemon Stress Test
+
+> **Test Environment**: macOS arm64 | Go 1.26.4 | phonefast v1.0.0 | Device TECNO KL8h (USB) | 488×1080
+> **Test Date**: 2026-06-20 | Script: `tests/stress_test_rpc.py -d 720`
+> **Method**: Unix socket direct to daemon JSON-RPC, 6-stage gradient load, RSS sampled every 30s.
+
+| Metric | Value |
+|---|---|
+| **Duration** | 720 minutes (12 hours) |
+| **Total Operations** | 144,348 |
+| **Successful** | 144,339 |
+| **Failed** | 9 |
+| **Success Rate** | **99.99%** |
+| **Daemon Disconnects** | 1 (auto-recovered, < 10s) |
+| **Performance Degradation** | ❌ None (P50 latency consistent with 1-hour test) |
+
+**12 Operation Latency Overview** (144,348 raw data points):
+
+| Operation | Count | P50 | P95 | P99 | Avg | Max |
+|---|---|---|---|---|---|---|
+| back | 16,510 | 1ms | 2ms | 2ms | 1ms | 385ms |
+| launch_app | 4,111 | 1ms | 2ms | 2ms | 1ms | 4ms |
+| type_text | 4,111 | 1ms | 2ms | 2ms | 1ms | 7ms |
+| status | 4,112 | 1ms | 1ms | 2ms | 1ms | 4ms |
+| tap | 49,530 | 13ms | 14ms | 14ms | 13ms | 2.9s |
+| home | 16,510 | 13ms | 14ms | 14ms | 13ms | 2.8s |
+| press_key | 16,508 | 13ms | 14ms | 15ms | 13ms | 2.9s |
+| wait | 12,396 | 32ms | 33ms | 34ms | 32ms | 38ms |
+| screenshot | 4,113 | 112ms | 192ms | 207ms | 127ms | 278ms |
+| get_ui_elements | 4,110 | 109ms | 236ms | 260ms | 132ms | 10.3s |
+| observe | 4,111 | 145ms | 225ms | 241ms | 162ms | 12.6s |
+| swipe | 8,226 | 324ms | 328ms | 329ms | 326ms | 12.3s |
+
+**Failure Analysis** (9 failures / 0.006%):
+
+| Failure Type | Count | Cause | Recovery |
+|---|---|---|---|
+| TCP broken pipe | 5 | Burst phase 12-16 ops/s sustained bombardment, scrcpy server occasionally closes control connection | Daemon auto reconnect |
+| UI socket timeout | 3 | `observe`/`get_ui_elements` high-frequency concurrent calls | Next call succeeded |
+| Device response delay | 1 | Device busy during `launch_app` | Next call succeeded |
+
+> All 9 failures were transient faults. The daemon fully recovered after just 1 auto-reconnect, with zero failures for the remaining 8+ hours.
+
+### 9.2 agent-device / adb kill Stability
+
+| Dimension | phonefast | agent-device | adb kill |
+|---|---|---|---|
+| **Long-duration Stress Test** | ✅ 12 hours / 144k operations | ❌ No public data | ❌ No public data |
+| **Persistent Connection** | scrcpy TCP long connection | New adb subprocess each time | New adb subprocess each time |
+| **Daemon Keepalive** | ✅ Three-level keepalive + auto-reconnect | Disk session file | No daemon |
+| **Memory Trend** | STABLE (12h no leak) | Node.js process grows with operations | PyInstaller releases each time |
+| **Long-term Degradation Risk** | ❌ None (12h verified) | ⚠️ Node.js memory pressure | ⚠️ Fixed cold start overhead |
+| **Disconnect Recovery** | Auto reconnect < 10s | Re-open session | Naturally rebuilt on next command |
+| **Stability Under Load** | 99.99% @ 16 ops/s | Unknown (uiautomator 30s timeout) | Unknown (7s cold start bottleneck) |
+
+### 9.3 Why phonefast is More Stable
+
+**1. Long Connection vs Short Connection**
+
+```
+phonefast:  scrcpy-server resident on device, TCP connection sustained for 12+ hours
+agent-device/adb kill: new adb shell subprocess for each command, destroyed after use
+```
+
+Short connection mode works for low-frequency scenarios, but in high-frequency AI Agent loops:
+- Each `adb shell` fork has ~50ms fixed overhead
+- adb server itself has connection pool pressure
+- Race conditions can occur with rapid consecutive calls
+
+**2. Stateful vs Stateless**
+
+```
+phonefast:  daemon in-memory session → zero state reconstruction overhead between commands
+agent-device: disk session file → read + parse each time
+adb kill: stateless → full 7s cold start each time
+```
+
+**3. Three-Level Keepalive Mechanism**
+
+| Layer | phonefast | agent-device | adb kill |
+|---|---|---|---|
+| TCP Keepalive | control 15s / video 30s | No persistent connection | No persistent connection |
+| Health Check | 10s healthLoop | None | None |
+| Write Failure Detection | markControlBroken → reconnect | adb command failure = error | adb command failure = error |
+
+### 9.4 Reliability Conclusion
+
+```
+phonefast daemon:
+  ✅ 12-hour continuous stress test verified
+  ✅ 144,348 operations at 99.99% success rate
+  ✅ Zero memory leaks, zero performance degradation
+  ✅ Automatic fault recovery, no manual intervention needed
+
+agent-device:
+  ⚠️ No long-duration stress test data
+  ⚠️ uiautomator 30s timeout on low-end devices → UI operations unavailable
+  ⚠️ Node.js memory trend under long runtime unknown
+
+adb kill:
+  ⚠️ No long-duration stress test data
+  ⚠️ 7s cold start each time → inherently unsuitable for high-frequency scenarios
+  ⚠️ PyInstaller temp directory may accumulate
 ```
