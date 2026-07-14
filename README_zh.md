@@ -40,31 +40,6 @@ bash scripts/build.sh --windows     # Windows amd64
 bash scripts/build.sh --all --version 1.0.0
 ```
 
-### 产物结构
-
-```
-dist/<version>/
-├── <platform>/
-│   ├── phonefast              # CLI 二进制
-│   ├── phonefast.exe          # (Windows)
-│   ├── scrcpy-server.jar      # scrcpy 服务器 (Android 端)
-│   ├── scrcpy-server.version  # 版本标记文件
-│   ├── README.md              # 操作文档
-│   └── docs/                  # 详细文档
-└── <platform>/
-    └── phonefast-<version>-<os>-<arch>.tar.gz   # 发布包（--all / --macos / --linux / --windows）
-```
-
-### 构建流程
-
-脚本自动执行以下步骤：
-
-1. **版本检测** — 优先级：`--version` 参数 → `git describe --tags` → `"dev"`
-2. **前置检查** — 确认 Go 工具链 + `android/scrcpy-server.jar` 存在
-3. **Go 构建** — 交叉编译，注入版本/构建时间/commit hash 到 `-ldflags`
-4. **产物组装** — 复制 `scrcpy-server.jar`、`scrcpy-server.version`、`README.md`、`docs/`
-5. **压缩打包** — 生成 `.tar.gz`（macOS/Linux）或 `.zip`（Windows）发布包
-
 ### 手动安装到系统（可选）
 
 ```bash
@@ -73,6 +48,8 @@ mkdir -p /usr/local/share/phonefast
 cp dist/<version>/darwin_arm64/scrcpy-server.jar /usr/local/share/phonefast/
 cp dist/<version>/darwin_arm64/scrcpy-server.version /usr/local/share/phonefast/
 ```
+
+> 构建细节（产物结构、构建流程、交叉编译、FFmpeg 静态链接）→ [docs/DEV.md](docs/DEV.md)
 
 ---
 
@@ -282,7 +259,7 @@ phonefast key 66      # ENTER
 phonefast [--foreground|--daemon] launch <package>
 ```
 
-需要通过 Android 包名指定（不支持应用显示名，如 "设置"、"Chrome"）。
+需要通过 Android 包名指定（不支持应用显示名，如"设置"、"Chrome"）。
 
 ```bash
 phonefast launch com.android.settings     # 设置
@@ -419,6 +396,9 @@ phonefast daemon --stop
 - 使用 `--daemon` 标志执行命令时，如果 daemon 未运行，会自动在后台启动
 - 如果 daemon 进程存在但无响应，会自动杀死并重启
 - 多次调用 `phonefast daemon` 不会重复启动（已运行则退出）
+- 三层保活机制检测连接异常，10 秒内自动恢复
+
+> 详细 daemon 生命周期、启动流程和故障恢复 → [docs/CLI.md#5-daemon-管理](docs/CLI.md)
 
 ---
 
@@ -485,64 +465,6 @@ phonefast serve --transport stdio
 
 ---
 
-## 架构
-
-```
-phonefast CLI
-    │
-    ├── --daemon 模式 ──→ Unix Socket ──→ daemon 进程 ──→ TCP ──→ scrcpy server（设备）
-    │                    JSON-RPC          持有长连接        控制+视频+UI
-    │
-    └── 直接模式 ──→ 每次新建 session ──→ TCP ──→ scrcpy server（设备）
-                     部署+启动+连接+关闭
-
-内部结构:
-  internal/
-  ├── adb/       ADB 设备发现、scrcpy 部署与生命周期
-  ├── daemon/    守护进程、JSON-RPC 分发、健康检查
-  ├── log/       异步文件日志
-  ├── mcp/       MCP 服务器（基于 mcp-go）、工具注册
-  ├── session/   设备会话：视频流、控制、UI 采集、截图
-  pkg/
-  ├── h264/      H.264 AnnexB 解析、关键帧提取
-  └── protocol/  scrcpy 协议编码与控制消息
-```
-
----
-
-## 日志
-
-异步写入 `/tmp/phonefast-{uid}.log`，记录所有关键操作与调用上下文。
-
-**日志格式：**
-```
-2026-06-16 09:13:56.879 [session.go:139 Connect()] connected: 488x1080  control=true
-2026-06-16 09:13:59.602 [rpc.go:115 Dispatch()] rpc back
-2026-06-16 09:13:59.603 [control.go:138 Back()] back
-2026-06-16 09:13:59.624 [control.go:38 Tap()] tap (244,540)
-2026-06-16 09:13:59.952 [control.go:93 Swipe()] swipe (200,900)→(200,300) 300ms
-2026-06-16 09:14:26.000 [daemon.go:328 healthLoop()] health: connection dead, reconnecting...
-2026-06-16 09:14:29.000 [daemon.go:298 reconnect()] reconnected: 13709314CF044927 (488x1080)
-```
-
-**覆盖范围：** daemon 生命周期、设备连接、RPC 分发、控制操作、心跳检测、断线重连。
-
----
-
-## 断线恢复
-
-三级保活机制：
-
-| 层级 | 机制 | 间隔 | 说明 |
-|------|------|------|------|
-| OS 级 | TCP Keepalive | 视频 30s / 控制 15s | 操作系统检测死连接 |
-| 应用级 | `healthLoop` 协程 | 10s | 检测视频+控制连接是否存活，自动重连 |
-| 写触发 | `markControlBroken` | 即时 | 写入失败立刻标记，下次请求重连并重试 |
-
-当设备 USB 断开或 scrcpy 被 kill 时，daemon 在 10 秒内自动检测并恢复。
-
----
-
 ## 两种模式对比
 
 | | Daemon 模式 | 直接模式 |
@@ -552,6 +474,18 @@ phonefast CLI
 | 资源占用 | 后台常驻一个 daemon 进程 | 每次新建/销毁连接 |
 | 适用场景 | 批量操作、脚本自动化 | 临时单次操作 |
 | 自动管理 | 自动启动/重启/恢复 | 无状态 |
+
+---
+
+## 参考文档
+
+| 文档 | 内容 |
+|------|------|
+| [docs/CLI.md](docs/CLI.md) | 完整 CLI 手册：安装、命令、Daemon、MCP、架构、日志、故障恢复 |
+| [docs/DEV.md](docs/DEV.md) | 开发笔记：架构决策、构建与发布、交叉编译 |
+| [docs/benchmark.md](docs/benchmark.md) | 完整 benchmark 历史：版本对比、测试方法、内存分析 |
+| [docs/phonefast.md](docs/phonefast.md) | 产品对比：phonefast vs agent-device vs adb |
+| [CHANGELOG.md](CHANGELOG.md) | 版本发布历史 |
 
 ---
 

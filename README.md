@@ -40,31 +40,6 @@ bash scripts/build.sh --windows     # Windows amd64
 bash scripts/build.sh --all --version 1.0.0
 ```
 
-### Output Structure
-
-```
-dist/<version>/
-├── <platform>/
-│   ├── phonefast              # CLI binary
-│   ├── phonefast.exe          # (Windows)
-│   ├── scrcpy-server.jar      # scrcpy server (Android side)
-│   ├── scrcpy-server.version  # version marker file
-│   ├── README.md              # usage documentation
-│   └── docs/                  # detailed docs
-└── <platform>/
-    └── phonefast-<version>-<os>-<arch>.tar.gz   # release package (--all / --macos / --linux / --windows)
-```
-
-### Build Process
-
-The script automatically performs the following steps:
-
-1. **Version detection** — Priority: `--version` flag → `git describe --tags` → `"dev"`
-2. **Prerequisite check** — Verify Go toolchain + `android/scrcpy-server.jar` exists
-3. **Go build** — Cross-compile, inject version/build time/commit hash via `-ldflags`
-4. **Artifact assembly** — Copy `scrcpy-server.jar`, `scrcpy-server.version`, `README.md`, `docs/`
-5. **Archive packaging** — Generate `.tar.gz` (macOS/Linux) or `.zip` (Windows) release package
-
 ### Manual System Install (Optional)
 
 ```bash
@@ -73,6 +48,8 @@ mkdir -p /usr/local/share/phonefast
 cp dist/<version>/darwin_arm64/scrcpy-server.jar /usr/local/share/phonefast/
 cp dist/<version>/darwin_arm64/scrcpy-server.version /usr/local/share/phonefast/
 ```
+
+> Build details (output structure, build process, cross-compilation, FFmpeg static linking) → [docs/DEV.md](docs/DEV.md)
 
 ---
 
@@ -419,6 +396,9 @@ phonefast daemon --stop
 - When executing commands with `--daemon` flag, the daemon auto-starts in the background if not already running
 - If the daemon process exists but is unresponsive, it is automatically killed and restarted
 - Calling `phonefast daemon` multiple times will not start duplicate instances (exits if already running)
+- Three-level keepalive detects connection failures and recovers within 10 seconds
+
+> Detailed daemon lifecycle, startup flow, and recovery mechanism → [docs/CLI.md#5-daemon-管理](docs/CLI.md)
 
 ---
 
@@ -485,64 +465,6 @@ phonefast serve --transport stdio
 
 ---
 
-## Architecture
-
-```
-phonefast CLI
-    │
-    ├── --daemon mode ──→ Unix Socket ──→ daemon process ──→ TCP ──→ scrcpy server (device)
-    │                    JSON-RPC          holds persistent      control+video+UI
-    │                                      connections
-    └── direct mode ──→ new session each time ──→ TCP ──→ scrcpy server (device)
-                         deploy+start+connect+close
-
-Internal structure:
-  internal/
-  ├── adb/       ADB device discovery, scrcpy deployment & lifecycle
-  ├── daemon/    Daemon process, JSON-RPC dispatch, health checks
-  ├── log/       Async file logging
-  ├── mcp/       MCP server (based on mcp-go), tool registration
-  ├── session/   Device session: video stream, control, UI capture, screenshot
-  pkg/
-  ├── h264/      H.264 AnnexB parsing, keyframe extraction
-  └── protocol/  scrcpy protocol encoding & control messages
-```
-
----
-
-## Logging
-
-Writes asynchronously to `/tmp/phonefast-{uid}.log`, recording all critical operations and calling context.
-
-**Log format:**
-```
-2026-06-16 09:13:56.879 [session.go:139 Connect()] connected: 488x1080  control=true
-2026-06-16 09:13:59.602 [rpc.go:115 Dispatch()] rpc back
-2026-06-16 09:13:59.603 [control.go:138 Back()] back
-2026-06-16 09:13:59.624 [control.go:38 Tap()] tap (244,540)
-2026-06-16 09:13:59.952 [control.go:93 Swipe()] swipe (200,900)→(200,300) 300ms
-2026-06-16 09:14:26.000 [daemon.go:328 healthLoop()] health: connection dead, reconnecting...
-2026-06-16 09:14:29.000 [daemon.go:298 reconnect()] reconnected: 13709314CF044927 (488x1080)
-```
-
-**Coverage:** daemon lifecycle, device connection, RPC dispatch, control operations, heartbeat detection, reconnection.
-
----
-
-## Reconnection
-
-Three-level keepalive mechanism:
-
-| Level | Mechanism | Interval | Description |
-|-------|-----------|----------|-------------|
-| OS level | TCP Keepalive | Video 30s / Control 15s | OS detects dead connections |
-| App level | `healthLoop` goroutine | 10s | Checks video + control connection liveness, auto-reconnect |
-| Write-triggered | `markControlBroken` | Instant | Immediately marks on write failure, reconnects and retries on next request |
-
-When the device USB disconnects or scrcpy is killed, the daemon auto-detects and recovers within 10 seconds.
-
----
-
 ## Mode Comparison
 
 | | Daemon Mode | Direct Mode |
@@ -552,6 +474,18 @@ When the device USB disconnects or scrcpy is killed, the daemon auto-detects and
 | Resource usage | Single daemon process in background | Creates/destroys connection each time |
 | Use case | Batch operations, script automation | Ad-hoc single operations |
 | Auto-management | Auto-start/restart/recovery | Stateless |
+
+---
+
+## Reference Docs
+
+| Document | Content |
+|----------|---------|
+| [docs/CLI.md](docs/CLI.md) | Full CLI manual: install, commands, daemon, MCP, architecture, logging, recovery |
+| [docs/DEV.md](docs/DEV.md) | Development notes: architecture decisions, build & release, cross-compilation |
+| [docs/benchmark.md](docs/benchmark.md) | Full benchmark history: version comparison, methodology, memory analysis |
+| [docs/phonefast.md](docs/phonefast.md) | Product comparison: phonefast vs agent-device vs adb |
+| [CHANGELOG.md](CHANGELOG.md) | Version release history |
 
 ---
 
