@@ -14,7 +14,7 @@ phonefast is a fast Android device control CLI that combines scrcpy video stream
 ## Live Demo: Claude Code + phonefast
 
 > **4x speed** — Real execution of Claude Code + phonefast.  
-> Prompt: `使用phonefast skill，打开GP 安装Instagram`
+> Prompt: `Use phonefast skill: open Google Play and install Instagram`
 
 ![phonefast 4x speed — real Claude Code + phonefast execution](assets/phonefast_demo.gif)
 
@@ -370,7 +370,7 @@ phonefast daemon --stop
 - Calling `phonefast daemon` multiple times will not start duplicate instances (exits if already running)
 - Three-level keepalive detects connection failures and recovers within 10 seconds
 
-> Detailed daemon lifecycle, startup flow, and recovery mechanism → [docs/CLI.md#5-daemon-管理](docs/CLI.md)
+> Detailed daemon lifecycle, startup flow, and recovery mechanism → [docs/CLI.md#5-daemon-management](docs/CLI.md)
 
 ---
 
