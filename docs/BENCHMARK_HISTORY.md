@@ -18,6 +18,7 @@
 | 2026-07-13 14:19 | **优化版** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | 自定义 RPC 脚本 | 100 次截图+observe |
 | 2026-07-13 14:46 | **优化版** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | 自定义 RPC 脚本 | 200 次纯截图 |
 | 2026-07-13 19:25 | **优化版** (ThreadCount=1) | 13709314CF044927 | Daemon RPC | `tests/stress_test_rpc.py` | **12 小时** |
+| 2026-07-14 21:10 | **v1.0.11** (ThreadCount=1 + 帧循环简化) | 13709314CF044927 | Daemon RPC | 正式发布 (含 §6/§7 优化) | 继承 12h 压测数据 |
 
 ---
 
@@ -282,7 +283,9 @@ Cold start: 19ms
 
 ---
 
-## 6. 优化版（ThreadCount=1 + 帧循环简化）
+## 6. 优化版 → v1.0.11（ThreadCount=1 + 帧循环简化）
+
+> **2026-07-14**: 以 v1.0.11 正式发布。commit `d071608`，对应 GitHub Release [v1.0.11](https://github.com/gezihua123/phonefast/releases/tag/v1.0.11)。
 
 **改动**（`pkg/avcodec/decode_astiav.go`）：
 1. **帧循环简化**：单帧 IDR 解码从 2 次 `AllocFrame`+`ReceiveFrame` 探测循环 → 1 次接收，省一次 CGO 调用和帧分配
@@ -364,7 +367,9 @@ Device: 13709314CF044927 | RSS start: 13MB | 200 screenshots
 
 ---
 
-## 7. 优化版 12 小时压测（最终验证）
+## 7. 优化版 12 小时压测（v1.0.11 最终验证）
+
+> **2026-07-14**: 该优化版已以 v1.0.11 正式发布。12 小时压测即 v1.0.11 的发布前最终验证。
 
 **来源**: `test_runs/stress_1h_20260713_192539/summary.json`
 

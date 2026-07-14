@@ -90,6 +90,86 @@ if (sep == ':') {
 
 ## 构建与发布
 
+### H.264 截图解码架构 (v1.0.11)
+
+phonefast 的截图管线从 Android 设备 scrcpy H.264 视频流中提取 IDR 关键帧，解码为 PNG 图片。
+有两条路径，编译时选择：
+
+#### 主路径：astiav CGO 进程内解码（默认）
+
+`pkg/avcodec/decode_astiav.go` — 通过 go-astiav 库直接调用 libavcodec/libswscale C API。
+
+```go
+import "github.com/asticode/go-astiav"
+
+decoder, _ := astiav.NewDecoder(codecID)
+ctx := astiav.AllocCodecContext(codec)
+ctx.SetThreadCount(1)  // 单帧 IDR 无需多线程
+ctx.Open(decoder, nil)
+
+// 每次截图:
+pkt := astiav.AllocPacket()
+pkt.SetData(keyframe)  // H.264 AnnexB bytes
+ctx.SendPacket(pkt)
+
+frame := astiav.AllocFrame()
+ctx.ReceiveFrame(frame)
+
+// sws_scale → PNG
+sws := astiav.AllocSwsContext(...)
+sws.Scale(frame, rgbaFrame)
+astiav.EncodeImage(rgbaFrame, pngBytes, astiav.FormatPNG)
+```
+
+**关键优化**：
+- ThreadCount=1：单帧 488×1080 解码量极小，多线程切片同步开销 > 解码本身
+- 持久 CodecContext：不复用每次 +55ms（SPS/PPS 重解析 + DPB 重建）
+- 帧循环简化：IDR 刚好输出 1 帧，无需旧版本的 AllocFrame 探测循环
+
+#### 降级路径：ffmpeg CLI subprocess（CGO_ENABLED=0）
+
+`internal/session/video.go` — `exec.CommandContext` 起 ffmpeg 子进程，stdin/stdout 管道传数据。
+
+```go
+cmd := exec.CommandContext(ctx, "ffmpeg",
+    "-f", "h264",
+    "-i", "pipe:0",
+    "-vcodec", "png",
+    "-f", "image2pipe",
+    "pipe:1",
+)
+stdin, _ := cmd.StdinPipe()
+stdout, _ := cmd.StdoutPipe()
+stdin.Write(keyframe)
+stdin.Close()
+pngBytes, _ := io.ReadAll(stdout)
+cmd.Wait()
+```
+
+**开销**：fork+exec 约 50-80ms + SPS/PPS 重解析 + pipe memcpy ≈ 100-200ms/次
+
+#### 代码结构
+
+```
+pkg/avcodec/
+├── avcodec.go         — 包文档 + 公共类型 (ImageFormat, DecodeError, ErrNotAvailable)
+├── decode.go          — Decoder 接口定义
+├── decode_astiav.go   — 主路径: CGO 解码器 (build tag: cgo)
+├── decode_nocgo.go    — 降级桩: 返回 ErrNotAvailable (build tag: !cgo)
+├── decode_test.go     — 测试 (go test + fuzz)
+└── testdata/          — 测资
+
+internal/session/
+└── video.go           — keyframeToPNG + decodeViaFFmpeg (降级路径)
+```
+
+构建时通过 build tag 选择实现：
+
+```bash
+go build -tags cgo ./cmd/phonefast/    # 主路径 (默认, CGO_ENABLED=1)
+CGO_ENABLED=0 go build ./cmd/phonefast/ # 降级路径 (需要系统有 ffmpeg)
+```
+
 ### 构建 server jar
 
 ```bash
