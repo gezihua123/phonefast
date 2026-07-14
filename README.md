@@ -11,72 +11,6 @@ phonefast is a fast Android device control CLI that combines scrcpy video stream
 
 ---
 
-## Installation
-
-**Prerequisites:**
-- Go 1.21+
-- `adb` in PATH
-- `ffmpeg` (required for screenshots)
-- `git` (automatic version injection)
-- `upx` (optional, to compress binary size)
-
-### Build Script
-
-Use the unified build script `scripts/build.sh`:
-
-```bash
-# Cross-platform build + packaging (default)
-bash scripts/build.sh --all
-
-# Current platform build (binary only)
-bash scripts/build.sh
-
-# Specific platform
-bash scripts/build.sh --macos       # macOS amd64 + arm64
-bash scripts/build.sh --linux       # Linux amd64 + arm64
-bash scripts/build.sh --windows     # Windows amd64
-
-# Specify version number (default reads from git tag, or "dev" if no tag)
-bash scripts/build.sh --all --version 1.0.0
-```
-
-### Manual System Install (Optional)
-
-```bash
-cp dist/<version>/darwin_arm64/phonefast /usr/local/bin/
-mkdir -p /usr/local/share/phonefast
-cp dist/<version>/darwin_arm64/scrcpy-server.jar /usr/local/share/phonefast/
-cp dist/<version>/darwin_arm64/scrcpy-server.version /usr/local/share/phonefast/
-```
-
-> Build details (output structure, build process, cross-compilation, FFmpeg static linking) → [docs/DEV.md](docs/DEV.md)
-
----
-
-## Quick Start
-
-```bash
-# List connected devices
-phonefast devices
-
-# Start daemon (automatically starts on first use, also manual)
-phonefast daemon
-
-# Default daemon mode — instant response (<10ms)
-phonefast back
-phonefast tap 540 960
-phonefast screenshot /tmp/screen.png
-
-# Direct mode — new connection each time (~2.5s), add --foreground
-phonefast --foreground back
-phonefast --foreground tap 540 960
-
-# Start MCP server (for AI assistants)
-phonefast serve
-```
-
----
-
 ## Demo
 
 ![phonefast 4x speed demo](assets/phonefast_demo.gif)
@@ -108,6 +42,43 @@ phonefast's daemon mode delivers consistently low latency across all operations.
 - 200 consecutive screenshots: **P50 = 12ms, P95 = 13ms** (hot decoder)
 
 > Detailed benchmark history, version comparison, and methodology at [docs/benchmark.md](docs/benchmark.md).
+
+---
+
+## Getting Started
+
+### Installation
+
+**Prerequisites:** Go 1.21+, `adb`, `ffmpeg`, `git`
+
+```bash
+# Build from source
+bash scripts/build.sh                       # Current platform
+bash scripts/build.sh --all                 # Cross-platform build + packaging
+
+# Or download prebuilt binary from GitHub Releases
+# https://github.com/gezihua123/phonefast/releases
+```
+
+> Build details (cross-compilation, FFmpeg static linking) → [docs/DEV.md](docs/DEV.md)
+
+### Quick Start
+
+```bash
+# List connected devices
+phonefast devices
+
+# Default daemon mode — instant response (<10ms)
+phonefast tap 540 960
+phonefast back
+phonefast screenshot /tmp/screen.png
+
+# Direct mode — new connection each time (~2.5s), add --foreground
+phonefast --foreground tap 100 200
+
+# Start MCP server (for AI assistants)
+phonefast serve
+```
 
 ---
 
