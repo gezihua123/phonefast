@@ -5,17 +5,16 @@
 # 基于 install.md 中的发布链接，自动检测系统架构并下载安装 phonefast 预编译包。
 #
 # 用法:
-#   bash scripts/install_pkg.sh                    # 安装到 /usr/local/bin
-#   bash scripts/install_pkg.sh --local            # 安装到 ~/.local/bin
+#   bash scripts/install_pkg.sh                    # 安装到 ~/.local/bin
 #   bash scripts/install_pkg.sh --version 1.0.10    # 指定版本
 #   bash scripts/install_pkg.sh --dry-run          # 仅打印信息，不安装
 #   bash scripts/install_pkg.sh --help             # 显示帮助
 #
 # 环境变量:
 #   VERSION       - 版本号 (默认: 1.0.10)
-#   INSTALL_DIR   - 安装目录 (优先级高于 --local)
+#   INSTALL_DIR   - 安装目录 (默认: 根据平台自动选择)
 #   GITHUB_MIRROR - GitHub 镜像地址 (默认: https://github.com)
-# ===========================================================================
+# ============================================================================
 
 set -euo pipefail
 
@@ -32,6 +31,16 @@ VERSION="${VERSION:-1.0.10}"
 GITHUB_MIRROR="${GITHUB_MIRROR:-https://github.com}"
 BASE_URL="${GITHUB_MIRROR}/${REPO}/releases/download/v${VERSION}"
 
+# ── 平台默认安装目录 ─────────────────────────────────────────────────────────
+default_install_dir() {
+  local os="$1"
+  case "$os" in
+    linux|darwin) echo "$HOME/.local/bin" ;;
+    windows)      echo "$HOME/bin"         ;;
+    *)            echo "$HOME/.local/bin"  ;;
+  esac
+}
+
 # ── 帮助 ─────────────────────────────────────────────────────────────────────
 show_help() {
   cat <<EOF
@@ -40,20 +49,17 @@ phonefast Package Installer — 自动下载并安装 phonefast 预编译包
 用法: bash scripts/install_pkg.sh [选项]
 
 选项:
-  --local       安装到 ~/.local/bin（无需 sudo）
-  --global      安装到 /usr/local/bin（默认，需 sudo）
   --version V   指定版本号 (默认: 1.0.10)
   --dry-run     只检测系统信息，不执行安装
   --help        显示本帮助
 
 环境变量:
   VERSION       版本号 (默认: 1.0.10)
-  INSTALL_DIR   安装目录 (优先级高于 --local)
+  INSTALL_DIR   安装目录 (默认: ~/.local/bin)
   GITHUB_MIRROR GitHub 镜像地址
 
 示例:
   bash scripts/install_pkg.sh
-  bash scripts/install_pkg.sh --local
   VERSION=1.0.10 bash scripts/install_pkg.sh
 EOF
   exit 0
@@ -118,14 +124,11 @@ download_file() {
 
 # ── 主流程 ───────────────────────────────────────────────────────────────────
 main() {
-  local mode="global"
   local dry_run=false
 
   # 解析参数
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --local)   mode="local";   shift ;;
-      --global)  mode="global";  shift ;;
       --version) VERSION="$2";   shift 2 ;;
       --dry-run) dry_run=true;   shift ;;
       --help|-h) show_help ;;
@@ -158,15 +161,7 @@ main() {
   fi
 
   # 确定安装目录
-  local install_dir
-  if [ -n "${INSTALL_DIR:-}" ]; then
-    install_dir="$INSTALL_DIR"
-  elif [ "$mode" = "local" ]; then
-    install_dir="$HOME/.local/bin"
-  else
-    install_dir="/usr/local/bin"
-  fi
-
+  local install_dir="${INSTALL_DIR:-$(default_install_dir "$os")}"
   info "安装目录: ${install_dir}"
 
   # 创建临时目录
@@ -215,14 +210,17 @@ main() {
 
   # ── PATH 提示 ────────────────────────────────────────────────────────
   if ! command -v phonefast >/dev/null 2>&1; then
+    local rc_file
+    case "$os" in
+      windows) rc_file="$HOME/.bash_profile" ;;
+      *)       rc_file="$HOME/.zshrc"        ;;
+    esac
     warn "phonefast 不在 PATH 中，请将以下目录加入 PATH:"
     warn "  export PATH=\"${install_dir}:\$PATH\""
-    if [ "$mode" = "local" ]; then
-      echo ""
-      echo "  或运行:"
-      echo "    echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc"
-      echo "    source ~/.zshrc"
-    fi
+    echo ""
+    echo "  或运行:"
+    echo "    echo 'export PATH=\"${install_dir}:\$PATH\"' >> ${rc_file}"
+    echo "    source ${rc_file}"
   fi
 
   # ── 清理临时文件 ─────────────────────────────────────────────────────

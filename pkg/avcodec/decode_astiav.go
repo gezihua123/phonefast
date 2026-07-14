@@ -58,8 +58,11 @@ func (d *astiavDecoder) getCodecCtx() (*astiav.CodecContext, error) {
 	if codecCtx == nil {
 		return nil, fmt.Errorf("alloc codec context failed")
 	}
-	codecCtx.SetThreadCount(2)
-	codecCtx.SetThreadType(astiav.ThreadTypeSlice)
+	codecCtx.SetThreadCount(1)
+	// Single IDR keyframe decode: no threading needed. Multi-threading
+	// doubles DPB allocation and adds slice-merge overhead for zero gain
+	// on single-frame decode. One thread = half the DPB memory, less
+	// synchronization, and on small frames lower latency.
 	if err := codecCtx.Open(d.codec, nil); err != nil {
 		codecCtx.Free()
 		return nil, fmt.Errorf("open codec: %w", err)
@@ -117,29 +120,14 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 	tSend := time.Since(t0)
 
 	// ---- Step 3: receive decoded frame ----
-	// Single keyframe decode: no null-packet flush needed. IDR frames
-	// are output immediately and the decoder is ready for the next packet.
+	// Single IDR keyframe decode: exactly 1 output frame. No loop needed.
+	// No flush — the persistent codec context keeps its DPB allocated,
+	// and each new IDR naturally overwrites reference frames in-place.
 	t0 = time.Now()
-	var frame *astiav.Frame
-	for {
-		f := astiav.AllocFrame()
-		if err := codecCtx.ReceiveFrame(f); err != nil {
-			f.Free()
-			return nil, 0, 0, "", newDecodeError("receive_frame", err)
-		}
-		if frame == nil {
-			frame = f
-		} else {
-			f.Unref()
-			f.Free()
-		}
-		nextF := astiav.AllocFrame()
-		if codecCtx.ReceiveFrame(nextF) != nil {
-			nextF.Free()
-			break
-		}
-		nextF.Unref()
-		nextF.Free()
+	frame := astiav.AllocFrame()
+	if err := codecCtx.ReceiveFrame(frame); err != nil {
+		frame.Free()
+		return nil, 0, 0, "", newDecodeError("receive_frame", err)
 	}
 	defer frame.Unref()
 	defer frame.Free()
