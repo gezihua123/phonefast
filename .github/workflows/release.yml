@@ -149,6 +149,24 @@ jobs:
         if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
         run: bash scripts/download-ocr-models.sh --lib --target darwin/arm64
 
+      # Install ONNX Runtime system-wide for linux runners so OCR smoke tests
+      # pass. Not needed for darwin (brew install onnxruntime) or windows.
+      - name: Install ONNX Runtime (linux only)
+        if: matrix.goos == 'linux'
+        run: |
+          case "${{ matrix.goarch }}" in
+            amd64) ORT_ARCH="linux-x64" ;;
+            arm64) ORT_ARCH="linux-aarch64" ;;
+          esac
+          ORT_VER=1.27.1
+          curl -fsSL --retry 3 \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VER}/onnxruntime-${ORT_ARCH}-${ORT_VER}.tgz" \
+            -o /tmp/ort.tgz
+          tar -xzf /tmp/ort.tgz -C /tmp
+          sudo cp /tmp/onnxruntime-${ORT_ARCH}-${ORT_VER}/lib/libonnxruntime.so* /usr/local/lib/
+          sudo ldconfig
+          echo "[✓] libonnxruntime ${ORT_VER} (${ORT_ARCH}) installed"
+
       # ── 构建 Go 二进制 ──
       # Plain build: no ocr_embed tag → loads system-installed libonnxruntime
       # at runtime (brew install onnxruntime / apt), or OCR returns ErrNotAvailable.
