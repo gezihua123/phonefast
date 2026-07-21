@@ -1,6 +1,6 @@
 # phonefast Release Pipeline
 #
-# 触发方式: 推送 v* tag (如 v1.0.0) 到 GitHub
+# 触发方式: 推送 v* tag (如 v1.0.0) 到 GitHub（任何分支）
 # 构建方案: 方案3 — 每平台原生 runner 编译 (最稳)
 #   - linux/amd64   → ubuntu-24.04 (amd64, gcc)
 #   - linux/arm64   → ubuntu-24.04-arm (arm64, gcc)
