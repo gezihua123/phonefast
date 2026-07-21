@@ -90,7 +90,7 @@ jobs:
         env:
           CGO_ENABLED: 1
           PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/x86_64-linux-gnu/lib/pkgconfig
-        run: go test -count=1 -timeout 300s -short ./...
+        run: go test -count=1 -timeout 120s $(go list ./... | grep -v tests/ocr-benchmark)
 
   # ── macOS arm64 (Apple Silicon) ──
   build-macos:
