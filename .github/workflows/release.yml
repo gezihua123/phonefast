@@ -167,6 +167,11 @@ jobs:
           sudo ldconfig
           echo "[✓] libonnxruntime ${ORT_VER} (${ORT_ARCH}) installed"
 
+      # Install ONNX Runtime for macOS runner so OCR smoke test can run.
+      - name: Install ONNX Runtime (macOS)
+        if: matrix.goos == 'darwin'
+        run: brew install onnxruntime
+
       # ── 构建 Go 二进制 ──
       # Plain build: no ocr_embed tag → loads system-installed libonnxruntime
       # at runtime (brew install onnxruntime / apt), or OCR returns ErrNotAvailable.
