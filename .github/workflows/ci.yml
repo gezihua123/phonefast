@@ -54,10 +54,18 @@ jobs:
       - name: Download OCR models
         run: bash scripts/download-ocr-models.sh --models
 
-      # Install ONNX Runtime for OCR benchmark tests.
+      # Install ONNX Runtime (from GitHub releases) — needed for OCR tests.
+      # No reliable apt package on Ubuntu 24.04, so fetch the official release.
       - name: Install ONNX Runtime
         run: |
-          sudo apt-get install -y -qq libonnxruntime1.23
+          ORT=1.27.1
+          curl -fsSL --retry 3 \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT}/onnxruntime-linux-x64-${ORT}.tgz" \
+            -o /tmp/ort.tgz
+          tar -xzf /tmp/ort.tgz -C /tmp
+          sudo cp /tmp/onnxruntime-linux-x64-${ORT}/lib/libonnxruntime.so* /usr/local/lib/
+          sudo ldconfig
+          echo "[✓] libonnxruntime ${ORT} installed"
 
       - name: Build phonefast
         env:
