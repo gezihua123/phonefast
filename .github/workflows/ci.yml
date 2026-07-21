@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential nasm pkg-config
+          sudo apt-get install -y -qq build-essential nasm pkg-config libonnxruntime-dev
 
       - name: Cache FFmpeg
         id: cache-ffmpeg
