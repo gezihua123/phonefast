@@ -16,7 +16,7 @@ phonefast 让你的 Android 手机成为 AI Agent 的原生设备——如同键
 > **4倍速** — Claude Code + phonefast 真实执行过程。  
 > Prompt: `使用phonefast skill，打开GP 安装Instagram`
 
-![phonefast 4x 速度 — Claude Code + phonefast 真实执行](assets/phonefast_demo.gif)
+![phonefast 4x 速度 — Claude Code + phonefast 真实执行](phonefast_demo.gif)
 
 ---
 

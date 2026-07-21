@@ -16,7 +16,7 @@ phonefast turns your Android phone into a native peripheral for AI agents — ju
 > **4x speed** — Real execution of Claude Code + phonefast.  
 > Prompt: `Use phonefast skill: open Google Play and install Instagram`
 
-![phonefast 4x speed — real Claude Code + phonefast execution](assets/phonefast_demo.gif)
+![phonefast 4x speed — real Claude Code + phonefast execution](phonefast_demo.gif)
 
 ---
 
