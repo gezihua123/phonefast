@@ -31,6 +31,7 @@ phonefast's daemon mode delivers consistently low latency across all operations.
 | `screenshot` | **28ms** | 126ms | 128ms | H.264 keyframe → PNG |
 | `observe` | **28ms** | 126ms | 129ms | Screenshot + UI (atomic) |
 | `get_ui_elements` | **46ms** | 132ms | 151ms | UI tree via UISocketHandler |
+| `ocr` | **81ms** | — | — | Vision ANE detect + ONNX rec (14 boxes avg) |
 | `swipe` | **318ms** | 322ms | 323ms | Gesture (includes 300ms duration) |
 | `type_text` / `launch_app` / `status` | **1ms** | 1-2ms | 2-4ms | Fire-and-forget semantics |
 | `wait` | **33ms** | 33ms | 33ms | Sleep command |
@@ -38,6 +39,7 @@ phonefast's daemon mode delivers consistently low latency across all operations.
 **Key benchmarks:**
 - Daemon mode response time: **<13ms** for touch and key operations
 - Screenshot P50: **28ms** (4.3x faster than v1.0.0's 121ms)
+- OCR: **81ms** avg (onnx) / **58ms** avg (ncnn, 28% faster) — Vision ANE detect + PP-OCR v3 rec, 20 images × 15 rounds
 - Real physical memory: **~16MB** steady-state (verified via vmmap)
 - 12-hour stress test: **145,843 ops, 100% success, 0 reconnects**
 - 200 consecutive screenshots: **P50 = 12ms, P95 = 13ms** (hot decoder)
@@ -50,18 +52,63 @@ phonefast's daemon mode delivers consistently low latency across all operations.
 
 ### Installation
 
-**Prerequisites:** Go 1.21+, `adb`, `ffmpeg`, `git`
+**Prerequisites:** Go 1.21+, `adb`, `ffmpeg`, `git`, `onnxruntime` (see below)
+
+### ONNX Runtime Setup
+
+The **plain** build loads `libonnxruntime` from the system at runtime. The **-full**
+build embeds it (macOS arm64 only) so no system library is needed.
+
+If you use the **plain** build or want to run OCR, install ONNX Runtime:
 
 ```bash
-# Build from source
-bash scripts/build.sh                       # Current platform
+# ── macOS ──
+brew install onnxruntime
+
+# ── Linux (Ubuntu/Debian) ──
+# Option 1: system package (Ubuntu 24.04+)
+sudo apt install libonnxruntime-dev
+
+# Option 2: manual download from GitHub releases
+# amd64:
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-x64-1.27.1.tgz
+tar -xzf onnxruntime-linux-x64-1.27.1.tgz
+sudo cp onnxruntime-linux-x64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
+sudo ldconfig
+
+# arm64:
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-aarch64-1.27.1.tgz
+tar -xzf onnxruntime-linux-aarch64-1.27.1.tgz
+sudo cp onnxruntime-linux-aarch64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
+sudo ldconfig
+```
+
+> **Note:** The version must match the ORT version phonefast was built against
+> (currently **1.27.1**). If you prefer zero-dependency, use the `-full` build or
+> download the `-full` release binary for macOS arm64.
+
+```bash
+# Build from source — two variants:
+bash scripts/build.sh                       # Current platform (plain)
+bash scripts/build.sh --full                # Also build self-contained -full
 bash scripts/build.sh --all                 # Cross-platform build + packaging
 
 # Or download prebuilt binary from GitHub Releases
 # https://github.com/gezihua123/phonefast/releases
 ```
 
-> Build details (cross-compilation, FFmpeg static linking) → [docs/DEV.md](docs/DEV.md)
+**Build variants:**
+
+| Variant | Size | OCR Runtime | Runtime Dependency | Best For |
+|---------|:----:|:-----------:|:------------------:|----------|
+| **plain** (default) | 24MB | System libonnxruntime | onnxruntime installed | Environments with onnxruntime |
+| **-full** (`--full`) | 42MB | Embedded ORT 1.27.1 | None (self-contained) | Environments without onnxruntime |
+
+Both variants embed PP-OCR v3 models (det + rec). The `-full` variant embeds the
+ONNX Runtime shared library (macOS arm64 only) for single-file zero-dependency
+deployment. NCNN engine is opt-in (`-tags ncnn`, 28% faster, see [docs/DEV.md](docs/DEV.md)).
+
+> Build details (cross-compilation, FFmpeg static linking, Python build tool) → [docs/DEV.md](docs/DEV.md)
 
 ### Quick Start
 
@@ -280,6 +327,32 @@ phonefast [--foreground|--daemon] observe
 ```
 
 Concurrently captures screenshot and UI data in a single call for a complete screen state snapshot.
+
+---
+
+### OCR — On-screen Text Recognition
+
+```bash
+phonefast [--foreground|--daemon] ocr
+```
+
+Recognizes text on the current screen using PP-OCR v3 (detection + recognition).
+Returns text content with bounding boxes and confidence scores.
+
+```bash
+phonefast ocr                    # Recognize text on screen
+phonefast --ocr-engine ncnn ocr  # Use NCNN engine (28% faster, needs -tags ncnn build)
+phonefast --ocr-vision false ocr # Disable Vision ANE, use ONNX detection only
+```
+
+**Performance** (Apple M4 Pro, 20 images × 15 rounds, Vision ANE detection):
+
+| Engine | Avg | Per-box | Notes |
+|--------|:---:|:-------:|-------|
+| onnx (default) | **81ms** | 5.73ms | Batch rec, dynamic width, clean output |
+| ncnn (opt-in) | **58ms** | 4.08ms | Per-box rec, 28% faster, minor phantom-tail artifacts |
+
+> OCR engine details, accuracy comparison, and NCNN setup → [docs/DEV.md](docs/DEV.md)
 
 ---
 

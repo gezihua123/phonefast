@@ -49,6 +49,11 @@ jobs:
           cp android/scrcpy-server.jar assets/
           [ -f android/scrcpy-server.version ] && cp android/scrcpy-server.version assets/
 
+      # OCR models (PP-OCR v3 ONNX) are .gitignore'd and platform-independent;
+      # download them so the embedded OCR engine works in CI-built binaries.
+      - name: Download OCR models
+        run: bash scripts/download-ocr-models.sh --models
+
       - name: Build phonefast
         env:
           CGO_ENABLED: 1
@@ -109,6 +114,17 @@ jobs:
           cp android/scrcpy-server.jar assets/
           [ -f android/scrcpy-server.version ] && cp android/scrcpy-server.version assets/
 
+      # OCR models (PP-OCR v3 ONNX) are .gitignore'd and platform-independent;
+      # download them so the embedded OCR engine works in CI-built binaries.
+      - name: Download OCR models
+        run: bash scripts/download-ocr-models.sh --models
+
+      # The ONNX Runtime shared library for darwin/arm64; staged in assets/ocr/
+      # so the `ocr_embed` build tag can embed it (lib_darwin_arm64.go).
+      - name: Download OCR runtime library
+        run: bash scripts/download-ocr-models.sh --lib --target darwin/arm64
+
+      # ── Plain build (no ocr_embed tag, loads system lib at runtime) ──
       - name: Build phonefast
         env:
           CGO_ENABLED: 1
@@ -125,6 +141,26 @@ jobs:
             -X main.BuildTime=${BUILD_TIME} \
             -X main.GitCommit=${GIT_COMMIT}"
           go build -trimpath -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
+          file "${BINARY}"
+          ls -lh "${BINARY}"
+
+      # ── Full build (ocr_embed tag, self-contained: embeds ORT dylib) ──
+      - name: Build phonefast (full)
+        env:
+          CGO_ENABLED: 1
+          GOOS: darwin
+          GOARCH: arm64
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/aarch64-darwin/lib/pkgconfig
+        run: |
+          BINARY="phonefast-darwin-arm64-full"
+          VERSION="dev-ci"
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GIT_COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-s -w \
+            -X main.Version=${VERSION} \
+            -X main.BuildTime=${BUILD_TIME} \
+            -X main.GitCommit=${GIT_COMMIT}"
+          go build -trimpath -tags ocr_embed -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
           file "${BINARY}"
           ls -lh "${BINARY}"
 
@@ -166,6 +202,11 @@ jobs:
           mkdir -p assets
           cp android/scrcpy-server.jar assets/
           [ -f android/scrcpy-server.version ] && cp android/scrcpy-server.version assets/
+
+      # OCR models (PP-OCR v3 ONNX) are .gitignore'd and platform-independent;
+      # download them so the embedded OCR engine works in CI-built binaries.
+      - name: Download OCR models
+        run: bash scripts/download-ocr-models.sh --models
 
       - name: Build phonefast (Windows cross)
         env:

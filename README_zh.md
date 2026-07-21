@@ -31,6 +31,7 @@ phonefast daemon 模式在所有操作上均保持稳定低延迟。以下数据
 | `screenshot` | **28ms** | 126ms | 128ms | H.264 关键帧 → PNG |
 | `observe` | **28ms** | 126ms | 129ms | 截图 + UI（原子操作） |
 | `get_ui_elements` | **46ms** | 132ms | 151ms | UI 树（UISocketHandler） |
+| `ocr` | **81ms** | — | — | Vision ANE 检测 + ONNX 识别（平均 14 框） |
 | `swipe` | **318ms** | 322ms | 323ms | 滑动（含 300ms 时长） |
 | `type_text` / `launch_app` / `status` | **1ms** | 1-2ms | 2-4ms | 即发即弃语义 |
 | `wait` | **33ms** | 33ms | 33ms | 等待命令 |
@@ -38,6 +39,7 @@ phonefast daemon 模式在所有操作上均保持稳定低延迟。以下数据
 **关键指标：**
 - Daemon 模式触控延迟：**<13ms**
 - 截图 P50：**28ms**（比 v1.0.0 的 121ms 快 **4.3 倍**）
+- OCR：**81ms** 均值（onnx）/ **58ms** 均值（ncnn, 快 28%）— Vision ANE 检测 + PP-OCR v3 识别, 20 图×15 轮
 - 真实物理内存：**~16MB** 稳态（vmmap 验证）
 - 12 小时压测：**145,843 次操作、100% 成功、0 次断连**
 - 连续 200 次截图：**P50 = 12ms、P95 = 13ms**（解码器热机后）
@@ -50,18 +52,61 @@ phonefast daemon 模式在所有操作上均保持稳定低延迟。以下数据
 
 ### 安装
 
-**前置依赖：** Go 1.21+、`adb`、`ffmpeg`、`git`
+**前置依赖：** Go 1.21+、`adb`、`ffmpeg`、`git`、`onnxruntime`（见下方说明）
+
+### ONNX Runtime 安装
+
+**plain** 构建在运行时从系统加载 `libonnxruntime`。**-full** 构建将其内嵌
+（仅 macOS arm64），无需系统库。
+
+如果你使用 **plain** 构建或需要 OCR 功能，请安装 ONNX Runtime：
 
 ```bash
-# 从源码构建
-bash scripts/build.sh                       # 当前平台
+# ── macOS ──
+brew install onnxruntime
+
+# ── Linux (Ubuntu/Debian) ──
+# 方式一：系统包管理器（Ubuntu 24.04+）
+sudo apt install libonnxruntime-dev
+
+# 方式二：从 GitHub Releases 手动下载
+# amd64:
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-x64-1.27.1.tgz
+tar -xzf onnxruntime-linux-x64-1.27.1.tgz
+sudo cp onnxruntime-linux-x64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
+sudo ldconfig
+
+# arm64:
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-aarch64-1.27.1.tgz
+tar -xzf onnxruntime-linux-aarch64-1.27.1.tgz
+sudo cp onnxruntime-linux-aarch64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
+sudo ldconfig
+```
+
+> **注意：** 版本需与 phonefast 编译时使用的 ORT 版本一致（当前为 **1.27.1**）。
+> 如需零依赖部署，可使用 `-full` 构建或下载 macOS arm64 的 `-full` 发布版本。
+
+```bash
+# 从源码构建 — 两种产物:
+bash scripts/build.sh                       # 当前平台 (plain)
+bash scripts/build.sh --full                # 额外构建自包含 -full 版
 bash scripts/build.sh --all                 # 全平台构建 + 打包
 
 # 或从 GitHub Releases 下载预编译二进制
 # https://github.com/gezihua123/phonefast/releases
 ```
 
-> 构建细节（交叉编译、FFmpeg 静态链接）→ [docs/DEV.md](docs/DEV.md)
+**构建产物对比：**
+
+| 产物 | 体积 | OCR 运行时 | 运行时依赖 | 适用场景 |
+|------|:----:|:---------:|:---------:|---------|
+| **plain**（默认） | 24MB | 系统 libonnxruntime | 需安装 onnxruntime | 已安装 onnxruntime 的环境 |
+| **-full**（`--full`） | 42MB | 内嵌 ORT 1.27.1 | 无（自包含） | 未安装 onnxruntime 的环境 |
+
+两种产物均内嵌 PP-OCR v3 模型（det + rec）。-full 版内嵌 ONNX Runtime 共享库
+（仅 macOS arm64）, 实现单文件零依赖部署。NCNN 引擎为 opt-in（`-tags ncnn`, 快 28%, 见 [docs/DEV.md](docs/DEV.md)）。
+
+> 构建细节（交叉编译、FFmpeg 静态链接、Python 构建工具）→ [docs/DEV.md](docs/DEV.md)
 
 ### 快速开始
 
@@ -280,6 +325,31 @@ phonefast [--foreground|--daemon] observe
 ```
 
 并行使截图与 UI 采集，一次调用获取完整屏幕状态。
+
+---
+
+### OCR — 屏幕文字识别
+
+```bash
+phonefast [--foreground|--daemon] ocr
+```
+
+使用 PP-OCR v3（检测 + 识别）识别当前屏幕上的文字，返回文本内容、坐标和置信度。
+
+```bash
+phonefast ocr                    # 识别屏幕文字
+phonefast --ocr-engine ncnn ocr  # 使用 NCNN 引擎（快 28%, 需 -tags ncnn 构建）
+phonefast --ocr-vision false ocr # 关闭 Vision ANE, 仅用 ONNX 检测
+```
+
+**性能**（Apple M4 Pro, 20 图×15 轮, Vision ANE 检测）:
+
+| 引擎 | 均值 | per-box | 说明 |
+|------|:---:|:-------:|------|
+| onnx（默认） | **81ms** | 5.73ms | 批量识别, 动态宽, 输出干净 |
+| ncnn（opt-in） | **58ms** | 4.08ms | 逐框识别, 快 28%, 轻微尾字符瑕疵 |
+
+> OCR 引擎详情、准确率对比、NCNN 配置 → [docs/DEV.md](docs/DEV.md#ocr-识别方案调研与选型)
 
 ---
 

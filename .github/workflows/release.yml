@@ -16,8 +16,8 @@
 #   GitHub Release Assets:
 #     phonefast-<version>-linux-amd64.tar.gz
 #     phonefast-<version>-linux-arm64.tar.gz
-
 #     phonefast-<version>-darwin-arm64.tar.gz
+#     phonefast-<version>-darwin-arm64-full.tar.gz   (自包含, ONNX Runtime 内嵌)
 #     phonefast-<version>-windows-amd64.tar.gz
 
 name: Release
@@ -135,7 +135,23 @@ jobs:
             cp android/scrcpy-server.version assets/
           fi
 
+      # ── OCR 资源 ──
+      # Models (PP-OCR v3 ONNX) are platform-independent and embedded into every
+      # binary; download them for all targets.
+      - name: Download OCR models
+        run: bash scripts/download-ocr-models.sh --models
+
+      # The ONNX Runtime shared library is platform-specific. Only darwin/arm64
+      # embeds it (assets/ocr/lib_darwin_arm64.go); for that target we fetch the
+      # osx-arm64 lib from the ORT GitHub release (works on any CI runner).
+      # Other targets load the system lib at runtime (or OCR returns ErrNotAvailable).
+      - name: Download OCR runtime library (darwin/arm64 only)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
+        run: bash scripts/download-ocr-models.sh --lib --target darwin/arm64
+
       # ── 构建 Go 二进制 ──
+      # Plain build: no ocr_embed tag → loads system-installed libonnxruntime
+      # at runtime (brew install onnxruntime / apt), or OCR returns ErrNotAvailable.
       - name: Build phonefast
         env:
           CGO_ENABLED: 1
@@ -161,6 +177,35 @@ jobs:
           echo "  CC:         ${CC:-default}"
 
           go build -trimpath -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
+          file "${BINARY}"
+          ls -lh "${BINARY}"
+
+      # ── Full build (darwin/arm64 only) ──
+      # Self-contained binary with embedded ONNX Runtime dylib (lib_darwin_arm64.go).
+      # The ORT lib must already be staged in assets/ocr/ (see "Download OCR runtime
+      # library" step above). Other platforms have no embed file yet (lib_nolib.go).
+      - name: Build phonefast (full)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
+        env:
+          CGO_ENABLED: 1
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/${{ matrix.ffmpeg-target }}/lib/pkgconfig
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GIT_COMMIT="${GITHUB_SHA::7}"
+          BINARY="phonefast-${{ matrix.goos }}-${{ matrix.goarch }}-full${{ matrix.ext }}"
+          LDFLAGS="-s -w \
+            -X main.Version=${VERSION} \
+            -X main.BuildTime=${BUILD_TIME} \
+            -X main.GitCommit=${GIT_COMMIT}"
+
+          echo "Building: ${BINARY}  (self-contained, ocr_embed)"
+          echo "  Version:    ${VERSION}"
+          echo "  GOOS/ARCH:  ${GOOS}/${GOARCH}"
+
+          go build -trimpath -tags ocr_embed -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
           file "${BINARY}"
           ls -lh "${BINARY}"
 
@@ -191,6 +236,18 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           BINARY="phonefast-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
           ARCHIVE="phonefast-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+          tar -czf "${ARCHIVE}" \
+            "${BINARY}" \
+            README.md \
+            docs/ 2>/dev/null || tar -czf "${ARCHIVE}" "${BINARY}" README.md
+          ls -lh "${ARCHIVE}"
+
+      - name: Package binary (full)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BINARY="phonefast-${{ matrix.goos }}-${{ matrix.goarch }}-full${{ matrix.ext }}"
+          ARCHIVE="phonefast-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}-full.tar.gz"
           tar -czf "${ARCHIVE}" \
             "${BINARY}" \
             README.md \
@@ -246,6 +303,7 @@ jobs:
           | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64.tar.gz` |
           | Linux | arm64 | `phonefast-__VERSION_NOV__-linux-arm64.tar.gz` |
           | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64.tar.gz` |
+          | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64-full.tar.gz` (自包含, OCR 内嵌) |
           | Windows | amd64 | `phonefast-__VERSION_NOV__-windows-amd64.tar.gz` |
 
           ### :wrench: 特性
@@ -253,6 +311,7 @@ jobs:
           - x86_64: SSE/AVX/AVX2 SIMD 加速 (nasm asm-on)
           - ARM64: NEON 优化 (内建于 clang/gcc)
           - 单文件分发 (jar 内嵌, 即下即用)
+          - macOS `-full` 版本: ONNX Runtime 内嵌, 无需 `brew install onnxruntime`
           TEMPLATE
           sed -i \
             -e "s/__VERSION__/${VERSION}/g" \
