@@ -6,12 +6,12 @@
 #
 # 用法:
 #   bash scripts/install_pkg.sh                    # 安装到 ~/.local/bin
-#   bash scripts/install_pkg.sh --version 1.0.11    # 指定版本
+#   bash scripts/install_pkg.sh --version 1.0.12    # 指定版本
 #   bash scripts/install_pkg.sh --dry-run          # 仅打印信息，不安装
 #   bash scripts/install_pkg.sh --help             # 显示帮助
 #
 # 环境变量:
-#   VERSION       - 版本号 (默认: 1.0.11)
+#   VERSION       - 版本号 (默认: 1.0.12)
 #   INSTALL_DIR   - 安装目录 (默认: 根据平台自动选择)
 #   GITHUB_MIRROR - GitHub 镜像地址 (默认: https://github.com)
 # ============================================================================
@@ -27,7 +27,7 @@ step()  { echo -e "${CYAN}::${NC} $*"; }
 
 # ── 默认配置 ─────────────────────────────────────────────────────────────────
 REPO="gezihua123/phonefast"
-VERSION="${VERSION:-1.0.11}"
+VERSION="${VERSION:-1.0.12}"
 GITHUB_MIRROR="${GITHUB_MIRROR:-https://github.com}"
 BASE_URL="${GITHUB_MIRROR}/${REPO}/releases/download/v${VERSION}"
 
@@ -49,18 +49,18 @@ phonefast Package Installer — 自动下载并安装 phonefast 预编译包
 用法: bash scripts/install_pkg.sh [选项]
 
 选项:
-  --version V   指定版本号 (默认: 1.0.11)
+  --version V   指定版本号 (默认: 1.0.12)
   --dry-run     只检测系统信息，不执行安装
   --help        显示本帮助
 
 环境变量:
-  VERSION       版本号 (默认: 1.0.11)
+  VERSION       版本号 (默认: 1.0.12)
   INSTALL_DIR   安装目录 (默认: ~/.local/bin)
   GITHUB_MIRROR GitHub 镜像地址
 
 示例:
   bash scripts/install_pkg.sh
-  VERSION=1.0.11 bash scripts/install_pkg.sh
+  VERSION=1.0.12 bash scripts/install_pkg.sh
 EOF
   exit 0
 }
