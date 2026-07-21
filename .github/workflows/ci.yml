@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential nasm pkg-config libonnxruntime-dev
+          sudo apt-get install -y -qq build-essential nasm pkg-config
 
       - name: Cache FFmpeg
         id: cache-ffmpeg
@@ -53,6 +53,19 @@ jobs:
       # download them so the embedded OCR engine works in CI-built binaries.
       - name: Download OCR models
         run: bash scripts/download-ocr-models.sh --models
+
+      # Install ONNX Runtime shared library for running OCR tests.
+      # Ubuntu 24.04 has no libonnxruntime-dev package, so fetch from GitHub releases.
+      - name: Install ONNX Runtime
+        run: |
+          ORT_VER=1.27.1
+          curl -fsSL --retry 3 \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VER}/onnxruntime-linux-x64-${ORT_VER}.tgz" \
+            -o /tmp/ort.tgz
+          tar -xzf /tmp/ort.tgz -C /tmp
+          sudo cp /tmp/onnxruntime-linux-x64-${ORT_VER}/lib/libonnxruntime.so* /usr/local/lib/
+          sudo ldconfig
+          echo "[✓] libonnxruntime installed"
 
       - name: Build phonefast
         env:
