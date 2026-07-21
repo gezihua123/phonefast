@@ -110,9 +110,10 @@ func (m *ControlMessage) Encode() []byte {
 		buf = appendPos(buf, m.Position)
 		// hScroll/vScroll: i16 fixed-point per Binary.i16FixedPointToFloat() * 16
 		// decode: int16 / 32768.0 * 16 → effective range [-16, 16]
-		// encode v in [-16, 16]: int16(v / 16 * 32768) = int16(v * 2048)
-		buf = binary.BigEndian.AppendUint16(buf, uint16(int16(m.HScroll*2048)))
-		buf = binary.BigEndian.AppendUint16(buf, uint16(int16(m.VScroll*2048)))
+		// encode: v in [-16, 16] -> clamp(int16(v * 2048), 0x7fff)
+		// scrcpy i16FixedPointToFloat treats 0x7fff as 1.0 (which *16 gives 16.0)
+		buf = binary.BigEndian.AppendUint16(buf, uint16(floatToI16Fixed(m.HScroll)))
+		buf = binary.BigEndian.AppendUint16(buf, uint16(floatToI16Fixed(m.VScroll)))
 		buf = binary.BigEndian.AppendUint32(buf, uint32(m.Buttons))
 
 	case TypeBackOrScreenOn:
@@ -124,8 +125,8 @@ func (m *ControlMessage) Encode() []byte {
 			app = "\x00"
 		}
 		appBytes := []byte(app)
-		// varint length + string
-		buf = appendVarint(buf, uint64(len(appBytes)))
+		// 1-byte unsigned length prefix (scrcpy ControlMessageReader.parseStartApp)
+		buf = append(buf, byte(len(appBytes)))
 		buf = append(buf, appBytes...)
 
 	case TypeResetVideo:
@@ -169,18 +170,28 @@ func floatToU16Fixed(p float32) uint16 {
 	return uint16(p * 65536)
 }
 
+// floatToI16Fixed encodes a scroll value in [-16, 16] as i16 fixed-point,
+// matching scrcpy's Binary.i16FixedPointToFloat() * 16.
+//
+//	encode: v * 2048, clamped to int16 range [-32768, 32767]
+//	decode (scrcpy): value == 0x7fff ? 1.0 : (value / 32768.0), then * 16
+func floatToI16Fixed(v float32) int16 {
+	val := float64(v) * 2048
+	if val >= 32767 {
+		return 32767 // 0x7fff → scrcpy decodes as 1.0 * 16 = 16.0
+	}
+	if val <= -32768 {
+		return -32768 // scrcpy decodes as -1.0 * 16 = -16.0
+	}
+	return int16(val)
+}
+
 func appendPos(buf []byte, pos Position) []byte {
 	buf = binary.BigEndian.AppendUint32(buf, uint32(pos.X))
 	buf = binary.BigEndian.AppendUint32(buf, uint32(pos.Y))
 	buf = binary.BigEndian.AppendUint16(buf, pos.ScreenW)
 	buf = binary.BigEndian.AppendUint16(buf, pos.ScreenH)
 	return buf
-}
-
-func appendVarint(buf []byte, v uint64) []byte {
-	tmp := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(tmp, v)
-	return append(buf, tmp[:n]...)
 }
 
 // --- Convenience constructors ---

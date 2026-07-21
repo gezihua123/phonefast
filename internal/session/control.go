@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gezihua123/phonefast/internal/adb"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -125,14 +126,31 @@ func (s *Session) Home() error {
 }
 
 // TypeText types text into the currently focused field.
+// For ASCII-only text, uses the fast scrcpy control socket path (<10ms).
+// For non-ASCII (CJK/emoji), switches to PhoneFast IME and commits via broadcast.
 func (s *Session) TypeText(text string) error {
-	if s.controlConn == nil {
-		return fmt.Errorf("control socket not available")
+	// ASCII fast path via scrcpy control socket
+	if adb.IsASCII(text) {
+		if s.controlConn == nil {
+			return fmt.Errorf("control socket not available")
+		}
+		msg := protocol.NewTextMsg(text)
+		_, err := s.controlConn.Write(msg.Encode())
+		return err
 	}
 
-	msg := protocol.NewTextMsg(text)
-	_, err := s.controlConn.Write(msg.Encode())
-	return err
+	// Unicode path via PFIME IME broadcast.
+	// Skip SetPFIME if already active (avoids ADB round-trip on every keystroke).
+	if !s.pfimeActive {
+		if err := adb.SetPFIME(s.Serial); err != nil {
+			return fmt.Errorf("pfime set: %w", err)
+		}
+		s.pfimeActive = true
+	}
+	if err := adb.TypeTextB64(s.Serial, text); err != nil {
+		return fmt.Errorf("pfime type: %w", err)
+	}
+	return nil
 }
 
 // LaunchApp launches an app by package name.

@@ -1,0 +1,10 @@
+# Model files (downloaded by scripts/download-ocr-models.sh)
+ppocr-det.onnx
+ppocr-rec.onnx
+
+# Platform runtime libraries (downloaded by scripts/download-ocr-models.sh --lib).
+# Names: libonnxruntime-<goos>-<goarch>.{dylib,so} and onnxruntime-windows-amd64.dll
+libonnxruntime-*.dylib
+libonnxruntime-*.so
+libonnxruntime-*.dll
+onnxruntime-*.dll

@@ -313,9 +313,12 @@ func StopServer(serial string) error {
 	}
 
 	// Kill scrcpy server specifically (don't kill all app_process)
-	cmd := exec.Command(adbPath, "-s", serial, "shell",
-		"pkill", "-f", "com.genymobile.scrcpy.Server")
-	cmd.Run() // best-effort
+	exec.Command(adbPath, "-s", serial, "shell",
+		"pkill", "-f", "com.genymobile.scrcpy.Server").Run()
+
+	// Also kill stuck uiautomator processes that may hold UiAutomation
+	exec.Command(adbPath, "-s", serial, "shell",
+		"pkill", "-f", "uiautomator").Run()
 
 	// Remove the forward to release the abstract socket
 	exec.Command(adbPath, "-s", serial, "forward", "--remove-all").Run()

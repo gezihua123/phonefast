@@ -72,16 +72,16 @@ func writeYMLNode(b *ymlBuffer, node *uiNode, depth int) {
 	if el.Text != "" {
 		b.writeIndent(depth + 1)
 		b.WriteString("text: '")
-		b.WriteString(strings.ReplaceAll(el.Text, "'", "''"))
+		b.WriteString(strings.ReplaceAll(CollapseWS(el.Text), "'", "''"))
 		b.WriteString("'\n")
 	}
 	if el.ContentDesc != "" {
 		b.writeIndent(depth + 1)
 		b.WriteString("content_desc: '")
-		b.WriteString(strings.ReplaceAll(el.ContentDesc, "'", "''"))
+		b.WriteString(strings.ReplaceAll(CollapseWS(el.ContentDesc), "'", "''"))
 		b.WriteString("'\n")
 	}
-	if el.ResourceID != "" {
+	if el.ResourceID != "" && !isObfuscatedID(el.ResourceID) {
 		b.writeIndent(depth + 1)
 		b.WriteString("resource_id: ")
 		b.WriteString(el.ResourceID)

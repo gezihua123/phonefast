@@ -67,15 +67,15 @@ func writeSimpleXMLNode(b *strings.Builder, node *uiNode, indent int) {
 
 	if el.Text != "" {
 		b.WriteString(` text="`)
-		b.WriteString(xmlEscape(el.Text))
+		b.WriteString(xmlEscape(CollapseWS(el.Text)))
 		b.WriteByte('"')
 	}
 	if el.ContentDesc != "" {
 		b.WriteString(` content-desc="`)
-		b.WriteString(xmlEscape(el.ContentDesc))
+		b.WriteString(xmlEscape(CollapseWS(el.ContentDesc)))
 		b.WriteByte('"')
 	}
-	if el.ResourceID != "" {
+	if el.ResourceID != "" && !isObfuscatedID(el.ResourceID) {
 		b.WriteString(` resource-id="`)
 		b.WriteString(xmlEscape(el.ResourceID))
 		b.WriteByte('"')

@@ -51,18 +51,35 @@ git clone https://github.com/gezihua123/phonefast.git
 cd phonefast
 
 # CGO build (recommended, hardware-accelerated video decoding, requires FFmpeg static libs)
-bash scripts/build.sh                            # Auto-download FFmpeg + build
+bash scripts/build.sh                            # Auto-download FFmpeg + build (plain, 24MB)
+
+# Self-contained build (embeds ONNX Runtime, 42MB, zero external deps)
+bash scripts/build.sh --full                     # Also build -full variant
+bash scripts/build.sh --full-only                # Only build -full
 
 # Non-CGO build (no FFmpeg needed, uses subprocess for video decoding)
 CGO_ENABLED=0 go build -o phonefast ./cmd/phonefast/
 
 # Cross-platform builds
 bash scripts/build.sh --all                      # Cross-compile for all platforms
-bash scripts/build.sh --macos                    # macOS amd64 + arm64
+bash scripts/build.sh --macos                    # macOS arm64
 bash scripts/build.sh --linux                    # Linux amd64 + arm64
 bash scripts/build.sh --windows                  # Windows amd64
 bash scripts/build.sh --all --version 1.0.0      # Specify version number
+bash scripts/build.sh --all --full               # All platforms + self-contained -full
+
+# Python build tool (scripts/build.sh is a thin wrapper)
+python3 scripts/build.py --full                  # Equivalent to above
+python3 scripts/build.py --all --ensure-ffmpeg   # Compile FFmpeg libs if missing
 ```
+
+> **OCR variants:**
+> - **plain** (24MB): PP-OCR v3 models embedded; ONNX Runtime loaded from system
+>   (`brew install onnxruntime` on macOS, `apt install libonnxruntime` on Linux).
+> - **-full** (42MB, macOS arm64 only): embeds ONNX Runtime — single-file,
+>   zero-dependency, works on any Mac without brew.
+> - Both variants support `phonefast ocr` out of the box.
+> - NCNN engine is opt-in (`-tags ncnn`), see [docs/DEV.md](DEV.md#ocr-识别方案调研与选型).
 
 ### Preparing FFmpeg Static Libraries
 

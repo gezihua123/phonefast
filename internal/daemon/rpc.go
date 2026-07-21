@@ -138,6 +138,9 @@ func Dispatch(sess *session.Session, req *Request) *Response {
 	case "observe":
 		return handleObserve(sess, req)
 
+	case "ocr":
+		return handleOCR(sess, req)
+
 	case "tap":
 		return handleTap(sess, req)
 
@@ -286,7 +289,13 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		}
 	}
 
-	legacyFormatted := format.ElementsForLLM(elements, maxShow, isSummary)
+	// Collapse off-screen elements only in summary (token-efficient) mode.
+	// Full mode preserves every element — no viewport filtering.
+	vw, vh := 0, 0
+	if isSummary {
+		vw, vh = sess.DeviceW, sess.DeviceH
+	}
+	legacyFormatted := format.ElementsForLLMWithViewport(elements, maxShow, isSummary, vw, vh)
 	return newResultResponse(req.ID, map[string]any{
 		"elements":  elements,
 		"formatted": legacyFormatted,
@@ -311,7 +320,12 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(pngData)
-	formatted := format.ElementsForLLM(elements, maxShow, isSummary)
+	// Collapse off-screen only in summary mode; full mode keeps all elements.
+	ovw, ovh := 0, 0
+	if isSummary {
+		ovw, ovh = sess.DeviceW, sess.DeviceH
+	}
+	formatted := format.ElementsForLLMWithViewport(elements, maxShow, isSummary, ovw, ovh)
 
 	return newResultResponse(req.ID, map[string]any{
 		"text":       formatted,

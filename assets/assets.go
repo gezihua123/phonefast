@@ -16,3 +16,9 @@ var ScrcpyJar []byte
 //
 //go:embed scrcpy-server.version
 var ScrcpyVersion []byte
+
+// PfimeApk holds the PFIME (PhoneFast IME) APK bytes, embedded at build time.
+// Headless InputMethodService for Unicode (CJK/emoji) text injection via broadcast.
+//
+//go:embed pfime.apk
+var PfimeApk []byte

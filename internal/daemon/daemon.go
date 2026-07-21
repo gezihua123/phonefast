@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gezihua123/phonefast/internal/ocr"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 )
 
@@ -26,6 +27,8 @@ type Daemon struct {
 	mu        sync.RWMutex            // protects map access only
 	serial    string                  // default device serial
 	scidAlloc *ScidAllocator          // assigns collision-free scids to actors
+
+	ocrService *ocr.Service // daemon-level OCR singleton (lazy init)
 
 	listener   net.Listener
 	pidFile    string
@@ -72,6 +75,10 @@ func New(cfg Config) *Daemon {
 	return &Daemon{
 		serial:     cfg.Serial,
 		scidAlloc:  NewScidAllocator(),
+		ocrService: ocr.NewService(ocr.Config{
+			Engine:    os.Getenv("PHONEFAST_OCR_ENGINE"),          // "onnx" (default) | "ncnn"
+			UseVision: os.Getenv("PHONEFAST_OCR_VISION") != "false",
+		}),
 		socketPath: socketPath,
 		pidFile:    pidFile,
 	}
@@ -113,6 +120,23 @@ func (d *Daemon) Start(ctx context.Context) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	defer signal.Stop(sigCh)
+
+	// Wire daemon-level OCR service into RPC dispatch.
+	SetOCRService(d.ocrService)
+
+	// Warm up the OCR engine in the background so daemon readiness (listener
+	// creation) is not blocked by the ~3.7s model load. Warmup owns the
+	// strategy (see ocr.Service.Warmup) and is non-poisoning: a failure here
+	// is logged but not cached, so a later real request re-attempts init. Any
+	// OCR RPC arriving during warmup blocks on the Service mutex until init
+	// completes, then runs fast.
+	go func() {
+		if err := d.ocrService.Warmup(); err != nil {
+			phonelog.Default().Write("OCR warmup deferred: %v", err)
+		} else {
+			phonelog.Default().Write("OCR warmup complete")
+		}
+	}()
 
 	go func() {
 		select {
@@ -339,6 +363,10 @@ func (d *Daemon) cleanup() error {
 	// Actor goroutines see ctx.Done() and exit, closing their sessions
 	// in their deferred cleanup.
 	d.wg.Wait()
+
+	// Close daemon-level OCR service (releases engine models). ocrService is
+	// always set by New(), so no nil guard needed.
+	d.ocrService.Close()
 
 	// Remove socket and PID files (both current serial-specific and legacy UID-only)
 	os.Remove(d.socketPath)

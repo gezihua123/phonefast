@@ -85,12 +85,12 @@ func ElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) 
 
 		var parts []string
 		if el.Text != "" {
-			parts = append(parts, fmt.Sprintf(`text="%s"`, el.Text))
+			parts = append(parts, fmt.Sprintf(`text="%s"`, CollapseWS(el.Text)))
 		}
 		if el.ContentDesc != "" {
-			parts = append(parts, fmt.Sprintf(`desc="%s"`, el.ContentDesc))
+			parts = append(parts, fmt.Sprintf(`desc="%s"`, CollapseWS(el.ContentDesc)))
 		}
-		if el.ResourceID != "" {
+		if el.ResourceID != "" && !isObfuscatedID(el.ResourceID) {
 			simpleID := el.ResourceID
 			if idx := strings.LastIndexByte(simpleID, '/'); idx >= 0 {
 				simpleID = simpleID[idx+1:]
@@ -126,6 +126,137 @@ func ElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) 
 	lines = append(lines, "Use tap_element with index=N or text='...' to interact.")
 
 	return strings.Join(lines, "\n")
+}
+
+// ElementsForLLMWithViewport is like ElementsForLLM but collapses elements
+// outside the visible viewport (screenW × screenH) into a single summary line.
+// Pass screenW/screenH = 0 to disable off-screen collapsing.
+// Learned from agent-device's visible-first trimming: off-screen interactive
+// items are collapsed to "[off-screen] N items: ..." instead of listed fully.
+func ElementsForLLMWithViewport(elements []protocol.UIElement, maxShow int, isSummary bool, screenW, screenH int) string {
+	if len(elements) == 0 {
+		return "No interactive elements found on screen."
+	}
+
+	hasViewport := screenW > 0 && screenH > 0
+	var onScreen []protocol.UIElement
+	var offScreenInteractive []protocol.UIElement
+	for _, el := range elements {
+		if hasViewport && isOffScreen(el.Bounds, screenW, screenH) {
+			if el.Text != "" || el.ContentDesc != "" || el.Clickable {
+				offScreenInteractive = append(offScreenInteractive, el)
+			}
+			continue
+		}
+		onScreen = append(onScreen, el)
+	}
+
+	totalCount := len(elements)
+	visibleCount := len(onScreen)
+	if maxShow < 0 || maxShow > visibleCount {
+		maxShow = visibleCount
+	}
+
+	var lines []string
+	header := "Interactive elements on screen"
+	if hasViewport {
+		header += fmt.Sprintf(" (%d visible of %d total, %dx%d)", visibleCount, totalCount, screenW, screenH)
+	} else if visibleCount < totalCount {
+		header += fmt.Sprintf(" (%d of %d)", visibleCount, totalCount)
+	}
+	lines = append(lines, header+":")
+	lines = append(lines, strings.Repeat("=", 50))
+
+	shown := 0
+	for _, el := range onScreen {
+		if shown >= maxShow {
+			lines = append(lines, fmt.Sprintf("... and %d more visible elements", visibleCount-maxShow))
+			break
+		}
+		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
+			continue
+		}
+		line := formatElementLine(el, isSummary)
+		if line != "" {
+			lines = append(lines, line)
+			shown++
+		}
+	}
+
+	if len(offScreenInteractive) > 0 {
+		lines = append(lines, formatOffScreenSummary(offScreenInteractive))
+	}
+
+	lines = append(lines, strings.Repeat("=", 50))
+	lines = append(lines, "Use tap_element with index=N or text='...' to interact.")
+	return strings.Join(lines, "\n")
+}
+
+// isOffScreen reports whether bounds lie entirely beyond the viewport.
+func isOffScreen(b [4]int, screenW, screenH int) bool {
+	if b[2] <= 0 || b[3] <= 0 {
+		return true
+	}
+	if b[0] >= screenW || b[1] >= screenH {
+		return true
+	}
+	return false
+}
+
+// formatElementLine renders a single element line, skipping obfuscated IDs.
+func formatElementLine(el protocol.UIElement, isSummary bool) string {
+	var parts []string
+	if el.Text != "" {
+		parts = append(parts, fmt.Sprintf(`text="%s"`, CollapseWS(el.Text)))
+	}
+	if el.ContentDesc != "" {
+		parts = append(parts, fmt.Sprintf(`desc="%s"`, CollapseWS(el.ContentDesc)))
+	}
+	if el.ResourceID != "" && !isObfuscatedID(el.ResourceID) {
+		parts = append(parts, fmt.Sprintf(`id="%s"`, simplifyResourceID(el.ResourceID)))
+	}
+	if el.ClassName != "" {
+		cn := el.ClassName
+		if isSummary {
+			cn = protocol.SimplifyClassName(el.ClassName)
+		} else if idx := strings.LastIndexByte(cn, '.'); idx >= 0 {
+			cn = cn[idx+1:]
+		}
+		parts = append(parts, fmt.Sprintf("(%s)", cn))
+	}
+	if el.Clickable {
+		parts = append(parts, "[clickable]")
+	}
+	desc := strings.Join(parts, " ")
+	if desc == "" {
+		return ""
+	}
+	return fmt.Sprintf("[%d] %s bounds=[%d,%d][%d,%d]",
+		el.Index, desc,
+		el.Bounds[0], el.Bounds[1], el.Bounds[2], el.Bounds[3])
+}
+
+// formatOffScreenSummary collapses off-screen interactive elements into a
+// compact discovery line, capping the number of labels listed.
+func formatOffScreenSummary(elems []protocol.UIElement) string {
+	var labels []string
+	for _, el := range elems {
+		lbl := el.Text
+		if lbl == "" {
+			lbl = el.ContentDesc
+		}
+		if lbl != "" {
+			labels = append(labels, fmt.Sprintf("%q", CollapseWS(lbl)))
+			if len(labels) >= 5 {
+				labels = append(labels, "...")
+				break
+			}
+		}
+	}
+	if len(labels) > 0 {
+		return fmt.Sprintf("[off-screen] %d interactive items: %s", len(elems), strings.Join(labels, ", "))
+	}
+	return fmt.Sprintf("[off-screen] %d interactive items", len(elems))
 }
 
 // CompactElements filters out redundant layout containers from the element list.
@@ -316,6 +447,18 @@ func simplifyResourceID(fullID string) string {
 	return fullID
 }
 
+// IsObfuscatedID reports whether a resource ID is a meaningless obfuscated
+// identifier (e.g. "0_resource_name_obfuscated") that only wastes tokens.
+// Learned from agent-device: skip IDs that carry no semantic value.
+func IsObfuscatedID(id string) bool {
+	simple := simplifyResourceID(id)
+	return strings.Contains(simple, "resource_name_obfuscated") ||
+		strings.HasPrefix(simple, "0_resource")
+}
+
+// isObfuscatedID is the unexported alias for internal use.
+func isObfuscatedID(id string) bool { return IsObfuscatedID(id) }
+
 // ── String escaping utilities (shared across formats) ───────────────────
 
 // writeJSONString writes a JSON-escaped string to the builder.
@@ -408,22 +551,47 @@ func xmlEscape(s string) string {
 // sanitizeFlatRefValue replaces control characters and newlines with a space
 // so each flatref line remains self-contained and safe for line-based parsing.
 func sanitizeFlatRefValue(s string) string {
-	for i, r := range s {
-		if r < 0x20 || r == 0x7F {
-			var b strings.Builder
-			b.Grow(len(s))
-			b.WriteString(s[:i])
-			for _, r2 := range s[i:] {
-				if r2 < 0x20 || r2 == 0x7F {
-					b.WriteByte(' ')
-				} else {
-					b.WriteRune(r2)
-				}
-			}
-			return b.String()
+	return CollapseWS(s)
+}
+
+// CollapseWS collapses all whitespace runs (newlines, tabs, spaces) into a
+// single space. Also strips leading/trailing whitespace and control characters.
+// Used to sanitize multi-line content descriptions and text before display.
+func CollapseWS(s string) string {
+	// Fast path: check if any sanitization is needed
+	needsFix := false
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b < 0x20 || b == 0x7F {
+			needsFix = true
+			break
 		}
 	}
-	return s // fast path: no control chars
+	if !needsFix {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	inWS := true // start true to skip leading whitespace
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7F || c == ' ' {
+			if !inWS {
+				b.WriteByte(' ')
+				inWS = true
+			}
+		} else {
+			b.WriteByte(c)
+			inWS = false
+		}
+	}
+	// Trim trailing space
+	res := b.String()
+	if len(res) > 0 && res[len(res)-1] == ' ' {
+		res = res[:len(res)-1]
+	}
+	return res
 }
 
 // ── Bounds formatting ────────────────────────────────────────────────────

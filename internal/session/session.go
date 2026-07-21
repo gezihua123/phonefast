@@ -20,6 +20,13 @@ type Session struct {
 	DeviceW int
 	DeviceH int
 
+	// originalIME holds the IME active before phonefast switched to PFIME,
+	// so we can restore it on session close. Empty if PFIME was never activated.
+	originalIME string
+	// pfimeActive is set true after the first successful SetPFIME call,
+	// avoiding redundant ADB round-trips on subsequent non-ASCII TypeText.
+	pfimeActive bool
+
 	// TapDelay controls the DOWN→UP interval used by Tap().
 	// Default 50ms (minimum human touch duration, passes Play Store
 	// anti-automation checks). Set to 0 to use the default.
@@ -72,6 +79,14 @@ func Connect(serial string, scid int) (*Session, error) {
 		Scid:      scid,
 		TapDelay:  10 * time.Millisecond,
 		videoDied: make(chan struct{}),
+	}
+
+	// Ensure PFIME is installed and enabled (best-effort, non-fatal)
+	if origIME, err := adb.EnsurePFIME(serial); err == nil {
+		s.originalIME = origIME
+		phonelog.Default().Write("pfime: original IME = %s", origIME)
+	} else {
+		phonelog.Default().Write("pfime: ensure failed (non-fatal): %v", err)
 	}
 
 	// Step 0: get native display resolution (stable, same space as UI elements).
@@ -252,6 +267,12 @@ func (s *Session) Close() error {
 	adbRemoveForward(s.Serial, s.uiPort)
 
 	adb.StopServer(s.Serial)
+
+	// Restore original IME (best-effort)
+	if s.originalIME != "" {
+		adb.RestoreIME(s.Serial, s.originalIME)
+		s.pfimeActive = false
+	}
 	return nil
 }
 

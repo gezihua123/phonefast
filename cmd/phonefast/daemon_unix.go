@@ -5,6 +5,9 @@ package main
 import (
 	"os"
 	"syscall"
+	"time"
+
+	"github.com/gezihua123/phonefast/internal/daemon"
 )
 
 func daemonSysProcAttr() *syscall.SysProcAttr {
@@ -19,7 +22,11 @@ func daemonKill(pid int) {
 	proc, _ := os.FindProcess(pid)
 	if proc != nil {
 		proc.Signal(syscall.SIGTERM)
-		timeSleep(500)
+		// Wait up to 3s for graceful shutdown (session cleanup, IME restore, etc.)
+		if daemon.WaitForProcessExit(pid, 3*time.Second) {
+			return
+		}
+		// Force kill if still alive
 		proc.Signal(syscall.SIGKILL)
 	}
 }

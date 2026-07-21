@@ -46,7 +46,7 @@ func (f *flatRefFormatter) Format(elements []protocol.UIFullElement) string {
 			b.WriteString(sanitizeFlatRefValue(el.ContentDesc))
 			b.WriteByte('"')
 		}
-		if el.ResourceID != "" {
+		if el.ResourceID != "" && !isObfuscatedID(el.ResourceID) {
 			b.WriteString(` id="`)
 			b.WriteString(simplifyResourceID(el.ResourceID))
 			b.WriteByte('"')

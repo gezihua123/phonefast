@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // WritePID atomically writes the current PID to path via temp file + rename.
@@ -59,4 +60,17 @@ func IsProcessAlive(pid int) bool {
 	// signal 0: check if we can signal the process (existence + permission)
 	err = proc.Signal(syscall.Signal(0))
 	return err == nil
+}
+
+// WaitForProcessExit polls IsProcessAlive at 100ms intervals until the
+// process exits or timeout is reached. Returns true if the process exited.
+func WaitForProcessExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !IsProcessAlive(pid) {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
 }

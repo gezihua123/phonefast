@@ -38,7 +38,9 @@ import (
 
 	"github.com/gezihua123/phonefast/internal/adb"
 	"github.com/gezihua123/phonefast/internal/daemon"
+	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/internal/mcp"
+	pkgocr "github.com/gezihua123/phonefast/pkg/ocr"
 	"github.com/gezihua123/phonefast/internal/session"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
@@ -146,6 +148,8 @@ func main() {
 		uiCmd(args)
 	case "observe":
 		observeCmd(args)
+	case "ocr":
+		ocrCmd(args)
 	case "wait":
 		waitCmd(args)
 	case "status":
@@ -344,6 +348,16 @@ func daemonCmd(args []string) {
 	doStatus := false
 	socketPath := ""
 	serial := ""
+	ocrVision := true
+	// Precedence: --ocr-engine flag > PHONEFAST_OCR_ENGINE env > "onnx".
+	// Reading the env as the default lets `PHONEFAST_OCR_ENGINE=ncnn phonefast
+	// daemon` work without the flag (otherwise the os.Setenv below would
+	// clobber a shell-exported value with "onnx"). The --ocr-engine flag, if
+	// given, still wins.
+	ocrEngine := os.Getenv("PHONEFAST_OCR_ENGINE")
+	if ocrEngine == "" {
+		ocrEngine = pkgocr.EngineONNX
+	}
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -361,6 +375,16 @@ func daemonCmd(args []string) {
 		case "--serial":
 			if i+1 < len(args) {
 				serial = args[i+1]
+				i++
+			}
+		case "--ocr-vision":
+			if i+1 < len(args) {
+				ocrVision = args[i+1] != "false"
+				i++
+			}
+		case "--ocr-engine":
+			if i+1 < len(args) {
+				ocrEngine = args[i+1]
 				i++
 			}
 		}
@@ -399,6 +423,12 @@ func daemonCmd(args []string) {
 	daemon.RemovePID(daemon.DefaultPidFileName())
 
 	if foreground {
+		if err := os.Setenv("PHONEFAST_OCR_VISION", fmt.Sprintf("%v", ocrVision)); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: cannot set PHONEFAST_OCR_VISION: %v\n", err)
+		}
+		if err := os.Setenv("PHONEFAST_OCR_ENGINE", ocrEngine); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: cannot set PHONEFAST_OCR_ENGINE: %v\n", err)
+		}
 		runDaemon(socketPath, serial)
 		return
 	}
@@ -415,6 +445,10 @@ func daemonCmd(args []string) {
 	}
 	childArgs = append(childArgs, "--serial", serial)
 
+	childEnv := os.Environ()
+	childEnv = append(childEnv, fmt.Sprintf("PHONEFAST_OCR_VISION=%v", ocrVision))
+	childEnv = append(childEnv, fmt.Sprintf("PHONEFAST_OCR_ENGINE=%s", ocrEngine))
+
 	devNull, err := daemonDevNull()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: cannot open null device: %v\n", err)
@@ -427,6 +461,7 @@ func daemonCmd(args []string) {
 	child.Stdin = devNull
 	child.Stdout = devNull
 	child.Stderr = devNull
+	child.Env = childEnv
 
 	if err := child.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to daemonize: %v\n", err)
@@ -907,6 +942,29 @@ func observeCmd(args []string) {
 	}
 }
 
+func ocrCmd(args []string) {
+	if useDaemon {
+		result := daemonCall("ocr", map[string]any{})
+		var resp pkgocr.Response
+		json.Unmarshal(result, &resp)
+		if resp.Count == 0 {
+			fmt.Println("No text recognized on screen.")
+			return
+		}
+		fmt.Printf("OCR: %d text regions (%dx%d)\n", resp.Count, resp.Width, resp.Height)
+		fmt.Println(strings.Repeat("=", 50))
+		for i, item := range resp.Items {
+			fmt.Printf("[%d] text=%q conf=%.2f center=(%.0f,%.0f)\n",
+				i, item.Text, item.Confidence, item.Center[0], item.Center[1])
+		}
+	} else {
+		withSession(func(sess *session.Session) error {
+			fmt.Fprintln(os.Stderr, "Error: OCR requires daemon mode (start with 'phonefast daemon')")
+			return nil
+		})
+	}
+}
+
 func waitCmd(args []string) {
 	ms := 1000
 	if len(args) >= 1 {
@@ -1359,12 +1417,12 @@ func formatElements(elements []protocol.UIElement, maxShow int, isSummary bool) 
 		}
 		line := fmt.Sprintf("[%d]", el.Index)
 		if el.Text != "" {
-			line += fmt.Sprintf(` text="%s"`, el.Text)
+			line += fmt.Sprintf(` text="%s"`, format.CollapseWS(el.Text))
 		}
 		if el.ContentDesc != "" {
-			line += fmt.Sprintf(` desc="%s"`, el.ContentDesc)
+			line += fmt.Sprintf(` desc="%s"`, format.CollapseWS(el.ContentDesc))
 		}
-		if el.ResourceID != "" {
+		if el.ResourceID != "" && !format.IsObfuscatedID(el.ResourceID) {
 			id := el.ResourceID
 			if idx := strings.LastIndex(id, "/"); idx >= 0 {
 				id = id[idx+1:]

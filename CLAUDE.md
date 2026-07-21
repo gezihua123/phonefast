@@ -45,7 +45,7 @@
 - **核心职责**：Go 代码实现、daemon/session 生命周期管理、scrcpy 协议集成、ASTIAV 解码优化、构建系统维护
 - **输入**：架构设计、优化目标、Issue/BUG 报告
 - **输出**：可运行二进制、Bug 修复、性能改进代码
-- **关键原则**：关键修改后须运行 benchmark 验证性能；跨平台构建前本地先 `bash scripts/build.sh` 验证；所有 panic 路径须 recover 并日志记录
+- **关键原则**：关键修改后须运行 benchmark 验证性能；全平台构建验证（见下方"构建验证"章节）；所有 panic 路径须 recover 并日志记录
 
 ### [QA] 测试工程师
 - **核心职责**：benchmark 数据采集与分析、长稳压测（12h+）、版本回归验证、性能退化检测、内存分析
@@ -78,8 +78,31 @@
 ### 开发流
 
 ```
-[ARCH] 设计确认 -> [RD] 实现 -> [RD] 本地构建验证 -> [QA] Benchmark 验证 -> [DOC] 文档更新
+[ARCH] 设计确认 -> [RD] 实现 -> [RD] 全平台交叉验证 -> [RD] 本地构建 -> [QA] Benchmark 验证 -> [DOC] 文档更新
 ```
+
+### 构建验证
+
+**Step 1 — 全平台交叉验证**（CGO_ENABLED=0，秒级快速验证 5 平台纯 Go 路径无编译错误）：
+
+```bash
+export CGO_ENABLED=0
+GOOS=linux   GOARCH=amd64 go build ./cmd/phonefast/ || exit 1
+GOOS=linux   GOARCH=arm64 go build ./cmd/phonefast/ || exit 1
+GOOS=darwin  GOARCH=amd64 go build ./cmd/phonefast/ || exit 1
+GOOS=darwin  GOARCH=arm64 go build ./cmd/phonefast/ || exit 1
+GOOS=windows GOARCH=amd64 go build ./cmd/phonefast/ || exit 1
+```
+
+**Step 2 — 本地构建**（必须通过，验证当前平台完整 CGO 编译链路）：
+
+```bash
+bash scripts/build.sh
+```
+
+产物落于 `dist/dev/`，编译错误或链接失败须阻断合并。
+
+> **说明**：Step 1 快速验证 5 平台纯 Go 语法/类型/导入无差异（跳过 CGO）。Step 2 验证当前平台完整 CGO 编译（含 astiav + FFmpeg 链接）。CI 中的完整 CGO 交叉编译（各平台原生 FFmpeg 链接）由 `bash scripts/build.sh --all` 执行。
 
 ### 发布流
 
