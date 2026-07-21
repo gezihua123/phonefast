@@ -18,6 +18,7 @@
 #     phonefast-<version>-linux-arm64.tar.gz
 #     phonefast-<version>-darwin-arm64.tar.gz
 #     phonefast-<version>-darwin-arm64-full.tar.gz   (自包含, ONNX Runtime 内嵌)
+#     phonefast-<version>-linux-amd64-full.tar.gz    (自包含, ONNX Runtime 内嵌)
 #     phonefast-<version>-windows-amd64.tar.gz
 
 name: Release
@@ -165,6 +166,8 @@ jobs:
           tar -xzf /tmp/ort.tgz -C /tmp
           sudo cp /tmp/onnxruntime-${ORT_ARCH}-${ORT_VER}/lib/libonnxruntime.so* /usr/local/lib/
           sudo ldconfig
+          # Also stage for embedding in the -full build (assets/ocr/lib_linux_amd64.go).
+          cp /tmp/onnxruntime-${ORT_ARCH}-${ORT_VER}/lib/libonnxruntime.so assets/ocr/libonnxruntime-${{ matrix.goos }}-${{ matrix.goarch }}.so
           echo "[✓] libonnxruntime ${ORT_VER} (${ORT_ARCH}) installed"
 
       # Install ONNX Runtime for macOS runner so OCR smoke test can run.
@@ -203,12 +206,13 @@ jobs:
           file "${BINARY}"
           ls -lh "${BINARY}"
 
-      # ── Full build (darwin/arm64 only) ──
-      # Self-contained binary with embedded ONNX Runtime dylib (lib_darwin_arm64.go).
-      # The ORT lib must already be staged in assets/ocr/ (see "Download OCR runtime
-      # library" step above). Other platforms have no embed file yet (lib_nolib.go).
+      # ── Full build (darwin/arm64 + linux/amd64) ──
+      # Self-contained binary with embedded ONNX Runtime library.
+      # The ORT lib must already be staged in assets/ocr/ (see "Download OCR
+      # runtime library" step above for darwin, or "Install ONNX Runtime"
+      # for linux).
       - name: Build phonefast (full)
-        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
+        if: (matrix.goos == 'darwin' && matrix.goarch == 'arm64') || (matrix.goos == 'linux' && matrix.goarch == 'amd64')
         env:
           CGO_ENABLED: 1
           GOOS: ${{ matrix.goos }}
@@ -266,7 +270,7 @@ jobs:
           ls -lh "${ARCHIVE}"
 
       - name: Package binary (full)
-        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
+        if: (matrix.goos == 'darwin' && matrix.goarch == 'arm64') || (matrix.goos == 'linux' && matrix.goarch == 'amd64')
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           BINARY="phonefast-${{ matrix.goos }}-${{ matrix.goarch }}-full${{ matrix.ext }}"
@@ -324,6 +328,7 @@ jobs:
           | 平台 | 架构 | 文件 |
           |------|------|------|
           | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64.tar.gz` |
+          | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64-full.tar.gz` (自包含, OCR 内嵌) |
           | Linux | arm64 | `phonefast-__VERSION_NOV__-linux-arm64.tar.gz` |
           | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64.tar.gz` |
           | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64-full.tar.gz` (自包含, OCR 内嵌) |
@@ -334,7 +339,7 @@ jobs:
           - x86_64: SSE/AVX/AVX2 SIMD 加速 (nasm asm-on)
           - ARM64: NEON 优化 (内建于 clang/gcc)
           - 单文件分发 (jar 内嵌, 即下即用)
-          - macOS `-full` 版本: ONNX Runtime 内嵌, 无需 `brew install onnxruntime`
+          - `-full` 版本: ONNX Runtime 内嵌, 零依赖部署 (macOS arm64 / Linux amd64)
           TEMPLATE
           sed -i \
             -e "s/__VERSION__/${VERSION}/g" \

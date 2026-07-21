@@ -103,8 +103,9 @@ bash scripts/build.sh --all                 # 全平台构建 + 打包
 | **plain**（默认） | 24MB | 系统 libonnxruntime | 需安装 onnxruntime | 已安装 onnxruntime 的环境 |
 | **-full**（`--full`） | 42MB | 内嵌 ORT 1.27.1 | 无（自包含） | 未安装 onnxruntime 的环境 |
 
-两种产物均内嵌 PP-OCR v3 模型（det + rec）。-full 版内嵌 ONNX Runtime 共享库
-（仅 macOS arm64）, 实现单文件零依赖部署。NCNN 引擎为 opt-in（`-tags ncnn`, 快 28%, 见 [docs/DEV.md](docs/DEV.md)）。
+两种产物均内嵌 PP-OCR v3 模型（det + rec）。-full 版内嵌 ONNX Runtime 共享库，
+实现单文件零依赖部署（支持平台：macOS arm64、Linux amd64）。NCNN 引擎为 opt-in
+（`-tags ncnn`, 快 28%, 见 [docs/DEV.md](docs/DEV.md)）。
 
 > 构建细节（交叉编译、FFmpeg 静态链接、Python 构建工具）→ [docs/DEV.md](docs/DEV.md)
 

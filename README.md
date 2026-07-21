@@ -105,8 +105,9 @@ bash scripts/build.sh --all                 # Cross-platform build + packaging
 | **-full** (`--full`) | 42MB | Embedded ORT 1.27.1 | None (self-contained) | Environments without onnxruntime |
 
 Both variants embed PP-OCR v3 models (det + rec). The `-full` variant embeds the
-ONNX Runtime shared library (macOS arm64 only) for single-file zero-dependency
-deployment. NCNN engine is opt-in (`-tags ncnn`, 28% faster, see [docs/DEV.md](docs/DEV.md)).
+ONNX Runtime shared library for single-file zero-dependency deployment (supported
+platforms: macOS arm64, Linux amd64). NCNN engine is opt-in (`-tags ncnn`, 28%
+faster, see [docs/DEV.md](docs/DEV.md)).
 
 > Build details (cross-compilation, FFmpeg static linking, Python build tool) → [docs/DEV.md](docs/DEV.md)
 

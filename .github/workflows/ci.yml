@@ -65,8 +65,11 @@ jobs:
           tar -xzf /tmp/ort.tgz -C /tmp
           sudo cp /tmp/onnxruntime-linux-x64-${ORT}/lib/libonnxruntime.so* /usr/local/lib/
           sudo ldconfig
+          # Also stage for embedding in the -full build.
+          cp /tmp/onnxruntime-linux-x64-${ORT}/lib/libonnxruntime.so assets/ocr/libonnxruntime-linux-amd64.so
           echo "[✓] libonnxruntime ${ORT} installed"
 
+      # ── Plain build (no ocr_embed tag, loads system lib at runtime) ──
       - name: Build phonefast
         env:
           CGO_ENABLED: 1
@@ -83,6 +86,26 @@ jobs:
             -X main.BuildTime=${BUILD_TIME} \
             -X main.GitCommit=${GIT_COMMIT}"
           go build -trimpath -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
+          file "${BINARY}"
+          ls -lh "${BINARY}"
+
+      # ── Full build (ocr_embed tag, self-contained: embeds ORT .so) ──
+      - name: Build phonefast (full)
+        env:
+          CGO_ENABLED: 1
+          GOOS: linux
+          GOARCH: amd64
+          PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/x86_64-linux-gnu/lib/pkgconfig
+        run: |
+          BINARY="phonefast-linux-amd64-full"
+          VERSION="dev"
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GIT_COMMIT="${GITHUB_SHA::7}"
+          LDFLAGS="-s -w \
+            -X main.Version=${VERSION} \
+            -X main.BuildTime=${BUILD_TIME} \
+            -X main.GitCommit=${GIT_COMMIT}"
+          go build -trimpath -tags ocr_embed -ldflags="${LDFLAGS}" -o "${BINARY}" ./cmd/phonefast/
           file "${BINARY}"
           ls -lh "${BINARY}"
 
