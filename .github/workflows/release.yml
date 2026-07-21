@@ -351,7 +351,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: phonefast ${{ steps.notes.outputs.version }}
+          name: ${{ steps.notes.outputs.version }}
           body_path: release-body.md
           files: assets/*
           generate_release_notes: true
