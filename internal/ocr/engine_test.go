@@ -43,6 +43,7 @@ func TestOCRSmoke(t *testing.T) {
 	}
 	t.Logf("recognized %d text boxes", len(results))
 	for _, r := range results {
-		t.Logf("  text=%q conf=%.2f pos=(%.0f,%.0f)", r.Text, r.Confidence, r.Box.Min.X, r.Box.Min.Y)
+		cx, cy := r.Center()
+		t.Logf("  text=%q conf=%.2f center=(%.0f,%.0f)", r.Text, r.Confidence, cx, cy)
 	}
 }
