@@ -1,25 +1,5 @@
 # Changelog
 
-## v1.0.12 (2026-07-21)
-
-### 🚀 Features
-- **OCR engine**: PP-OCR v3 text recognition (detection + recognition), ONNX Runtime backend with Vision ANE fast path on macOS (Apple Neural Engine detection <1ms), optional NCNN backend (28% faster rec), OCR JSON-RPC endpoint and `phonefast ocr` CLI command
-- **Unicode text input**: Custom PFIME (headless Android IME) for CJK/emoji text injection via Base64 broadcast, dual-path dispatch (ASCII scrcpy protocol for speed, PFIME for Unicode), auto IME switch/restore on session lifecycle
-- **Build variants**: `-full` variant embeds ONNX Runtime shared library (macOS arm64 only) for zero-dependency deployment, plain variant loads system `libonnxruntime` at runtime
-- **Python build system**: `scripts/build.py` with platform matrix (`scripts/pfbuild/`), cross-compilation support, plain + `-full` dual-variant builds
-
-### 🛠️ CI / Build
-- GitHub Actions: CI builds both plain and `-full` (ocr_embed tag) variants for darwin-arm64
-- Linux CI: ONNX Runtime library installed from GitHub releases for OCR smoke test
-- CI trigger branch corrected to `master`, OCR benchmark tests excluded from CI pipeline
-- ONNX Runtime install guide added to README (macOS `brew`, Linux manual download)
-
-### 📝 Docs
-- README reposition: "Phone as a Native Device for AI Agents"
-- README_zh.md: Chinese README updated with ONNX Runtime installation guide
-
----
-
 ## v1.0.11 (2026-07-14)
 
 ### 🚀 Performance
@@ -30,11 +10,13 @@
 
 ### 📝 Docs
 - `docs/DEV.md`: Added H.264 screenshot decoding architecture doc (astiav CGO + ffmpeg CLI fallback dual-path)
-- `docs/benchmark.md`: Updated benchmark timeline, marked v1.0.11 release
-- Site `_tabs/phonefast.md`: Updated speed comparison data, memory row, architecture design, long-run stress test
+- `docs/BENCHMARK.md`: Updated benchmark timeline, marked v1.0.11 release
+- Site `_tabs/PHONEFAST.md`: Updated speed comparison data, memory row, architecture design, long-run stress test
 
 ### 🛠️ Build
 - `scripts/install_pkg.sh`: Default install directory changed to `~/.local/bin`, removed `--local`/`--global` modes
+- go-astiav v0.35.0 → v0.40.0 (FFmpeg 8.0 compatibility)
+- `scripts/test.sh`: Fixed case-in-command-substitution syntax error on macOS
 
 ---
 
@@ -43,6 +25,7 @@
 ### 🛠️ Build
 - Removed darwin-amd64 (macOS Intel) support, darwin-arm64 only
 - GitHub Actions CI confirmed macOS runner is fully arm64
+- FFmpeg 7.1 → 8.0 (cross-build-ffmpeg.sh), source-based compilation with minimal H.264-only config
 
 ---
 
