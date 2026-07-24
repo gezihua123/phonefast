@@ -3,7 +3,7 @@ module github.com/gezihua123/phonefast
 go 1.26.4
 
 require (
-	github.com/asticode/go-astiav v0.35.0
+	github.com/asticode/go-astiav v0.40.0
 	github.com/ebitengine/purego v0.9.0
 	github.com/mark3labs/mcp-go v0.54.1
 	github.com/shota3506/onnxruntime-purego v0.0.0-20260315223538-8db8bd7424b2

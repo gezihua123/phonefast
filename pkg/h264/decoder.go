@@ -56,6 +56,21 @@ type Decoder struct {
 	height int
 	codec  uint32
 
+	// readBuf is a reusable scratch buffer for reading frame payloads off the
+	// socket. drainFrames (the sole ReadFrame caller) discards the returned
+	// *Frame, so reusing one buffer across calls avoids a make([]byte, size)
+	// per frame — at 15fps that's ~60 short-lived 40KB allocations/min that
+	// exist only to be immediately GC'd.
+	//
+	// Lifetime contract: the *Frame.Data returned by ReadFrame aliases this
+	// buffer, so it is only valid until the NEXT ReadFrame call. Callers that
+	// need to keep frame data must copy it (configRaw/latestKeyframe already do
+	// — see extractConfigs/buildKeyframe).
+	//
+	// Not safe for concurrent use; ReadFrame is called only from the single
+	// drainFrames goroutine.
+	readBuf []byte
+
 	// configRaw holds the raw AnnexB config packet (SPS+PPS) verbatim.
 	// Used to prefix keyframes so they can be decoded independently.
 	configRaw []byte
@@ -104,7 +119,14 @@ func (d *Decoder) ReadFrame(r io.Reader) (*Frame, error) {
 		return nil, fmt.Errorf("invalid frame size: %d", size)
 	}
 
-	data := make([]byte, size)
+	// Reuse readBuf across frames instead of allocating per call. Grown only
+	// when a frame exceeds the current capacity (e.g. a large IDR after small
+	// P-frames); thereafter the buffer is reused at zero allocation cost.
+	// readBuf is touched only here (single drainFrames goroutine), so no lock.
+	if cap(d.readBuf) < size {
+		d.readBuf = make([]byte, size)
+	}
+	data := d.readBuf[:size]
 	if _, err := io.ReadFull(r, data); err != nil {
 		return nil, fmt.Errorf("read frame data: %w", err)
 	}
@@ -151,7 +173,13 @@ func (d *Decoder) LatestKeyframe() []byte {
 // the NAL start-code scanner.
 func (d *Decoder) buildKeyframe(idr []byte) []byte {
 	if d.configRaw == nil {
-		return idr
+		// Copy even without config: idr aliases readBuf (reused across frames),
+		// so latestKeyframe must own its bytes or the next ReadFrame would
+		// overwrite it. (Before readBuf reuse, idr was a fresh make() and this
+		// copy was unnecessary — now it is required for correctness.)
+		out := make([]byte, len(idr))
+		copy(out, idr)
+		return out
 	}
 	out := make([]byte, len(d.configRaw)+len(idr))
 	copy(out, d.configRaw)

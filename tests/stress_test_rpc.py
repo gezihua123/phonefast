@@ -88,7 +88,10 @@ class DaemonRPC:
     def socket_path(self):
         if self._socket_path is None:
             uid = os.getuid()
-            self._socket_path = f"/tmp/phonefast-{uid}-{self._serial}.sock"
+            # Unified daemon: single socket shared by all devices. The target
+            # device is selected per-request via the "device" RPC param, not
+            # via a per-serial socket path.
+            self._socket_path = f"/tmp/phonefast-{uid}.sock"
         return self._socket_path
 
     def connect(self, timeout=15):
@@ -106,6 +109,11 @@ class DaemonRPC:
         """发送 JSON-RPC 请求。返回 (elapsed_ms, result, error_string)。"""
         if params is None:
             params = {}
+        # Inject the target device so the unified daemon routes to the correct
+        # DeviceActor (mirrors daemon.Client.Call in Go). Without this the
+        # daemon would auto-detect the first ADB device, which may not be the
+        # one this stress test targets.
+        params.setdefault("device", self._serial)
 
         with self._lock:
             self._next_id += 1
@@ -499,6 +507,8 @@ class StressTest:
                             self.ops_fail += 1
                             self.errors.append((time.time() - self.start_time, op_name, err))
                             self.times[op_name].append(dt)
+                            # Real-time error log for diagnosis (first 200 chars)
+                            print(f"\n  [ERR] {op_name}: {err[:200]}")
 
                             if any(kw in err.lower() for kw in
                                   ["connection", "closed", "broken pipe", "refused"]):

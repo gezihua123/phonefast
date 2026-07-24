@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
 	"github.com/gezihua123/phonefast/internal/format"
@@ -165,8 +164,11 @@ func Dispatch(sess *session.Session, req *Request) *Response {
 	case "launch_app":
 		return handleLaunchApp(sess, req)
 
-	case "wait":
-		return handleWait(req)
+	// "wait" is deliberately NOT a daemon RPC: it has no device-side effect,
+	// and a daemon-side time.Sleep would block the device actor's single-
+	// threaded event loop (stalling every other request + the health ticker
+	// for the full duration). Callers sleep locally (waitCmd, runDaemonAction,
+	// mcp handleWait). A raw RPC "wait" returns method-not-found by design.
 
 	default:
 		return newErrorResponse(req.ID, ErrMethod, fmt.Sprintf("unknown method: %s", req.Method))
@@ -175,6 +177,10 @@ func Dispatch(sess *session.Session, req *Request) *Response {
 
 // ── Handlers ──
 
+// handleStatus reports a single device session's status. When called via the
+// daemon's handleConn, sess is always non-nil: status-with-no-device is handled
+// upstream by writeDaemonStatus (daemon-level info). The nil branch is kept as
+// a defensive fallback for other Dispatch callers (e.g. direct invocation).
 func handleStatus(sess *session.Session, req *Request) *Response {
 	status := map[string]any{
 		"connected": false,
@@ -192,6 +198,10 @@ func handleStatus(sess *session.Session, req *Request) *Response {
 	return newResultResponse(req.ID, status)
 }
 
+// handleListDevices lists ALL connected devices via ADB, independent of the
+// per-request session. handleConn binds a session for non-status methods, so
+// the old "if sess != nil" early return would have made this only ever report
+// the single bound device. list_devices must see every device.
 func handleListDevices(sess *session.Session, req *Request) *Response {
 	type deviceInfo struct {
 		Serial string `json:"serial"`
@@ -199,15 +209,6 @@ func handleListDevices(sess *session.Session, req *Request) *Response {
 		Status string `json:"status"`
 	}
 
-	// If daemon has a connected session, return it directly (no ADB call needed)
-	if sess != nil {
-		return newResultResponse(req.ID, []deviceInfo{{
-			Serial: sess.Serial,
-			Status: "device",
-		}})
-	}
-
-	// Fallback: scan via ADB
 	devices, err := adb.ListDevices()
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, err.Error())
@@ -291,9 +292,16 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 
 	// Collapse off-screen elements only in summary (token-efficient) mode.
 	// Full mode preserves every element — no viewport filtering.
+	// Use NativeW×NativeH for the viewport: UI element bounds come from
+	// AccessibilityNodeInfo.getBoundsInScreen(), which reports coordinates
+	// in the physical display space, NOT the scrcpy video resolution
+	// (DeviceW×DeviceH). On devices where the two differ (e.g. a 1080×2400
+	// display whose scrcpy video is negotiated to 488×1080), using
+	// DeviceW/H as the viewport would incorrectly classify every element
+	// beyond the video boundary as off-screen.
 	vw, vh := 0, 0
-	if isSummary {
-		vw, vh = sess.DeviceW, sess.DeviceH
+	if isSummary && sess.NativeW > 0 && sess.NativeH > 0 {
+		vw, vh = sess.NativeW, sess.NativeH
 	}
 	legacyFormatted := format.ElementsForLLMWithViewport(elements, maxShow, isSummary, vw, vh)
 	return newResultResponse(req.ID, map[string]any{
@@ -321,9 +329,10 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 
 	b64 := base64.StdEncoding.EncodeToString(pngData)
 	// Collapse off-screen only in summary mode; full mode keeps all elements.
+	// Use NativeW×NativeH — see handleGetUIElements for rationale.
 	ovw, ovh := 0, 0
-	if isSummary {
-		ovw, ovh = sess.DeviceW, sess.DeviceH
+	if isSummary && sess.NativeW > 0 && sess.NativeH > 0 {
+		ovw, ovh = sess.NativeW, sess.NativeH
 	}
 	formatted := format.ElementsForLLMWithViewport(elements, maxShow, isSummary, ovw, ovh)
 
@@ -331,6 +340,9 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 		"text":       formatted,
 		"image_data": b64,
 		"mime_type":  "image/png",
+		"count":      len(elements),
+		"width":      sess.DeviceW,
+		"height":     sess.DeviceH,
 	})
 }
 
@@ -559,19 +571,6 @@ func handleLaunchApp(sess *session.Session, req *Request) *Response {
 
 	return newResultResponse(req.ID, map[string]any{
 		"message": fmt.Sprintf("Launched: %s", appName),
-	})
-}
-
-func handleWait(req *Request) *Response {
-	duration := parseIntParam(req.Params, "duration_ms")
-	if duration == 0 {
-		duration = 1000
-	}
-
-	time.Sleep(time.Duration(duration) * time.Millisecond)
-
-	return newResultResponse(req.ID, map[string]any{
-		"message": fmt.Sprintf("Waited %dms", duration),
 	})
 }
 

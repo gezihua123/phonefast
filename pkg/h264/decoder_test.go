@@ -208,6 +208,43 @@ func TestLatestKeyframeEmptyByDefault(t *testing.T) {
 	}
 }
 
+// TestReadFrameReusesBufferAndKeyframeSurvives verifies the readBuf reuse
+// optimization: a second ReadFrame must not corrupt the latestKeyframe
+// captured by the first, even when the IDR arrived before any config
+// (buildKeyframe's nil-config path aliases readBuf and must copy).
+func TestReadFrameReusesBufferAndKeyframeSurvives(t *testing.T) {
+	d := NewDecoder()
+
+	// IDR before config: buildKeyframe returns a copy of idr (not a view into
+	// readBuf). Capture it now.
+	idr := []byte{0x00, 0x00, 0x00, 0x01, 0x65, 0xAB, 0xCD}
+	kf := append(makeFrameHeader(1, false, true, uint32(len(idr))), idr...)
+	if _, err := d.ReadFrame(bytes.NewReader(kf)); err != nil {
+		t.Fatalf("read keyframe: %v", err)
+	}
+	saved := d.LatestKeyframe()
+	if !bytes.Equal(saved, idr) {
+		t.Fatalf("LatestKeyframe before 2nd read = %x, want %x", saved, idr)
+	}
+
+	// A second, larger frame reuses (and grows) readBuf. If buildKeyframe had
+	// returned a view into readBuf instead of a copy, `saved` would now be
+	// corrupted by the new payload.
+	bigPayload := bytes.Repeat([]byte{0xFF}, len(idr)*4)
+	second := append(makeFrameHeader(2, false, false, uint32(len(bigPayload))), bigPayload...)
+	if _, err := d.ReadFrame(bytes.NewReader(second)); err != nil {
+		t.Fatalf("read 2nd frame: %v", err)
+	}
+	if !bytes.Equal(saved, idr) {
+		t.Fatalf("LatestKeyframe corrupted by 2nd ReadFrame: got %x, want %x\n"+
+			"(buildKeyframe nil-config path must copy, not alias readBuf)", saved, idr)
+	}
+	if !bytes.Equal(d.LatestKeyframe(), idr) {
+		t.Fatalf("LatestKeyframe changed after non-keyframe 2nd read: got %x, want %x",
+			d.LatestKeyframe(), idr)
+	}
+}
+
 // TestReadFrameEOFOnCleanStream verifies a closed stream returns a wrapped
 // error (not a panic) — drainFrames relies on this to detect video death.
 func TestReadFrameEOFOnCleanStream(t *testing.T) {

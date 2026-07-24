@@ -254,22 +254,32 @@ flowchart TD
     C10 --> C11["Start drainFrames() background goroutine"]
 ```
 
-### 5.2 Screenshot Pipeline
+### 5.2 Screenshot Pipeline (v1.0.11 architecture)
+
+> v1.0.11 refactored the screenshot pipeline from an **ffmpeg subprocess** to **in-process astiav CGO decoding**, eliminating subprocess creation + pipe I/O overhead and cutting screenshot latency 3-4×.
+>
+> The ffmpeg subprocess path is retained as a fallback (auto-selected when `CGO_ENABLED=0`).
 
 ```mermaid
 flowchart TD
     DEVICE["Android device video stream H.264"] -->|TCP| SOCKET["scrcpy video socket"]
-    SOCKET -->|drainFrames| DECODER["h264.Decoder"]
+    SOCKET -->|drainFrames goroutine| NAL["NAL unit parsing SPS/PPS/IDR"]
+    NAL --> CACHE["LRU cache of latest keyframe"]
+    NAL --> REQ["requestKeyframe() when missing\nsends RESET_VIDEO control frame"]
 
-    DECODER --> NAL["NAL unit parsing: SPS/PPS/IDR"]
-    DECODER --> CACHE["Cache latest keyframe LatestKeyframe()"]
-    DECODER --> REQ["Send RESET_VIDEO to request keyframe when missing"]
+    CACHE -->|"keyframeToPNG()"| CHOICE{"CGO_ENABLED?"}
 
-    CACHE -->|keyframeToPNG| FFMPEG["ffmpeg subprocess"]
-    FFMPEG --> FF_IN["stdin: -f h264 -i pipe:0"]
-    FF_IN --> FF_OUT["stdout: -vcodec png pipe:1"]
-    FF_OUT --> B64["base64 encode"]
-    B64 --> MC["MCP ImageContent<br/>{type:image, data, mimeType}"]
+    CHOICE -->|"default: yes"| ASTIAV["astiav.Decoder\n(in-process CGO)"]
+    ASTIAV --> CTX["CodecContext\nThreadCount=1\npersistent reuse"]
+    CTX --> DEC["SendPacket + ReceiveFrame"]
+    DEC --> SWSCALE["sws_scale\nH.264→RGBA"]
+    SWSCALE --> ENC["astiav encode to PNG bytes"]
+    ENC --> MC["MCP ImageContent\n{type:image, data, mimeType}"]
+
+    CHOICE -->|"fallback: no"| FFMPEG_CLI["ffmpeg CLI subprocess\nexec.CommandContext"]
+    FFMPEG_CLI --> STDIN["stdin: -f h264 -i pipe:0"]
+    STDIN --> STDOUT["stdout: -vcodec png pipe:1"]
+    STDOUT --> MC
 ```
 
 **Why keyframes**:
@@ -277,10 +287,23 @@ flowchart TD
 - P/B-frames only contain delta data, depend on reference frames
 - Screenshots must use I-frames; when missing, a `RESET_VIDEO` command is sent to trigger the device to generate one immediately
 
-**ffmpeg conversion command**:
-```bash
-ffmpeg -f h264 -i pipe:0 -frames:v 1 -f image2pipe -vcodec png pipe:1
-```
+**Two-path comparison**:
+
+| Dimension | Main path (astiav CGO) | Fallback path (ffmpeg CLI) |
+|-----------|----------------------|---------------------------|
+| Trigger | `CGO_ENABLED=1` (default build) | `CGO_ENABLED=0` (cross-compile etc.) |
+| Decode | in-process C function calls | `fork + exec` subprocess |
+| Data transfer | zero-copy memory pointers | pipe stdin → stdout (memcpy ×2) |
+| Codec context | **persistently reused** (DPB stays allocated) | new process each call (SPS/PPS re-parsed) |
+| Threads | **ThreadCount=1** | default multithreaded |
+| Screenshot P50 | **28ms** 🚀 | ~100-200ms |
+| Cold-start screenshot | **~19ms** | ~167ms |
+| External deps | none (FFmpeg statically linked in) | system ffmpeg required |
+
+**Why single-threaded is faster**:
+- A 488×1080 frame is tiny; multithreaded slice sync overhead > the decode itself
+- Multithreading doubles the DPB (Decoded Picture Buffer) allocation, bloating memory
+- ThreadCount=1 eliminates slice-merge and inter-thread sync, giving more stable latency
 
 ### 5.3 UI Element Retrieval
 
@@ -375,42 +398,12 @@ Comparison with base64 embedded in JSON text:
 
 ---
 
-## 6. MCP Benchmark Tools
+## 6. Benchmark Tools
 
-### 6.1 benchmark.py
+- `tests/benchmark.py` — automated MCP benchmark (STDIO/SSE), measures cold start, per-tool p50/p95/p99, throughput, error rate, data size. Usage: `python3 benchmark.py [--sse --port 18019] [--rounds N] [--output report.json]`.
+- `tests/benchmark.sh` — real-time three-way latency comparison. Usage: `bash tests/benchmark.sh [RUNS=5]`.
 
-Fully automated MCP Benchmark tool, supports both STDIO and SSE transport modes.
-
-```bash
-# Basic usage
-python3 benchmark.py                          # STDIO mode, default 10 rounds
-python3 benchmark.py --sse --port 18019       # SSE mode
-python3 benchmark.py --rounds 30              # 30 rounds
-python3 benchmark.py --quick                  # Quick mode (3 rounds)
-python3 benchmark.py --output report.json     # Output JSON report
-```
-
-**Test Dimensions**:
-
-| Dimension | Description |
-|---|---|
-| Cold Start Latency | Process startup → first tool call success |
-| Single Call Latency | Per-tool p50 / p95 / p99 / avg / min / max |
-| Throughput (QPS) | Requests per second over 20 consecutive calls |
-| Error Rate | Failures / Total Calls |
-| Data Size | Bytes returned by screenshot / observe |
-
-### 6.2 benchmark.sh
-
-Bash script for real-time three-way latency comparison:
-
-```bash
-# Full three-way comparison
-bash tests/benchmark.sh
-
-# Custom parameters
-RUNS=5 bash tests/benchmark.sh
-```
+> Historical benchmark data → [docs/BENCHMARK.md](BENCHMARK.md)
 
 ---
 
@@ -467,15 +460,7 @@ agent-device close
 | **ImageContent** | ✅ (MCP native) | ❌ | ❌ |
 | **Special Scenarios** | — | Recording replay / Performance sampling | OCR / non-ASCII / Package search |
 
-**Recommended Stack**:
-
-```
-Primary:   phonefast daemon  (Speed King, Android AI Agent First Choice)
-           + phonefast serve  (MCP mode, includes tap_element)
-
-Supplemental: agent-device  (when iOS automation / recording replay / performance sampling needed)
-              adb kill      (when OCR / non-ASCII input / package search needed)
-```
+**Recommended Stack**: `phonefast daemon` + `phonefast serve` as primary (speed + Android AI Agent); supplement with `agent-device` (iOS / recording replay / perf sampling) and `adb kill` (OCR / non-ASCII / package search) as needed.
 
 ---
 
@@ -485,105 +470,27 @@ Supplemental: agent-device  (when iOS automation / recording replay / performanc
 
 ### 9.1 phonefast 12-hour Daemon Stress Test
 
-> **Test Environment**: macOS arm64 | Go 1.26.4 | phonefast v1.0.0 | Device TECNO KL8h (USB) | 488×1080
-> **Test Date**: 2026-06-20 | Script: `tests/stress_test_rpc.py -d 720`
-> **Method**: Unix socket direct to daemon JSON-RPC, 6-stage gradient load, RSS sampled every 30s.
+> macOS arm64 | Go 1.26.4 | phonefast v1.0.0 | TECNO KL8h (USB) 488×1080 | `tests/stress_test_rpc.py -d 720` | Unix socket → daemon JSON-RPC, 6-stage gradient load.
 
 | Metric | Value |
 |---|---|
 | **Duration** | 720 minutes (12 hours) |
 | **Total Operations** | 144,348 |
-| **Successful** | 144,339 |
-| **Failed** | 9 |
-| **Success Rate** | **99.99%** |
+| **Success Rate** | **99.99%** (9 transient failures, 0.006%) |
 | **Daemon Disconnects** | 1 (auto-recovered, < 10s) |
-| **Performance Degradation** | ❌ None (P50 latency consistent with 1-hour test) |
+| **Performance Degradation** | ❌ None (P50 consistent with 1-hour test) |
 
-**12 Operation Latency Overview** (144,348 raw data points):
+All 9 failures were transient (TCP broken pipe under 12-16 ops/s burst, UI socket timeout, device response delay) — every one self-recovered on the next call or via 1 auto-reconnect, with zero failures for the remaining 8+ hours. Per-operation latency detail → [docs/BENCHMARK.md §7](BENCHMARK.md).
 
-| Operation | Count | P50 | P95 | P99 | Avg | Max |
-|---|---|---|---|---|---|---|
-| back | 16,510 | 1ms | 2ms | 2ms | 1ms | 385ms |
-| launch_app | 4,111 | 1ms | 2ms | 2ms | 1ms | 4ms |
-| type_text | 4,111 | 1ms | 2ms | 2ms | 1ms | 7ms |
-| status | 4,112 | 1ms | 1ms | 2ms | 1ms | 4ms |
-| tap | 49,530 | 13ms | 14ms | 14ms | 13ms | 2.9s |
-| home | 16,510 | 13ms | 14ms | 14ms | 13ms | 2.8s |
-| press_key | 16,508 | 13ms | 14ms | 15ms | 13ms | 2.9s |
-| wait | 12,396 | 32ms | 33ms | 34ms | 32ms | 38ms |
-| screenshot | 4,113 | 112ms | 192ms | 207ms | 127ms | 278ms |
-| get_ui_elements | 4,110 | 109ms | 236ms | 260ms | 132ms | 10.3s |
-| observe | 4,111 | 145ms | 225ms | 241ms | 162ms | 12.6s |
-| swipe | 8,226 | 324ms | 328ms | 329ms | 326ms | 12.3s |
-
-**Failure Analysis** (9 failures / 0.006%):
-
-| Failure Type | Count | Cause | Recovery |
-|---|---|---|---|
-| TCP broken pipe | 5 | Burst phase 12-16 ops/s sustained bombardment, scrcpy server occasionally closes control connection | Daemon auto reconnect |
-| UI socket timeout | 3 | `observe`/`get_ui_elements` high-frequency concurrent calls | Next call succeeded |
-| Device response delay | 1 | Device busy during `launch_app` | Next call succeeded |
-
-> All 9 failures were transient faults. The daemon fully recovered after just 1 auto-reconnect, with zero failures for the remaining 8+ hours.
-
-### 9.2 agent-device / adb kill Stability
+### 9.2 Stability Comparison & Conclusion
 
 | Dimension | phonefast | agent-device | adb kill |
 |---|---|---|---|
-| **Long-duration Stress Test** | ✅ 12 hours / 144k operations | ❌ No public data | ❌ No public data |
+| **Long-duration Stress Test** | ✅ 12h / 144k ops | ❌ No public data | ❌ No public data |
 | **Persistent Connection** | scrcpy TCP long connection | New adb subprocess each time | New adb subprocess each time |
 | **Daemon Keepalive** | ✅ Three-level keepalive + auto-reconnect | Disk session file | No daemon |
-| **Memory Trend** | STABLE (12h no leak) | Node.js process grows with operations | PyInstaller releases each time |
-| **Long-term Degradation Risk** | ❌ None (12h verified) | ⚠️ Node.js memory pressure | ⚠️ Fixed cold start overhead |
-| **Disconnect Recovery** | Auto reconnect < 10s | Re-open session | Naturally rebuilt on next command |
-| **Stability Under Load** | 99.99% @ 16 ops/s | Unknown (uiautomator 30s timeout) | Unknown (7s cold start bottleneck) |
+| **Memory Trend** | STABLE (12h no leak) | Node.js process grows with ops | PyInstaller releases each time |
+| **Disconnect Recovery** | Auto reconnect < 10s | Re-open session | Rebuilt on next command |
+| **Stability Under Load** | 99.99% @ 16 ops/s | Unknown (uiautomator 30s timeout) | Unknown (7s cold start) |
 
-### 9.3 Why phonefast is More Stable
-
-**1. Long Connection vs Short Connection**
-
-```
-phonefast:  scrcpy-server resident on device, TCP connection sustained for 12+ hours
-agent-device/adb kill: new adb shell subprocess for each command, destroyed after use
-```
-
-Short connection mode works for low-frequency scenarios, but in high-frequency AI Agent loops:
-- Each `adb shell` fork has ~50ms fixed overhead
-- adb server itself has connection pool pressure
-- Race conditions can occur with rapid consecutive calls
-
-**2. Stateful vs Stateless**
-
-```
-phonefast:  daemon in-memory session → zero state reconstruction overhead between commands
-agent-device: disk session file → read + parse each time
-adb kill: stateless → full 7s cold start each time
-```
-
-**3. Three-Level Keepalive Mechanism**
-
-| Layer | phonefast | agent-device | adb kill |
-|---|---|---|---|
-| TCP Keepalive | control 15s / video 30s | No persistent connection | No persistent connection |
-| Health Check | 10s healthLoop | None | None |
-| Write Failure Detection | markControlBroken → reconnect | adb command failure = error | adb command failure = error |
-
-### 9.4 Reliability Conclusion
-
-```
-phonefast daemon:
-  ✅ 12-hour continuous stress test verified
-  ✅ 144,348 operations at 99.99% success rate
-  ✅ Zero memory leaks, zero performance degradation
-  ✅ Automatic fault recovery, no manual intervention needed
-
-agent-device:
-  ⚠️ No long-duration stress test data
-  ⚠️ uiautomator 30s timeout on low-end devices → UI operations unavailable
-  ⚠️ Node.js memory trend under long runtime unknown
-
-adb kill:
-  ⚠️ No long-duration stress test data
-  ⚠️ 7s cold start each time → inherently unsuitable for high-frequency scenarios
-  ⚠️ PyInstaller temp directory may accumulate
-```
+**Why phonefast is more stable**: a resident scrcpy server + TCP long connection (vs per-command `adb shell` fork with ~50ms overhead), an in-memory daemon session (vs disk session file / 7s cold start), and three-level keepalive — TCP keepalive (control 15s / video 30s), 10s healthLoop, and write-failure-driven reconnect.

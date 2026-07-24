@@ -194,7 +194,7 @@ func main() {
 func parseModeFlags(argv []string) (useDaemon bool, serial string, consumed int) {
 	useDaemon = true // default
 	i := 0
-	for i < len(argv) && strings.HasPrefix(argv[i], "--") {
+	for i < len(argv) && (strings.HasPrefix(argv[i], "--") || argv[i] == "-s") {
 		switch argv[i] {
 		case "--foreground", "--direct":
 			useDaemon = false
@@ -202,9 +202,9 @@ func parseModeFlags(argv []string) (useDaemon bool, serial string, consumed int)
 		case "--daemon":
 			useDaemon = true
 			i++
-		case "--serial":
+		case "--serial", "-s":
 			if i+1 >= len(argv) {
-				fmt.Fprintf(os.Stderr, "Error: --serial requires a value\n")
+				fmt.Fprintf(os.Stderr, "Error: %s requires a value\n", argv[i])
 				os.Exit(1)
 			}
 			serial = argv[i+1]
@@ -217,62 +217,68 @@ func parseModeFlags(argv []string) (useDaemon bool, serial string, consumed int)
 	return useDaemon, serial, i
 }
 
-// resolveSerial returns the device serial to use. Checks --serial flag first,
-// then auto-detects the first connected device.
+// resolveSerial returns the device serial to use, auto-detecting the first
+// connected device. Returns "" if none is connected — callers (and the daemon's
+// auto-detect path) treat "" as "no device" rather than a literal serial.
 func resolveSerial() string {
 	devices, err := adb.ListDevices()
 	if err != nil || len(devices) == 0 {
-		return "unknown"
+		return ""
 	}
 	return devices[0].Serial
 }
 
 // ── Daemon auto-start ──
 
+// ensureDaemon starts the unified daemon if it isn't already running and
+// healthy. CLI entry points use this — on failure it prints and exits(1),
+// which is correct for a one-shot command. Long-lived callers (the MCP
+// server) must use ensureDaemonE instead, so a failed restart doesn't tear
+// down the whole server process.
 func ensureDaemon() {
-	pidFile := daemon.PidFileName(daemonSerial)
-	socketPath := daemon.SocketName(daemonSerial)
+	if err := ensureDaemonE(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	// Check if daemon is running and actually healthy (responds to ping)
+// ensureDaemonE is the non-exiting core of ensureDaemon. It starts the unified
+// daemon if needed and waits for its socket to appear, returning an error on
+// failure. Used by the MCP server's daemon-recovery callback so a failed
+// restart surfaces to the individual tool call instead of killing the process.
+func ensureDaemonE() error {
+	// Unified daemon: one process, one socket, all devices.
+	pidFile := daemon.PidFileName()
+	socketPath := daemon.SocketName()
+
+	// Check if daemon is already running and healthy
 	if pid, _ := daemon.ReadPID(pidFile); pid > 0 && daemon.IsProcessAlive(pid) {
-		client := daemon.NewClient(daemonSerial)
-		status, err := client.Ping()
+		client := daemon.NewClient("")
+		_, err := client.Ping()
 		if err == nil {
-			if connected, ok := status["connected"].(bool); ok && connected {
-				if ctrl, ok := status["control_available"].(bool); ok && ctrl {
-					return // daemon is running and healthy
-				}
-				// Connected but control is dead — daemon will auto-reconnect on next request
-				fmt.Fprintf(os.Stderr, "Daemon running but control connection lost, will reconnect...\n")
-				return
-			}
+			return nil // daemon is running and responding
 		}
-		// Ping failed or daemon not connected — kill and restart
 		fmt.Fprintf(os.Stderr, "Daemon unresponsive, restarting...\n")
 		stopDaemonForce(pidFile, pid)
 	}
 
-	// Clean up stale files (both new serial-specific and legacy UID-only)
-	if pid, _ := daemon.ReadPID(pidFile); pid > 0 {
-		daemon.RemovePID(pidFile)
-		os.Remove(socketPath)
-	}
-	os.Remove(daemon.DefaultSocketName())
-	daemon.RemovePID(daemon.DefaultPidFileName())
+	// Clean up stale files
+	daemon.RemovePID(pidFile)
+	os.Remove(socketPath)
 
-	fmt.Fprintf(os.Stderr, "Starting daemon for device %s...\n", daemonSerial)
+	fmt.Fprintf(os.Stderr, "Starting daemon...\n")
 
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot find executable: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("cannot find executable: %w", err)
 	}
 
-	childArgs := []string{"daemon_worker", "--serial", daemonSerial}
+	// Daemon starts empty — no device connection needed at startup.
+	// Device actors are created lazily on first request.
+	childArgs := []string{"daemon_worker"}
 	devNull, err := daemonDevNull()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot open null device: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("cannot open null device: %w", err)
 	}
 
 	child := exec.Command(exe, childArgs...)
@@ -283,48 +289,23 @@ func ensureDaemon() {
 	child.Stderr = devNull
 
 	if err := child.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to start daemon: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 	devNull.Close()
 
-	// Wait for daemon socket to appear and the session to connect.
-	// Bounded: ~8s ceiling (was 12s) — long enough for adb forward + device
-	// handshake (~2-3s typical), short enough to fail fast on a bad device
-	// state instead of blocking every CLI invocation for 12s.
+	// Wait for daemon socket to appear (daemon starts without device, so
+	// the socket appears quickly).
 	const waitIter = 40
-	readyAt := -1
 	for i := 0; i < waitIter; i++ {
 		time.Sleep(200 * time.Millisecond)
 		if _, err := os.Stat(socketPath); err == nil {
-			client := daemon.NewClient(daemonSerial)
-			status, err := client.Ping()
-			if err == nil {
-				if connected, ok := status["connected"].(bool); ok && connected {
-					return
-				}
-				// Daemon is up and responding, but the device session isn't
-				// connected yet. Fail fast once it's been "up but not
-				// connected" for ~3s — a stuck session won't recover by
-				// waiting the full loop, and spinning the full 12s blocks
-				// every CLI call.
-				if readyAt < 0 {
-					readyAt = i
-				} else if i-readyAt >= 15 {
-					fmt.Fprintf(os.Stderr, "Daemon started but device session not connecting; aborting\n")
-					stopDaemonForce(pidFile, child.Process.Pid)
-					break
-				}
-			}
+			return nil
 		}
-		// Child died before opening the socket — no point waiting.
 		if !daemon.IsProcessAlive(child.Process.Pid) {
 			break
 		}
 	}
-
-	fmt.Fprintf(os.Stderr, "Error: daemon failed to start (check device connection)\n")
-	os.Exit(1)
+	return fmt.Errorf("daemon failed to start (check device connection)")
 }
 
 // stopDaemonForce forcefully kills a daemon process and cleans up.
@@ -333,11 +314,11 @@ func stopDaemonForce(pidFile string, pid int) {
 	timeSleep(500)
 	if !daemon.IsProcessAlive(pid) {
 		daemon.RemovePID(pidFile)
-		os.Remove(daemon.SocketName(daemonSerial))
+		os.Remove(daemon.SocketName())
 		return
 	}
 	daemon.RemovePID(pidFile)
-	os.Remove(daemon.SocketName(daemonSerial))
+	os.Remove(daemon.SocketName())
 }
 
 // ── Daemon subcommand ──
@@ -347,7 +328,6 @@ func daemonCmd(args []string) {
 	doStop := false
 	doStatus := false
 	socketPath := ""
-	serial := ""
 	ocrVision := true
 	// Precedence: --ocr-engine flag > PHONEFAST_OCR_ENGINE env > "onnx".
 	// Reading the env as the default lets `PHONEFAST_OCR_ENGINE=ncnn phonefast
@@ -373,8 +353,9 @@ func daemonCmd(args []string) {
 				i++
 			}
 		case "--serial":
+			// Accepted for backward compat but ignored: the unified daemon
+			// routes devices per-request, so there is no per-daemon serial.
 			if i+1 < len(args) {
-				serial = args[i+1]
 				i++
 			}
 		case "--ocr-vision":
@@ -390,37 +371,32 @@ func daemonCmd(args []string) {
 		}
 	}
 
-	// Resolve serial if not provided
-	if serial == "" {
-		serial = resolveSerial()
+	// Resolve socket/pid paths (serial-independent for the unified daemon).
+	pidFile := daemon.PidFileName()
+	if socketPath == "" {
+		socketPath = daemon.SocketName()
 	}
 
 	if doStop {
-		stopDaemon(serial)
+		stopDaemon()
 		return
 	}
 
 	if doStatus {
-		showDaemonStatus(serial)
+		showDaemonStatus()
 		return
 	}
 
-	pidFile := daemon.PidFileName(serial)
 	if pid, _ := daemon.ReadPID(pidFile); pid > 0 && daemon.IsProcessAlive(pid) {
 		fmt.Printf("daemon already running (pid %d)\n", pid)
 		os.Exit(1)
 	}
 
+	// Clean up any stale PID/socket from a prior run.
 	if pid, _ := daemon.ReadPID(pidFile); pid > 0 {
 		daemon.RemovePID(pidFile)
-		if socketPath == "" {
-			socketPath = daemon.SocketName(serial)
-		}
-		os.Remove(socketPath)
 	}
-	// Also clean up legacy UID-only files
-	os.Remove(daemon.DefaultSocketName())
-	daemon.RemovePID(daemon.DefaultPidFileName())
+	os.Remove(socketPath)
 
 	if foreground {
 		if err := os.Setenv("PHONEFAST_OCR_VISION", fmt.Sprintf("%v", ocrVision)); err != nil {
@@ -429,7 +405,7 @@ func daemonCmd(args []string) {
 		if err := os.Setenv("PHONEFAST_OCR_ENGINE", ocrEngine); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: cannot set PHONEFAST_OCR_ENGINE: %v\n", err)
 		}
-		runDaemon(socketPath, serial)
+		runDaemon(socketPath)
 		return
 	}
 
@@ -443,7 +419,6 @@ func daemonCmd(args []string) {
 	if socketPath != "" {
 		childArgs = append(childArgs, "--socket", socketPath)
 	}
-	childArgs = append(childArgs, "--serial", serial)
 
 	childEnv := os.Environ()
 	childEnv = append(childEnv, fmt.Sprintf("PHONEFAST_OCR_VISION=%v", ocrVision))
@@ -476,7 +451,6 @@ func daemonCmd(args []string) {
 // This is the child process spawned by "phonefast daemon" — not shown in usage.
 func daemonRunCmd(args []string) {
 	socketPath := ""
-	serial := ""
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -485,23 +459,14 @@ func daemonRunCmd(args []string) {
 				socketPath = args[i+1]
 				i++
 			}
-		case "--serial":
-			if i+1 < len(args) {
-				serial = args[i+1]
-				i++
-			}
 		}
 	}
 
-	if serial == "" {
-		serial = resolveSerial()
-	}
-	runDaemon(socketPath, serial)
+	runDaemon(socketPath)
 }
 
-func runDaemon(socketPath, serial string) {
+func runDaemon(socketPath string) {
 	cfg := daemon.Config{
-		Serial:     serial,
 		Foreground: true,
 		SocketPath: socketPath,
 	}
@@ -514,8 +479,8 @@ func runDaemon(socketPath, serial string) {
 	}
 }
 
-func stopDaemon(serial string) {
-	pidFile := daemon.PidFileName(serial)
+func stopDaemon() {
+	pidFile := daemon.PidFileName()
 	pid, err := daemon.ReadPID(pidFile)
 	if err != nil || pid == 0 {
 		fmt.Fprintln(os.Stderr, "daemon not running (no PID file)")
@@ -525,7 +490,7 @@ func stopDaemon(serial string) {
 	if !daemon.IsProcessAlive(pid) {
 		fmt.Fprintln(os.Stderr, "daemon not running (stale PID file)")
 		daemon.RemovePID(pidFile)
-		os.Remove(daemon.SocketName(serial))
+		os.Remove(daemon.SocketName())
 		return
 	}
 
@@ -543,16 +508,20 @@ func stopDaemon(serial string) {
 	daemonKill(pid)
 	timeSleep(500)
 	daemon.RemovePID(pidFile)
-	os.Remove(daemon.SocketName(serial))
+	os.Remove(daemon.SocketName())
 	fmt.Println("daemon killed")
 }
 
-func showDaemonStatus(serial string) {
-	pidFile := daemon.PidFileName(serial)
+func showDaemonStatus() {
+	pidFile := daemon.PidFileName()
 	pid, _ := daemon.ReadPID(pidFile)
 
 	if pid > 0 && daemon.IsProcessAlive(pid) {
-		client := daemon.NewClient(serial)
+		// Query daemon-level status (no device param): the unified daemon
+		// reports connected=true if any managed device is up, plus a
+		// connected_devices list. This also avoids forcing a 2.5s device
+		// connect merely to display status.
+		client := daemon.NewClient("")
 		status, err := client.Ping()
 		if err != nil {
 			fmt.Printf("daemon running (pid %d) but not responding: %v\n", pid, err)
@@ -560,10 +529,20 @@ func showDaemonStatus(serial string) {
 		}
 		fmt.Printf("daemon running (pid %d)\n", pid)
 		if connected, ok := status["connected"].(bool); ok && connected {
-			fmt.Printf("  device:    %v (%vx%v)\n",
-				status["serial"], status["device_width"], status["device_height"])
-			fmt.Printf("  control:   %v\n", status["control_available"])
-			fmt.Printf("  ui:        %v\n", status["ui_available"])
+			// Show the first connected device's serial + resolution, matching
+			// the old single-device display. connected_devices is a list of
+			// {serial,width,height}; decode defensively.
+			if devs, ok := status["connected_devices"].([]any); ok && len(devs) > 0 {
+				if first, ok := devs[0].(map[string]any); ok {
+					fmt.Printf("  device:    %v (%vx%v)\n",
+						first["serial"], first["width"], first["height"])
+				} else {
+					fmt.Println("  device:    connected")
+				}
+			} else {
+				fmt.Println("  device:    connected")
+			}
+			fmt.Printf("  devices:  %v\n", status["devices"])
 		} else {
 			fmt.Println("  device:    not connected")
 		}
@@ -588,7 +567,7 @@ func daemonCall(method string, params map[string]any) json.RawMessage {
 // withSession connects to the resolved device, calls fn, and disconnects.
 // Used for direct mode (no daemon).
 func withSession(fn func(sess *session.Session) error) {
-	if daemonSerial == "" || daemonSerial == "unknown" {
+	if daemonSerial == "" {
 		fmt.Fprintln(os.Stderr, "Error: no devices connected")
 		os.Exit(1)
 	}
@@ -970,14 +949,12 @@ func waitCmd(args []string) {
 	if len(args) >= 1 {
 		ms, _ = strconv.Atoi(args[0])
 	}
-
-	if useDaemon {
-		result := daemonCall("wait", map[string]any{"duration_ms": ms})
-		printMessage(result)
-	} else {
-		time.Sleep(time.Duration(ms) * time.Millisecond)
-		fmt.Printf("Waited %dms\n", ms)
-	}
+	// Local sleep — never route through the daemon. The daemon's handleWait
+	// runs time.Sleep on the device actor's single-threaded loop, which would
+	// block every other request to that device (and the health ticker) for the
+	// full duration. wait has no device-side effect, so sleep in-process.
+	time.Sleep(time.Duration(ms) * time.Millisecond)
+	fmt.Printf("Waited %dms\n", ms)
 }
 
 func statusCmd() {
@@ -985,7 +962,7 @@ func statusCmd() {
 		daemonSerial = resolveSerial()
 	}
 	if !useDaemon {
-		showDaemonStatus(daemonSerial)
+		showDaemonStatus()
 		return
 	}
 	client := daemon.NewClient(daemonSerial)
@@ -999,7 +976,7 @@ func statusCmd() {
 }
 
 func connectCmd(args []string) {
-	fmt.Fprintf(os.Stderr, "Use '%s daemon --stop' then '%s daemon [--serial SERIAL]' to reconnect\n", binName, binName)
+	fmt.Fprintf(os.Stderr, "Use '%s daemon --stop' then '%s daemon' to reconnect (select a device with '-s <serial>' on each command)\n", binName, binName)
 	os.Exit(1)
 }
 
@@ -1017,6 +994,9 @@ func serveCmd(args []string) {
 		Port:      defaultPort,
 		Path:      defaultPath,
 	}
+	// Inherit the global -s/--serial (set before the subcommand, e.g.
+	// `phonefast -s DEV serve`); a flag after `serve` overrides it.
+	serial := daemonSerial
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -1043,63 +1023,40 @@ func serveCmd(args []string) {
 				cfg.Path = args[i+1]
 				i++
 			}
-		}
-	}
-
-	devices, err := adb.ListDevices()
-	if err != nil || len(devices) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: no devices connected")
-		os.Exit(1)
-	}
-
-	if cfg.Transport == "stdio" {
-		server := mcp.New(nil, "", defaultScid)
-
-		// Lazy-connect in the background. Retry on failure instead of giving
-		// up: otherwise a transient connect error (device busy, scrcpy
-		// already running, ADB hiccup) leaves the MCP server permanently
-		// replying "device connecting, retry" with no path to recovery.
-		go func() {
-			serial := devices[0].Serial
-			backoff := 2 * time.Second
-			for {
-				log.Printf("[phonefast] connecting to device %s...", serial)
-				sess, err := session.Connect(serial, defaultScid)
-				if err != nil {
-					log.Printf("[phonefast] device connection failed: %v — retrying in %v", err, backoff)
-					time.Sleep(backoff)
-					if backoff < 30*time.Second {
-						backoff *= 2
-					}
-					continue
-				}
-				server.SetSession(sess, serial)
-				log.Printf("[phonefast] device ready: %s", serial)
-				return
+		case "--serial", "-s":
+			if i+1 < len(args) {
+				serial = args[i+1]
+				i++
 			}
-		}()
-
-		if err := server.Run(cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-			os.Exit(1)
 		}
-		return
 	}
 
-	serial := devices[0].Serial
-	fmt.Fprintf(os.Stderr, "[phonefast] connecting to device %s...\n", serial)
-
-	sess, err := session.Connect(serial, defaultScid)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to device: %v\n", err)
-		os.Exit(1)
+	// Resolve target device (or leave empty for daemon auto-detect).
+	if serial == "" {
+		serial = resolveSerial()
 	}
-	defer sess.Close()
 
-	fmt.Fprintf(os.Stderr, "[phonefast] MCP server starting on %s:%d%s/sse\n",
-		cfg.Host, cfg.Port, cfg.Path)
+	// Ensure the unified daemon is running — MCP no longer holds its own
+	// session; every tool call routes through the daemon via JSON-RPC.
+	ensureDaemon()
 
-	server := mcp.New(sess, serial, defaultScid)
+	fmt.Fprintf(os.Stderr, "[phonefast] MCP server (device=%s) starting on %s:%d%s/sse\n",
+		serial, cfg.Host, cfg.Port, cfg.Path)
+
+	server := mcp.New(serial)
+	// Wire daemon auto-recovery at the client layer: if the daemon crashes
+	// mid-session, daemon.Client.Call detects the unreachable socket, invokes
+	// this ensurer (deduplicated across concurrent callers), and retries — so
+	// a long-lived MCP server self-heals instead of permanently failing every
+	// tool call. The non-exiting variant ensures a failed restart surfaces to
+	// the tool call rather than killing the server process.
+	daemon.SetEnsurer(func() error {
+		if err := ensureDaemonE(); err != nil {
+			log.Printf("[phonefast] daemon restart failed: %v", err)
+			return err
+		}
+		return nil
+	})
 	if err := server.Run(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
@@ -1153,20 +1110,38 @@ func runCmd(args []string) {
 	normalizeAction(args[0], &action)
 
 	if useDaemon {
-		result := daemonCall(action.Action, action.Args)
-		var resp struct {
-			Message string `json:"message"`
-		}
-		if err := json.Unmarshal(result, &resp); err == nil && resp.Message != "" {
-			fmt.Println(resp.Message)
-		} else {
-			fmt.Println(string(result))
-		}
+		runDaemonAction(action)
 	} else {
 		// Direct mode — dispatch via session
 		withSession(func(sess *session.Session) error {
 			return dispatchDirect(sess, action)
 		})
+	}
+}
+
+// runDaemonAction executes one action via the daemon RPC, with a special case
+// for "wait": it sleeps locally instead of routing through the daemon. The
+// daemon's handleWait runs time.Sleep on the device actor's single-threaded
+// loop, which would block every other request to that device (and the health
+// ticker) for the full duration. wait has no device-side effect, so sleep here.
+func runDaemonAction(action jsonAction) {
+	if action.Action == "wait" {
+		ms, _ := getInt(action.Args, "duration_ms")
+		if ms == 0 {
+			ms = 1000
+		}
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+		fmt.Printf("Waited %dms\n", ms)
+		return
+	}
+	result := daemonCall(action.Action, action.Args)
+	var resp struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(result, &resp); err == nil && resp.Message != "" {
+		fmt.Println(resp.Message)
+	} else {
+		fmt.Println(string(result))
 	}
 }
 
@@ -1183,15 +1158,7 @@ func runBatch(raw string) {
 			var a jsonAction
 			json.Unmarshal(item, &a)
 			normalizeAction(string(item), &a)
-			result := daemonCall(a.Action, a.Args)
-			var resp struct {
-				Message string `json:"message"`
-			}
-			if err := json.Unmarshal(result, &resp); err == nil && resp.Message != "" {
-				fmt.Println(resp.Message)
-			} else {
-				fmt.Println(string(result))
-			}
+			runDaemonAction(a)
 		}
 	} else {
 		withSession(func(sess *session.Session) error {
@@ -1499,6 +1466,9 @@ func timeSleep(ms int) {
 
 func printUsage() {
 	fmt.Print(strings.ReplaceAll(`phonefast — Fast Android device control
+
+Options:
+  -s, --serial <serial>          Target a specific device (default: auto-detect)
 
 Commands (default: daemon mode, auto-starts daemon, <10ms):
   phonefast tap <x> <y>                     Tap at coordinates

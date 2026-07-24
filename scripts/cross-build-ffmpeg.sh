@@ -55,7 +55,7 @@ declare_target() {
     esac
 }
 
-FFMPEG_VERSION="7.1.5"
+FFMPEG_VERSION="8.0"
 FFMPEG_URL="https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz"
 
 main() {

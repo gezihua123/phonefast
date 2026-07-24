@@ -44,7 +44,7 @@ phonefast's daemon mode delivers consistently low latency across all operations.
 - 12-hour stress test: **145,843 ops, 100% success, 0 reconnects**
 - 200 consecutive screenshots: **P50 = 12ms, P95 = 13ms** (hot decoder)
 
-> Detailed benchmark history, version comparison, and methodology at [docs/benchmark.md](docs/benchmark.md).
+> Detailed benchmark history, version comparison, and methodology at [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ---
 
@@ -52,40 +52,7 @@ phonefast's daemon mode delivers consistently low latency across all operations.
 
 ### Installation
 
-**Prerequisites:** Go 1.21+, `adb`, `ffmpeg`, `git`, `onnxruntime` (see below)
-
-### ONNX Runtime Setup
-
-The **plain** build loads `libonnxruntime` from the system at runtime. The **-full**
-build embeds it (macOS arm64 only) so no system library is needed.
-
-If you use the **plain** build or want to run OCR, install ONNX Runtime:
-
-```bash
-# ── macOS ──
-brew install onnxruntime
-
-# ── Linux (Ubuntu/Debian) ──
-# Option 1: system package (Ubuntu 24.04+)
-sudo apt install libonnxruntime-dev
-
-# Option 2: manual download from GitHub releases
-# amd64:
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-x64-1.27.1.tgz
-tar -xzf onnxruntime-linux-x64-1.27.1.tgz
-sudo cp onnxruntime-linux-x64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
-sudo ldconfig
-
-# arm64:
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-aarch64-1.27.1.tgz
-tar -xzf onnxruntime-linux-aarch64-1.27.1.tgz
-sudo cp onnxruntime-linux-aarch64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
-sudo ldconfig
-```
-
-> **Note:** The version must match the ORT version phonefast was built against
-> (currently **1.27.1**). If you prefer zero-dependency, use the `-full` build or
-> download the `-full` release binary for macOS arm64.
+**Prerequisites:** Go 1.21+, `adb`, `ffmpeg`, `git`
 
 ```bash
 # Build from source — two variants:
@@ -101,13 +68,12 @@ bash scripts/build.sh --all                 # Cross-platform build + packaging
 
 | Variant | Size | OCR Runtime | Runtime Dependency | Best For |
 |---------|:----:|:-----------:|:------------------:|----------|
-| **plain** (default) | 24MB | System libonnxruntime | onnxruntime installed | Environments with onnxruntime |
+| **plain** (default) | 24MB | System libonnxruntime | `brew install onnxruntime` | Environments with onnxruntime installed |
 | **-full** (`--full`) | 42MB | Embedded ORT 1.27.1 | None (self-contained) | Environments without onnxruntime |
 
 Both variants embed PP-OCR v3 models (det + rec). The `-full` variant embeds the
-ONNX Runtime shared library for single-file zero-dependency deployment (supported
-platforms: macOS arm64, Linux amd64). NCNN engine is opt-in (`-tags ncnn`, 28%
-faster, see [docs/DEV.md](docs/DEV.md)).
+ONNX Runtime shared library (macOS arm64 only) for single-file zero-dependency
+deployment. NCNN engine is opt-in (`-tags ncnn`, 28% faster, see [docs/DEV.md](docs/DEV.md)).
 
 > Build details (cross-compilation, FFmpeg static linking, Python build tool) → [docs/DEV.md](docs/DEV.md)
 
@@ -136,7 +102,7 @@ phonefast serve
 ### Format
 
 ```bash
-phonefast [--foreground|--daemon] <command> [args...]
+phonefast [--foreground|--daemon] [--serial <SERIAL> | -s <SERIAL>] <command> [args...]
 ```
 
 - Default uses daemon mode (auto-starts daemon), latency <10ms.
@@ -362,7 +328,7 @@ phonefast --ocr-vision false ocr # Disable Vision ANE, use ONNX detection only
 #### `wait` — Wait
 
 ```bash
-phonefast [--foreground|--daemon] wait <ms>
+phonefast wait <ms>
 ```
 
 | Parameter | Description | Default |
@@ -416,7 +382,7 @@ Supported actions: `tap`, `tap_element`, `swipe`, `back`, `home`, `type_text`, `
 
 ## Daemon Management
 
-The daemon is a background persistent process that holds long-lived device connections and receives JSON-RPC requests via Unix Socket.
+The daemon is a single background process serving all connected devices, receiving JSON-RPC requests via a Unix socket. It starts empty and creates a per-device session (DeviceActor) lazily on first use of each device.
 
 ```bash
 # Start daemon (background)
@@ -425,18 +391,14 @@ phonefast daemon
 # Foreground mode (view real-time logs)
 phonefast daemon --foreground
 
-# Specify device serial
-phonefast daemon --serial 13709314CF044927
-
-# Custom socket/PID file paths
-phonefast daemon --socket /tmp/my-phone.sock
-
 # Check daemon status
 phonefast daemon --status
 
 # Stop daemon
 phonefast daemon --stop
 ```
+
+> Device selection is per-command via the top-level `-s`/`--serial` flag (e.g. `phonefast -s <serial> tap 540 960`). The `daemon` subcommand no longer takes `--serial` or `--socket`.
 
 **Auto-management:**
 - When executing commands with `--daemon` flag, the daemon auto-starts in the background if not already running
@@ -450,16 +412,18 @@ phonefast daemon --stop
 
 ## MCP Server
 
-phonefast can serve as an MCP (Model Context Protocol) server, allowing AI assistants like Claude Desktop to control the phone directly.
+phonefast can serve as an MCP (Model Context Protocol) server, allowing AI assistants like Claude Desktop to control the phone directly. Every tool call routes through the unified daemon (the MCP server does not hold its own device session).
 
 ```bash
-# SSE mode (default port 8019)
+# SSE mode (default port 8019), auto-detect device
 phonefast serve
 
-# Custom port
-phonefast serve --port 8080
+# Target a specific device (per-request routing, same as CLI -s)
+phonefast serve -s 13709314CF044927
+phonefast -s 13709314CF044927 serve          # global -s also works
 
-# Custom path
+# Custom port / path
+phonefast serve --port 8080
 phonefast serve --path /mcp
 
 # STDIO mode (Claude Desktop integration)
@@ -529,8 +493,8 @@ phonefast serve --transport stdio
 |----------|---------|
 | [docs/CLI.md](docs/CLI.md) | Full CLI manual: install, commands, daemon, MCP, architecture, logging, recovery |
 | [docs/DEV.md](docs/DEV.md) | Development notes: architecture decisions, build & release, cross-compilation |
-| [docs/benchmark.md](docs/benchmark.md) | Full benchmark history: version comparison, methodology, memory analysis |
-| [docs/phonefast.md](docs/phonefast.md) | Product comparison: phonefast vs agent-device vs adb |
+| [docs/BENCHMARK.md](docs/BENCHMARK.md) | Full benchmark history: version comparison, methodology, memory analysis |
+| [docs/PHONEFAST.md](docs/PHONEFAST.md) | Product comparison: phonefast vs agent-device vs adb |
 | [CHANGELOG.md](CHANGELOG.md) | Version release history |
 
 ---

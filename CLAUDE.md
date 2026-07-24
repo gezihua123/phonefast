@@ -28,8 +28,8 @@
 |---|---|---|
 | [docs/CLI.md](docs/CLI.md) | 🇬🇧 | **命令行工具完整使用手册**（英文），含中文版 [docs/CLI_zh.md](docs/CLI_zh.md) |
 | [docs/DEV.md](docs/DEV.md) | 🇨🇳 | **开发笔记** — LocalSocket 4字节读取限制（Android 14）的排查与修复过程、H.264 截图解码架构设计（astiav CGO + ffmpeg CLI 双路径）、交叉编译踩坑记录（仅中文，内部开发用） |
-| [docs/benchmark.md](docs/benchmark.md) | 🇬🇧 | **Benchmark 历史记录**（英文），含中文版 [docs/benchmark_zh.md](docs/benchmark_zh.md) |
-| [docs/phonefast.md](docs/phonefast.md) | 🇬🇧 | **产品横向对比**（英文），含中文版 [docs/phonefast_zh.md](docs/phonefast_zh.md) |
+| [docs/BENCHMARK.md](docs/BENCHMARK.md) | 🇬🇧 | **Benchmark 历史记录**（英文），含中文版 [docs/BENCHMARK_zh.md](docs/BENCHMARK_zh.md) |
+| [docs/PHONEFAST.md](docs/PHONEFAST.md) | 🇬🇧 | **产品横向对比**（英文），含中文版 [docs/PHONEFAST_zh.md](docs/PHONEFAST_zh.md) |
 
 ---
 
@@ -51,13 +51,13 @@
 - **核心职责**：benchmark 数据采集与分析、长稳压测（12h+）、版本回归验证、性能退化检测、内存分析
 - **输入**：待测二进制、压测脚本（`tests/stress_test_rpc.py`）
 - **输出**：benchmark 报告、性能对比表、版本退化告警
-- **关键原则**：每个发布版本须完成 1h 标准压测 + 与上一版本关键指标对比；退化 >10% 须阻断发布；数据记录到 docs/benchmark.md
+- **关键原则**：每个发布版本须完成 1h 标准压测 + 与上一版本关键指标对比；退化 >10% 须阻断发布；数据记录到 docs/BENCHMARK.md
 
 ### [DOC] 文档工程师
 - **核心职责**：README 维护、CLI 使用手册编写、架构设计文档化、CHANGELOG 记录、中英文双语文档同步
 - **输入**：架构变更、新增功能、修复记录
 - **输出**：README.md、README_zh.md、docs/CLI.md、CHANGELOG.md 更新
-- **关键原则**：**英文文档为主（默认无后缀），中文文档为辅（`_zh.md` 后缀）**；命令格式变更须同步更新 CLI.md；性能变更须更新 benchmark.md 时间线；英文文档为推广主力，DEV.md 可仅中文
+- **关键原则**：**英文文档为主（默认无后缀），中文文档为辅（`_zh.md` 后缀）**；命令格式变更须同步更新 CLI.md；性能变更须更新 BENCHMARK.md 时间线；英文文档为推广主力，DEV.md 可仅中文
 
 ### [PM] 产品经理
 - **核心职责**：产品方向定义、feature 优先级决策、MCP 生态集成策略、社区反馈收集、版本规划
@@ -103,6 +103,14 @@ bash scripts/build.sh
 产物落于 `dist/dev/`，编译错误或链接失败须阻断合并。
 
 > **说明**：Step 1 快速验证 5 平台纯 Go 语法/类型/导入无差异（跳过 CGO）。Step 2 验证当前平台完整 CGO 编译（含 astiav + FFmpeg 链接）。CI 中的完整 CGO 交叉编译（各平台原生 FFmpeg 链接）由 `bash scripts/build.sh --all` 执行。
+
+**Step 3 — 测试**（跑全仓库单测，含 CGO 包）：
+
+```bash
+bash scripts/test.sh
+```
+
+> **为何用 wrapper 而非裸 `go test`**：裸 `go test ./...` 默认用系统 FFmpeg（macOS homebrew 8.0），该版本移除了 `AVFMT_FLAG_SHORTEST` 宏，而 go-astiav v0.35.0 仍引用它，导致 `pkg/avcodec` → `internal/session` → `internal/daemon` → `internal/mcp` → `cmd/phonefast` 链式构建失败。`test.sh` 自动设 `PKG_CONFIG_PATH` 指向 `build/cross-ffmpeg/` 自编译 FFmpeg 7.x（与 `build.sh` 同源），让测试环境与生产构建一致。自编译 FFmpeg 不存在时自动降级 `CGO_ENABLED=0`（跳过 avcodec CGO 测试）。支持参数转发：`bash scripts/test.sh ./pkg/h264/ -race`。
 
 ### 发布流
 

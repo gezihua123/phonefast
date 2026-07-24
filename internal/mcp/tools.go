@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,9 +9,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"github.com/gezihua123/phonefast/internal/adb"
-	"github.com/gezihua123/phonefast/internal/format"
-	"github.com/gezihua123/phonefast/internal/session"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -192,93 +188,61 @@ func (s *Server) registerTools() {
 }
 
 // ── Tool handlers ──
+//
+// Every handler routes through the unified daemon via rpcCall instead of
+// touching a session directly. The daemon injects `device=serial` into each
+// request (daemon.Client.Call), so device isolation is handled centrally.
+// Result field names match the daemon RPC handlers in internal/daemon/rpc.go.
 
 func (s *Server) handleListDevices(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	devices, err := adb.ListDevices()
-	if err != nil {
+	// list_devices is a connectionless RPC — no device binding, returns all
+	// ADB-visible devices. The daemon reports every device, not just the
+	// bound one (see handleListDevices in rpc.go).
+	var list []map[string]any
+	if err := s.rpcCall("list_devices", nil, &list); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-
-	type deviceInfo struct {
-		Serial string `json:"serial"`
-		Model  string `json:"model,omitempty"`
-		Status string `json:"status"`
-	}
-
-	var list []deviceInfo
-	for _, d := range devices {
-		list = append(list, deviceInfo{
-			Serial: d.Serial,
-			Model:  d.Model,
-			Status: d.Status,
-		})
-	}
-
 	data, _ := json.Marshal(list)
 	return mcp.NewToolResultText(string(data)), nil
 }
 
 func (s *Server) handleScreenshot(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sess, err := s.needSession()
-	if err != nil {
+	var resp struct {
+		Text      string `json:"text"`
+		ImageData string `json:"image_data"`
+		MimeType  string `json:"mime_type"`
+	}
+	if err := s.rpcCall("screenshot", nil, &resp); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-
-	pngData, w, h, err := sess.Screenshot()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	caption := resp.Text
+	if caption == "" {
+		caption = "Screenshot"
 	}
-
-	// Return native MCP ImageContent so multimodal LLMs decode the PNG
-	// directly. A short text caption carries the dimensions.
-	b64 := base64.StdEncoding.EncodeToString(pngData)
-	return mcp.NewToolResultImage(
-		fmt.Sprintf("Screenshot (%dx%d)", w, h),
-		b64,
-		"image/png",
-	), nil
+	mime := resp.MimeType
+	if mime == "" {
+		mime = "image/png"
+	}
+	return mcp.NewToolResultImage(caption, resp.ImageData, mime), nil
 }
 
 func (s *Server) handleGetUIElements(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sess, err := s.needSession()
-	if err != nil {
+	params := map[string]any{
+		"max_elements": getMaxElements(req, 100),
+		"summary":      getSummary(req),
+		"format":       getFormat(req),
+	}
+	var resp struct {
+		Formatted string `json:"formatted"`
+		Count     int    `json:"count"`
+	}
+	if err := s.rpcCall("get_ui_elements", params, &resp); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-
-	formatType := getFormat(req)
-	maxShow := getMaxElements(req, 100)
-	collectMax := maxShow
-	if collectMax < 0 || collectMax > 500 {
-		collectMax = 0 // server default (500 for full, 100 for summary)
+	if resp.Formatted == "" {
+		return mcp.NewToolResultText(fmt.Sprintf("No interactive elements found (%d total).", resp.Count)), nil
 	}
-	isSummary := getSummary(req)
-
-	// Handle hierarchical formats
-	if f := format.ByName(formatType); f != nil {
-		fullElements, err := sess.GetUIFull(collectMax)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		if maxShow > 0 && len(fullElements) > maxShow {
-			fullElements = fullElements[:maxShow]
-		}
-		return mcp.NewToolResultText(f.Format(fullElements)), nil
-	}
-
-	// Legacy flat format (no format specified or unknown format)
-	var elements []protocol.UIElement
-	if isSummary {
-		elements, err = sess.GetUISummary(collectMax)
-	} else {
-		elements, err = sess.GetUIElements(collectMax)
-	}
-	if err != nil {
-		elements, err = sess.GetUIElementsFallbackADB(collectMax)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-	}
-	return mcp.NewToolResultText(format.ElementsForLLM(elements, maxShow, isSummary)), nil
+	return mcp.NewToolResultText(resp.Formatted), nil
 }
 
 func (s *Server) handleTap(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -288,71 +252,22 @@ func (s *Server) handleTap(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	if !xOk || !yOk {
 		return mcp.NewToolResultError("missing required parameters: x and y"), nil
 	}
-
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	if err := sess.Tap(int(xVal), int(yVal)); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Tapped at (%d, %d)", int(xVal), int(yVal))), nil
+	return s.simpleMessageAction("tap",
+		map[string]any{"x": int(xVal), "y": int(yVal)},
+		fmt.Sprintf("Tapped at (%d, %d)", int(xVal), int(yVal)))
 }
 
 func (s *Server) handleTapElement(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	elements, fastErr := sess.GetUIElements(0) // collect all elements (server default 500)
-	if fastErr != nil {
-		var fallbackErr error
-		elements, fallbackErr = sess.GetUIElementsFallbackADB(0)
-		if fallbackErr != nil {
-			return mcp.NewToolResultError(fmt.Sprintf(
-				"ui dump failed: %v; adb fallback: %v", fastErr, fallbackErr)), nil
-		}
-	}
-
-	if len(elements) == 0 {
-		return mcp.NewToolResultError("no UI elements found"), nil
-	}
-
 	args := req.GetArguments()
-
-	// Search by index
+	params := map[string]any{}
 	if idx, ok := args["index"].(float64); ok {
-		idxInt := int(idx)
-		for _, el := range elements {
-			if el.Index == idxInt {
-				sx, sy := sess.ScaleToDevice(el.Center[0], el.Center[1])
-				if err := sess.Tap(sx, sy); err != nil {
-					return mcp.NewToolResultError(err.Error()), nil
-				}
-				return mcp.NewToolResultText(fmt.Sprintf("Tapped element [%d] at %v", idxInt, el.Center)), nil
-			}
-		}
-		return mcp.NewToolResultError(fmt.Sprintf("element with index %d not found", idxInt)), nil
+		params["index"] = int(idx)
+	} else if text, ok := args["text"].(string); ok && text != "" {
+		params["text"] = text
+	} else {
+		return mcp.NewToolResultError("specify index or text"), nil
 	}
-
-	// Search by text
-	if text, ok := args["text"].(string); ok && text != "" {
-		textLower := strings.ToLower(text)
-		for _, el := range elements {
-			if strings.Contains(strings.ToLower(el.Text), textLower) || strings.Contains(strings.ToLower(el.ContentDesc), textLower) {
-				sx, sy := sess.ScaleToDevice(el.Center[0], el.Center[1])
-				if err := sess.Tap(sx, sy); err != nil {
-					return mcp.NewToolResultError(err.Error()), nil
-				}
-				return mcp.NewToolResultText(fmt.Sprintf("Tapped '%s' at %v", text, el.Center)), nil
-			}
-		}
-		return mcp.NewToolResultError(fmt.Sprintf("element with text '%s' not found", text)), nil
-	}
-
-	return mcp.NewToolResultError("specify index=N or text='...'"), nil
+	return s.simpleMessageAction("tap_element", params, "Tapped element")
 }
 
 func (s *Server) handleSwipe(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -364,23 +279,15 @@ func (s *Server) handleSwipe(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	if !sxOk || !syOk || !exOk || !eyOk {
 		return mcp.NewToolResultError("missing required parameters: start_x, start_y, end_x, end_y"), nil
 	}
-	startX, startY := int(sx), int(sy)
-	endX, endY := int(ex), int(ey)
-	duration := 500
+	params := map[string]any{
+		"start_x": int(sx), "start_y": int(sy),
+		"end_x": int(ex), "end_y": int(ey),
+	}
 	if d, ok := args["duration_ms"].(float64); ok {
-		duration = int(d)
+		params["duration_ms"] = int(d)
 	}
-
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	if err := sess.Swipe(startX, startY, endX, endY, duration); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(
-		fmt.Sprintf("Swiped from (%d, %d) to (%d, %d)", startX, startY, endX, endY)), nil
+	return s.simpleMessageAction("swipe", params,
+		fmt.Sprintf("Swiped from (%d, %d) to (%d, %d)", int(sx), int(sy), int(ex), int(ey)))
 }
 
 func (s *Server) handleTypeText(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -388,81 +295,50 @@ func (s *Server) handleTypeText(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	if err := sess.TypeText(text); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Typed: %s", text)), nil
+	return s.simpleMessageAction("type_text", map[string]any{"text": text}, fmt.Sprintf("Typed: %s", text))
 }
 
 func (s *Server) handleBack(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	if err := sess.Back(); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText("Back pressed"), nil
+	return s.simpleAction("back", "Back pressed")
 }
 
 func (s *Server) handleHome(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	if err := sess.Home(); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText("Home pressed"), nil
+	return s.simpleAction("home", "Home pressed")
 }
 
 func (s *Server) handlePressKey(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := req.GetArguments()
-
-	var keycode int
+	params := map[string]any{}
 	var label string
-
 	switch {
 	case args["keycode"] != nil:
 		kc, ok := args["keycode"].(float64)
 		if !ok {
 			return mcp.NewToolResultError("keycode must be a number"), nil
 		}
-		keycode = int(kc)
-		label = fmt.Sprintf("%d", keycode)
+		params["keycode"] = int(kc)
+		label = fmt.Sprintf("%d", int(kc))
 	case args["key"] != nil:
 		keyName, ok := args["key"].(string)
 		if !ok {
 			return mcp.NewToolResultError("key must be a string"), nil
 		}
-		keycode = protocol.KeycodeFromName(strings.ToLower(strings.TrimSpace(keyName)))
-		if keycode == 0 {
+		// Resolve the keycode locally so an unknown key name is rejected
+		// before round-tripping to the daemon.
+		kc := protocol.KeycodeFromName(strings.ToLower(strings.TrimSpace(keyName)))
+		if kc == 0 {
 			return mcp.NewToolResultError(fmt.Sprintf("unknown key name: %q", keyName)), nil
 		}
+		params["keycode"] = int(kc)
 		label = keyName
 	default:
 		return mcp.NewToolResultError("keycode or key is required"), nil
 	}
-
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	if err := sess.PressKey(keycode); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	return mcp.NewToolResultText(fmt.Sprintf("Key %s pressed", label)), nil
+	return s.simpleMessageAction("press_key", params, fmt.Sprintf("Key %s pressed", label))
 }
 
 func (s *Server) handleLaunchApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := req.GetArguments()
-
 	appName, _ := args["app"].(string)
 	if appName == "" {
 		appName, _ = args["package"].(string)
@@ -470,16 +346,7 @@ func (s *Server) handleLaunchApp(ctx context.Context, req mcp.CallToolRequest) (
 	if appName == "" {
 		return mcp.NewToolResultError("app or package is required"), nil
 	}
-
-	sess, err := s.needSession()
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	if err := sess.LaunchApp(appName); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Launched: %s", appName)), nil
+	return s.simpleMessageAction("launch_app", map[string]any{"package": appName}, fmt.Sprintf("Launched: %s", appName))
 }
 
 func (s *Server) handleWait(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -488,141 +355,74 @@ func (s *Server) handleWait(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	if d, ok := args["duration_ms"].(float64); ok {
 		duration = int(d)
 	}
+	// Local sleep — no device round-trip. Routing through the daemon would run
+	// time.Sleep on the device actor's single-threaded event loop, blocking
+	// every other request to that device (and the 10s health ticker) for the
+	// full duration. wait has no device-side effect, so sleep here instead.
 	time.Sleep(time.Duration(duration) * time.Millisecond)
 	return mcp.NewToolResultText(fmt.Sprintf("Waited %dms", duration)), nil
 }
 
 func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	sess, err := s.needSession()
-	if err != nil {
+	params := map[string]any{
+		"max_elements": getMaxElements(req, 100),
+		"summary":      getSummary(req),
+	}
+	var resp struct {
+		Text      string `json:"text"`
+		ImageData string `json:"image_data"`
+		MimeType  string `json:"mime_type"`
+		Count     int    `json:"count"`
+		Width     int    `json:"width"`
+		Height    int    `json:"height"`
+	}
+	if err := s.rpcCall("observe", params, &resp); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-
-	maxShow := getMaxElements(req, 100)
-	collectMax := maxShow
-	if collectMax < 0 || collectMax > 500 {
-		collectMax = 0 // server default (500 for full, 100 for summary)
+	// Caption is a short summary; resp.Text holds the full element list and is
+	// emitted as a separate TextContent below — do NOT reuse it as the caption
+	// (that would send the element list twice).
+	caption := fmt.Sprintf("Observe: %d interactive elements", resp.Count)
+	mime := resp.MimeType
+	if mime == "" {
+		mime = "image/png"
 	}
-	isSummary := getSummary(req)
-	pngData, elements, err := sess.Observe(collectMax, isSummary)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	// Multi-content: image + formatted element list in one atomic result.
+	result := mcp.NewToolResultImage(caption, resp.ImageData, mime)
+	if resp.Text != "" {
+		result.Content = append(result.Content, mcp.TextContent{
+			Type: mcp.ContentTypeText,
+			Text: resp.Text,
+		})
 	}
-
-	// Return a multi-content result: native ImageContent (the screenshot)
-	// plus a TextContent with the formatted UI element list. This lets
-	// multimodal LLMs see the screen AND the interactive elements in one
-	// atomic call.
-	b64 := base64.StdEncoding.EncodeToString(pngData)
-	result := mcp.NewToolResultImage(
-		fmt.Sprintf("Observe: %d interactive elements", len(elements)),
-		b64,
-		"image/png",
-	)
-	result.Content = append(result.Content, mcp.TextContent{
-		Type: mcp.ContentTypeText,
-		Text: format.ElementsForLLM(elements, maxShow, isSummary),
-	})
 	return result, nil
 }
 
-// Session returns the underlying session (used by runCmd in main.go).
-func (s *Server) Session() *session.Session { return s.getSession() }
-
-// ── Backward-compatible tool methods (used by runCmd CLI mode) ──
-
-func (s *Server) ListDevices() (*ToolResult, error) {
-	r, _ := s.handleListDevices(context.Background(), mcp.CallToolRequest{})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) Screenshot() (*ToolResult, error) {
-	r, _ := s.handleScreenshot(context.Background(), mcp.CallToolRequest{})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) GetUIElements() (*ToolResult, error) {
-	r, _ := s.handleGetUIElements(context.Background(), mcp.CallToolRequest{})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) Tap(args map[string]interface{}) (*ToolResult, error) {
-	r, _ := s.handleTap(context.Background(), mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Arguments: args},
-	})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) TapElement(args map[string]interface{}) (*ToolResult, error) {
-	r, _ := s.handleTapElement(context.Background(), mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Arguments: args},
-	})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) Swipe(args map[string]interface{}) (*ToolResult, error) {
-	r, _ := s.handleSwipe(context.Background(), mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Arguments: args},
-	})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) TypeText(args map[string]interface{}) (*ToolResult, error) {
-	r, _ := s.handleTypeText(context.Background(), mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Arguments: args},
-	})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) Back() (*ToolResult, error) {
-	r, _ := s.handleBack(context.Background(), mcp.CallToolRequest{})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) Home() (*ToolResult, error) {
-	r, _ := s.handleHome(context.Background(), mcp.CallToolRequest{})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) PressKey(args map[string]interface{}) (*ToolResult, error) {
-	r, _ := s.handlePressKey(context.Background(), mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Arguments: args},
-	})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) LaunchApp(args map[string]interface{}) (*ToolResult, error) {
-	r, _ := s.handleLaunchApp(context.Background(), mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Arguments: args},
-	})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) Wait(args map[string]interface{}) (*ToolResult, error) {
-	r, _ := s.handleWait(context.Background(), mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Arguments: args},
-	})
-	return mcpResultToToolResult(r), nil
-}
-func (s *Server) Observe() (*ToolResult, error) {
-	r, _ := s.handleObserve(context.Background(), mcp.CallToolRequest{})
-	return mcpResultToToolResult(r), nil
+// simpleAction dispatches a parameter-less action (back/home) and returns the
+// daemon's message (or a fallback label).
+func (s *Server) simpleAction(method, fallback string) (*mcp.CallToolResult, error) {
+	return s.simpleMessageAction(method, nil, fallback)
 }
 
-func mcpResultToToolResult(r *mcp.CallToolResult) *ToolResult {
-	if r == nil {
-		return errorResult(fmt.Errorf("tool returned nil"))
+// simpleMessageAction dispatches an RPC that returns a {"message":...} result,
+// returning that message or a fallback label. Most device actions (tap, swipe,
+// back, type_text, press_key, launch_app, …) share this shape.
+func (s *Server) simpleMessageAction(method string, params map[string]any, fallback string) (*mcp.CallToolResult, error) {
+	var resp struct {
+		Message string `json:"message"`
 	}
-	var content []ToolContent
-	for _, c := range r.Content {
-		tc := ToolContent{}
-		// Type-assert to concrete content types
-		switch ct := c.(type) {
-		case mcp.TextContent:
-			tc.Type = ct.Type
-			tc.Text = ct.Text
-		case mcp.ImageContent:
-			tc.Type = ct.Type
-			tc.Data = ct.Data
-			tc.MimeType = ct.MIMEType
-		default:
-			// Fallback: use the content as-is via JSON roundtrip
-			data, _ := json.Marshal(ct)
-			tc.Type = "text"
-			tc.Text = string(data)
-		}
-		content = append(content, tc)
+	if err := s.rpcCall(method, params, &resp); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return &ToolResult{Content: content}
+	return mcp.NewToolResultText(orDefault(resp.Message, fallback)), nil
+}
+
+// orDefault returns s if non-empty, else fallback.
+func orDefault(s, fallback string) string {
+	if s != "" {
+		return s
+	}
+	return fallback
 }
 
 // getFormat extracts the format argument from an MCP CallToolRequest.

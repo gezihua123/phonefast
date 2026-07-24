@@ -138,7 +138,7 @@ phonefast serve
 ### 格式
 
 ```bash
-phonefast [--foreground|--daemon] [--serial <SERIAL>] <command> [args...]
+phonefast [--foreground|--daemon] [--serial <SERIAL> | -s <SERIAL>] <command> [args...]
 ```
 
 ### 标志说明
@@ -147,7 +147,7 @@ phonefast [--foreground|--daemon] [--serial <SERIAL>] <command> [args...]
 |------|------|------|------|
 | `--daemon` | — | Daemon 模式，后台常驻进程（默认行为） | ✓ |
 | `--foreground` | `--direct` | 直接模式，每次新建 scrcpy 连接 | — |
-| `--serial` | — | 指定设备序列号（多设备时必用） | 自动检测 |
+| `--serial` | `-s` | 指定目标设备序列号（多设备时必用） | 自动检测 |
 
 ### 两种模式对比
 
@@ -161,12 +161,15 @@ phonefast [--foreground|--daemon] [--serial <SERIAL>] <command> [args...]
 
 ### 多设备管理
 
-多台 Android 设备连接时，使用 `--serial` 指定目标设备：
+单一 daemon 进程服务所有已连接设备；每个请求通过其 `device` 字段路由到目标设备。用 `-s`（或 `--serial`）选设备——该 flag 是每命令级的，不是每 daemon 级：
 
 ```bash
-phonefast --serial 13709314CF044927 tap 540 960
+phonefast -s 13709314CF044927 tap 540 960
 phonefast --serial R3CNB0000000XYZ screenshot /tmp/s.png
 ```
+
+不带 `-s` 时使用首台已连接设备（按 ADB 顺序）。
+
 
 ---
 
@@ -188,13 +191,7 @@ phonefast [--foreground|--daemon] tap <x> <y>
 **示例：**
 ```bash
 phonefast tap 540 960                  # 点击屏幕中心
-phonefast tap 100 200                  # 点击左上角区域
 phonefast --foreground tap 244 540     # 直接模式点击
-```
-
-**输出：**
-```
-Tapped at (540, 960)
 ```
 
 ---
@@ -212,17 +209,12 @@ phonefast [--foreground|--daemon] tap_element <index|text>
 
 **示例：**
 ```bash
-# 按索引点击（索引来自 `ui` 命令输出中的 [N]）
-phonefast tap_element 5
-
-# 按文本搜索（模糊匹配，不区分大小写）
-phonefast tap_element "Settings"
-phonefast tap_element "发送"
-phonefast tap_element "compose"
+phonefast tap_element 5              # 按索引（来自 `ui` 输出中的 [N]）
+phonefast tap_element "Settings"     # 按文本（模糊，不区分大小写）
 ```
 
 **说明：**
-- 索引模式：必须先用 `ui` 或 `observe` 获取当前 UI 元素列表，查看元素对应的索引号
+- 索引模式：先用 `ui` 或 `observe` 获取当前 UI 元素列表，查看元素对应的索引号
 - 文本模式：模糊匹配元素的 `text` 属性和 `content-desc` 属性，匹配第一个元素
 - 文本匹配不区分大小写
 
@@ -242,22 +234,8 @@ phonefast [--foreground|--daemon] swipe <x1> <y1> <x2> <y2> [duration_ms]
 
 **示例：**
 ```bash
-# 向上滑动（从底部到顶部）
-phonefast swipe 540 1600 540 400
-
-# 向下滑动
-phonefast swipe 540 400 540 1600
-
-# 向右滑动（300ms 快速滑动）
-phonefast swipe 200 500 800 500 300
-
-# 向左滑动（800ms 慢速滑动）
-phonefast swipe 800 500 200 500 800
-```
-
-**输出：**
-```
-Swiped from (540, 1600) to (540, 400)
+phonefast swipe 540 1600 540 400        # 向上滑动
+phonefast swipe 200 500 800 500 300     # 向右快速滑动（300ms）
 ```
 
 ---
@@ -296,58 +274,20 @@ Typed: Hello World
 
 ### 4.3 按键操作
 
-#### `back` — 返回键
+#### `back` / `home` — 系统按键
 
 ```bash
-phonefast [--foreground|--daemon] back
+phonefast back     # KEYCODE_BACK (4)
+phonefast home     # KEYCODE_HOME (3)，回到桌面
 ```
-
-模拟 Android 系统返回键（KeyEvent.KEYCODE_BACK）。
-
-**示例：**
-```bash
-phonefast back
-```
-
-**输出：**
-```
-Back pressed
-```
-
----
-
-#### `home` — Home 键
-
-```bash
-phonefast [--foreground|--daemon] home
-```
-
-模拟 Android 系统 Home 键（KeyEvent.KEYCODE_HOME），回到桌面。
-
-**示例：**
-```bash
-phonefast home
-```
-
-**输出：**
-```
-Home pressed
-```
-
----
 
 #### `key` / `press_key` — 发送按键
 
 ```bash
-phonefast [--foreground|--daemon] key <keyname|keycode>
+phonefast key <keyname|keycode>
 ```
 
 支持按键名称和数字键码两种方式。
-
-| 参数 | 描述 | 是否必需 |
-|------|------|---------|
-| `keyname` | 按键名称（见下表） | 二选一 |
-| `keycode` | Android KeyEvent 数字键码 | 二选一 |
 
 **支持的键名：**
 
@@ -379,26 +319,9 @@ phonefast [--foreground|--daemon] key <keyname|keycode>
 | | `media_next` | 下一曲 | 87 |
 | | `media_previous` | 上一曲 | 88 |
 
-**示例：**
 ```bash
-# 按名称
-phonefast key enter
-phonefast key backspace
-phonefast key volume_up
-phonefast key power
-phonefast key dpad_down
-phonefast key media_play_pause
-
-# 按键码
-phonefast key 4       # BACK
-phonefast key 3       # HOME
-phonefast key 66      # ENTER
-phonefast key 24      # VOLUME_UP
-```
-
-**输出：**
-```
-Key 'enter' pressed
+phonefast key enter        # 按名称
+phonefast key 66           # 按键码（ENTER）
 ```
 
 ---
@@ -604,8 +527,10 @@ phonefast observe 20
 #### `wait` — 等待
 
 ```bash
-phonefast [--foreground|--daemon] wait <ms>
+phonefast wait <ms>
 ```
+
+纯本地 sleep——不经 daemon 路由，不会阻塞某设备的 actor，也不影响其他设备。
 
 在操作序列中插入等待时间，常用于等待页面加载或动画完成。
 
@@ -728,8 +653,9 @@ Connected devices:
 # 停止当前 daemon 连接
 phonefast daemon --stop
 
-# 重新连接（启动 daemon）
-phonefast daemon --serial <SERIAL>
+# 重新连接（启动 daemon）；用 -s 逐命令选设备
+phonefast daemon
+phonefast -s 13709314CF044927 tap 540 960
 ```
 
 ---
@@ -824,7 +750,7 @@ phonefast 1.0.1 (commit a1b2c3d4, built 2026-07-01T10:00:00Z)
 
 ## 5. Daemon 管理
 
-Daemon 是 phonefast 的核心机制。它是一个后台常驻进程，持有设备的长连接，通过 Unix Socket 接收 JSON-RPC 请求，实现 <10ms 的命令延迟。
+Daemon 是 phonefast 的核心机制：单一后台常驻进程服务所有已连接设备，通过 Unix socket 接收 JSON-RPC 请求，实现 <10ms 的命令延迟。启动时不绑定任何设备——每台设备的会话（DeviceActor）在首次请求该设备时延迟创建，之后复用。
 
 ### 启动与停止
 
@@ -842,26 +768,7 @@ phonefast daemon --status
 phonefast daemon --stop
 ```
 
-### 高级选项
-
-```bash
-# 指定设备序列号（多设备时）
-phonefast daemon --serial 13709314CF044927
-
-# 自定义 socket 路径
-phonefast daemon --socket /tmp/my-phone.sock
-
-# 前台运行 + 指定设备和 socket
-phonefast daemon --foreground --serial R3CNB0000000XYZ --socket /tmp/phone2.sock
-```
-
-| 标志 | 描述 | 默认值 |
-|------|------|--------|
-| `--foreground` / `-f` | 前台运行，日志输出到 stdout | 后台运行 |
-| `--stop` | 停止正在运行的 daemon | — |
-| `--status` | 查看 daemon 状态 | — |
-| `--serial` | 指定设备序列号 | 自动检测 |
-| `--socket` / `-s` | 自定义 Unix Socket 路径 | 自动生成 |
+> 设备选择是每命令级的，通过顶层 `-s`/`--serial` flag（见[多设备管理](#多设备管理)）。`daemon` 子命令不再接收 `--serial`（向后兼容仍解析但被忽略）和 `--socket`（统一 daemon 使用单一固定 socket）。
 
 ### 自动管理
 
@@ -877,22 +784,21 @@ Daemon 具有完善的自动管理机制：
 
 ```
 ① 检查 PID 文件 → ② 清理残留文件 → ③ fork 子进程
-④ 等待 Unix Socket 就绪 → ⑤ 轮询 daemon 健康状态
-⑥ 确认设备已连接 → ⑦ 返回命令执行
+④ 等待 Unix Socket 就绪 → ⑤ 返回命令执行
 ```
 
-启动超时约 8 秒，超时后输出错误信息。
+daemon 空载启动（不连接设备）；目标设备在首次使用它的请求时才连接。启动超时约 8 秒。
 
-### 设备绑定
+### 文件路径
 
-Daemon 与设备序列号绑定，每个设备一个 daemon 进程。文件路径规则：
+统一 daemon 使用单一 socket/PID 文件，所有设备共用（目标设备按请求选择，而非按 socket）：
 
-| 文件 | 路径模式 |
-|------|---------|
-| PID 文件 | `/tmp/phonefast-{uid}-{serial}.pid` |
-| Socket | `/tmp/phonefast-{uid}-{serial}.sock` |
+| 文件 | 路径 |
+|------|------|
+| PID 文件 | `/tmp/phonefast-{uid}.pid` |
+| Socket | `/tmp/phonefast-{uid}.sock` |
 
-> **注意：** `{uid}` 为当前系统用户 ID（`os.Getuid()`），用于隔离不同用户的 daemon 实例。旧版无 uid 格式的文件（如 `/tmp/phonefast-{serial}.sock`）在启动时自动清理。
+`{uid}` 为当前用户 ID（`os.Getuid()`），用于隔离不同用户的 daemon 实例。
 
 ---
 
@@ -903,8 +809,12 @@ phonefast 可以作为 MCP（Model Context Protocol）服务器，供 Claude Des
 ### 启动服务器
 
 ```bash
-# SSE 模式（默认）
+# SSE 模式（默认），自动检测设备
 phonefast serve
+
+# 指定目标设备（每请求路由，同 CLI 的 -s）
+phonefast serve -s 13709314CF044927
+phonefast -s 13709314CF044927 serve          # 全局 -s 也生效
 
 # 自定义端口
 phonefast serve --port 8080
@@ -925,6 +835,9 @@ phonefast serve --host 127.0.0.1 --port 8019
 | `--port` / `-p` | 端口号 | `8019` |
 | `--host` / `-H` | 监听地址 | `0.0.0.0` |
 | `--path` | URL 路径前缀 | `/Phone` |
+| `--serial` / `-s` | 目标设备序列号 | 自动检测 |
+
+MCP 服务器将每次工具调用通过统一 daemon 路由（不自建设备 session）。若 daemon 在会话中崩溃，`phonefast serve` 会自动重启并重试失败的调用。
 
 ### 模式说明
 
@@ -980,72 +893,41 @@ phonefast serve --host 127.0.0.1 --port 8019
 
 ## 7. 使用场景与最佳实践
 
-### 场景一：AI Agent 交互循环
+### AI Agent 交互循环
 
-AI Agent 与手机交互的典型循环：观察（截图+UI）→ 分析 → 操作 → 再观察。
-
-```bash
-phonefast observe                       # 步骤 1: 观察
-phonefast tap 540 960                   # 步骤 2: 操作
-phonefast wait 1500                     # 等待动画
-phonefast observe                       # 步骤 3: 确认结果
-```
-
-### 场景二：自动化测试脚本
+典型循环：观察（截图+UI）→ 分析 → 操作 → 再观察。
 
 ```bash
-#!/bin/bash
-# app_test.sh — 自动测试脚本
-
-# 打开设置
-phonefast launch com.android.settings
-phonefast wait 2000
-
-# 截图记录
-phonefast screenshot /tmp/step1_settings.png
-
-# 点击搜索
-phonefast tap_element "搜索"
-phonefast wait 1000
-phonefast type "WiFi"
-phonefast wait 1000
-
-# 返回桌面
-phonefast home
+phonefast observe                       # 1. 观察
+phonefast tap 540 960                   # 2. 操作
+phonefast wait 1500                     #    等待动画
+phonefast observe                       # 3. 确认结果
 ```
 
-### 场景三：JSON 批处理工作流
+### JSON 批处理工作流
 
 ```bash
 phonefast run '[
   {"action":"launch_app","args":{"package":"com.android.chrome"}},
   {"action":"wait","args":{"duration_ms":3000}},
-  {"action":"type_text","text":"hello world"},
-  {"action":"wait","duration_ms":2000},
+  {"action":"type_text","args":{"text":"hello world"}},
   {"action":"screenshot"},
-  {"action":"back"},
   {"action":"home"}
 ]'
 ```
 
-### 场景四：多设备操作
+### 多设备
 
 ```bash
-# 终端 1: 控制设备 A
-phonefast --serial DEVICE_A tap 540 960
-
-# 终端 2: 控制设备 B
-phonefast --serial DEVICE_B --foreground tap 100 200
+phonefast -s DEVICE_A tap 540 960       # 终端 1
+phonefast -s DEVICE_B tap 100 200       # 终端 2（并行，互不影响）
 ```
 
 ### 最佳实践
 
-1. **默认使用 Daemon 模式** — 自动启动、低延迟、自动恢复
-2. **操作间加 `wait`** — 等待页面加载/动画完成（一般 1-3 秒）
-3. **使用 `tap_element` 代替坐标** — 文本搜索比坐标点击更鲁棒
-4. **批量操作用 JSON 批处理** — `run` 命令支持 JSON 数组
-5. **多设备指定 `--serial`** — 多设备连接时务必指定序列号
-6. **`observe` 优于 `screenshot` + `ui`** — 原子操作，消除竞态
+1. **默认用 Daemon 模式** — 自动启动、<10ms、自动恢复
+2. **操作间加 `wait`** — 等待页面加载/动画（1-3 秒）
+3. **`observe` 优于 `screenshot` + `ui`** — 原子操作，无竞态；`tap_element` 优于裸坐标
 
 ---
 
@@ -1055,34 +937,22 @@ phonefast --serial DEVICE_B --foreground tap 100 200
 phonefast CLI
     │
     ├── Daemon 模式 ──→ Unix Socket ──→ Daemon 进程 ──→ TCP ──→ scrcpy-server（设备端）
-    │                   JSON-RPC          持有长连接         控制+视频+UI
+    │                   JSON-RPC           每设备 actor        控制+视频+UI
     │
     └── 直接模式 ──→ 每次新建 session ──→ TCP ──→ scrcpy-server（设备端）
                       部署+启动+连接+关闭
 ```
 
-### 内部模块
-
 | 模块 | 路径 | 功能 |
 |------|------|------|
-| **CLI** | `cmd/phonefast/main.go` | 命令行解析、命令分发、模式选择 |
-| **ADB** | `internal/adb/` | 设备发现、scrcpy 部署与生命周期 |
-| **Daemon** | `internal/daemon/` | 守护进程、JSON-RPC 分发、健康检查 |
-| **MCP** | `internal/mcp/` | MCP 服务器（SSE/STDIO）、工具注册 |
-| **Session** | `internal/session/` | 设备会话：视频流、控制、UI、截图 |
-| **H.264** | `pkg/h264/` | 视频流解析、关键帧提取 |
-| **Protocol** | `pkg/protocol/` | scrcpy 协议编码与控制消息 |
+| CLI | `cmd/phonefast/main.go` | 命令解析、分发、模式选择 |
+| Daemon | `internal/daemon/` | 统一 daemon、JSON-RPC、每设备 actor、健康/恢复 |
+| MCP | `internal/mcp/` | MCP 服务器（SSE/STDIO），工具调用经 daemon 路由 |
+| Session | `internal/session/` | 设备会话：视频流、控制、UI、截图 |
+| ADB | `internal/adb/` | 设备发现、scrcpy 部署/生命周期 |
+| Protocol | `pkg/protocol/` | scrcpy 协议编码、控制消息 |
 
-### 技术栈
-
-| 组件 | 技术 |
-|------|------|
-| 语言 | Go（原生二进制，无运行时依赖） |
-| 设备通信 | scrcpy 协议（TCP 隧道） |
-| 进程通信 | Unix Socket JSON-RPC |
-| 视频流 | H.264 → ffmpeg 转 PNG |
-| UI 采集 | UISocketHandler（自定义 scrcpy-server 扩展） |
-| AI 集成 | MCP（Model Context Protocol）SSE / STDIO |
+> 架构深挖、截图管线（astiav CGO / ffmpeg 降级）与构建细节 → [docs/DEV.md](DEV.md)
 
 ---
 
@@ -1133,77 +1003,25 @@ phonefast CLI
 phonefast devices
 ```
 
-输出 `device` 表示已授权连接，`unauthorized` 表示未授权（需要在手机上确认 USB 调试授权）。
+输出 `device` 表示已授权连接，`unauthorized` 表示未授权（需在手机上确认 USB 调试授权）。
 
-### 2. 多台设备同时连接怎么选？
+### 2. Daemon 启动失败怎么办？
 
-使用 `--serial` 标志指定目标设备：
-
-```bash
-phonefast --serial 13709314CF044927 tap 540 960
-```
-
-### 3. Daemon 启动失败怎么办？
-
-常见原因：
-
-- **设备未连接** — 运行 `phonefast devices` 检查
-- **ADB 未授权** — 在手机上确认 USB 调试授权
-- **端口冲突** — 如有其他 scrcpy 实例运行，先关闭
+- **设备未连接 / ADB 未授权** — 运行 `phonefast devices` 检查，并在手机上确认 USB 调试授权
 - **scrcpy-server.jar 缺失** — 确保依赖文件在正确位置
+- 重试：`adb kill-server && adb start-server && phonefast daemon`
 
-解决方案：
-
-```bash
-# 重启 ADB 服务
-adb kill-server
-adb start-server
-
-# 重新连接设备
-adb devices
-
-# 重试
-phonefast daemon
-```
-
-### 4. `tap_element` 无法找到元素？
+### 3. `tap_element` 无法找到元素？
 
 - 先用 `phonefast ui` 查看当前屏幕有哪些元素
-- 确认元素确实在屏幕上可见
-- 文本搜索是模糊匹配，检查文本拼写
+- 文本搜索是模糊且不区分大小写的，检查文本拼写
 - 某些非标准视图可能不会被采集到
 
-### 5. 如何获取应用包名？
+### 4. 如何获取应用包名？
 
 ```bash
-# 列出所有安装的应用
-adb shell pm list packages
-
-# 按关键词搜索
 adb shell pm list packages | grep -i wechat
-adb shell pm list packages | grep -i chrome
 ```
-
-### 6. Daemon 模式和直接模式如何选？
-
-| 你的需求 | 推荐模式 |
-|---------|---------|
-| 频繁操作、批量脚本 | Daemon 模式（默认） |
-| 偶尔单次操作 | 直接模式（`--foreground`） |
-| AI Agent 高频交互 | Daemon 模式 |
-| 临时使用别人的电脑 | 直接模式 |
-| 自动化 CI 流程 | Daemon 模式 |
-
-### 7. `screenshot` 与 `observe` 有何区别？
-
-`screenshot` 仅截图，`observe` 同时在一次调用中完成截图 + UI 采集。`observe` 是原子操作，不会出现"截图时是一个页面，UI 采集时页面已变化"的竞态问题。
-
-### 8. MCP 服务器无法连接？
-
-- 确认端口未被占用：`lsof -i :8019`
-- 确保防火墙未阻止指定端口
-- SSE 模式使用 URL: `http://localhost:8019/Phone/sse`
-- STDIO 模式需在 MCP 客户端配置中正确设置命令和参数
 
 ---
 

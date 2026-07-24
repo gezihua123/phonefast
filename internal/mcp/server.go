@@ -3,12 +3,12 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
-	"sync"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
-	"github.com/gezihua123/phonefast/internal/session"
+	"github.com/gezihua123/phonefast/internal/daemon"
 )
 
 // MCPConfig holds the MCP server configuration.
@@ -19,26 +19,45 @@ type MCPConfig struct {
 	Path      string
 }
 
-// Server wraps a phonefast session and exposes MCP-compatible tools
-// via the mcp-go library.
+// rpcCaller is the subset of *daemon.Client that the MCP server uses to talk
+// to the unified daemon. Defining it as an interface lets tests inject a fake
+// client without spinning up a real daemon.
+type rpcCaller interface {
+	Call(method string, params map[string]any) (json.RawMessage, error)
+}
+
+// Server exposes phonefast operations as MCP tools. It does NOT hold a device
+// session directly — every tool call is routed through the unified daemon via
+// JSON-RPC, so device selection and the scrcpy session live in exactly one
+// place (the daemon). This avoids the old problem of the MCP process and the
+// daemon each holding their own session on the same device and killing each
+// other's scrcpy server.
+//
+// Daemon-crash recovery is handled inside daemon.Client (via daemon.SetEnsurer),
+// not here: rpcCall is just Call + Unmarshal.
 type Server struct {
-	mu      sync.Mutex
-	session *session.Session
-	serial  string
-	scid    int
+	// rpcClient talks to the unified daemon. The daemon injects `device=serial`
+	// into every request (see daemon.Client.Call). nil means "no daemon" —
+	// rpcCall returns a retry-style error.
+	rpcClient rpcCaller
 
 	// mcp-go server instance
 	mcpServer *mcpserver.MCPServer
 }
 
-// New creates a new MCP server wrapping a device session.
-// session may be nil for lazy initialization (STDIO mode starts before device is ready).
-func New(s *session.Session, serial string, scid int) *Server {
-	srv := &Server{
-		session: s,
-		serial:  serial,
-		scid:    scid,
-	}
+// New creates a new MCP server bound to the given device serial via the
+// unified daemon. Pass serial="" to let the daemon auto-detect the first
+// connected device per request.
+func New(serial string) *Server {
+	srv := &Server{rpcClient: daemon.NewClient(serial)}
+	srv.initMCPServer()
+	return srv
+}
+
+// newWithClient is the test constructor: inject a fake RPC caller so handlers
+// can be exercised without a real daemon.
+func newWithClient(c rpcCaller) *Server {
+	srv := &Server{rpcClient: c}
 	srv.initMCPServer()
 	return srv
 }
@@ -56,28 +75,22 @@ func (s *Server) initMCPServer() {
 	s.registerTools()
 }
 
-// SetSession updates the device session (used for lazy init in STDIO mode).
-func (s *Server) SetSession(sess *session.Session, serial string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.session = sess
-	s.serial = serial
-}
-
-// getSession returns the current session under lock.
-func (s *Server) getSession() *session.Session {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.session
-}
-
-// needSession returns the current session or an error if not yet connected.
-func (s *Server) needSession() (*session.Session, error) {
-	sess := s.getSession()
-	if sess == nil {
-		return nil, fmt.Errorf("device connecting, retry in a moment")
+// rpcCall sends a JSON-RPC request to the daemon and decodes the result into
+// out. The daemon.Client handles restart-on-unreachable transparently (via
+// daemon.SetEnsurer), so this is a plain Call + Unmarshal. Returns an error if
+// the daemon is not reachable or the RPC itself failed.
+func (s *Server) rpcCall(method string, params map[string]any, out any) error {
+	if s.rpcClient == nil {
+		return fmt.Errorf("device connecting, retry in a moment")
 	}
-	return sess, nil
+	result, err := s.rpcClient.Call(method, params)
+	if err != nil {
+		return err
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return json.Unmarshal(result, out)
 }
 
 // Run starts the MCP server with the given configuration.
@@ -121,35 +134,4 @@ func (s *Server) runSSE(cfg MCPConfig) error {
 // MCPServer returns the underlying mcp-go server (used by tools_test.go).
 func (s *Server) MCPServer() *mcpserver.MCPServer {
 	return s.mcpServer
-}
-
-// ── Tool result helpers (kept for backward compat in tools.go) ──
-
-// ToolResult is the JSON-serializable result of a tool call.
-type ToolResult struct {
-	Content []ToolContent `json:"content"`
-}
-
-// ToolContent is a single content item in a tool result.
-type ToolContent struct {
-	Type     string `json:"type"`
-	Text     string `json:"text"`
-	Data     string `json:"data,omitempty"`
-	MimeType string `json:"mimeType,omitempty"`
-}
-
-func textResult(text string) *ToolResult {
-	return &ToolResult{
-		Content: []ToolContent{
-			{Type: "text", Text: text},
-		},
-	}
-}
-
-func errorResult(err error) *ToolResult {
-	return &ToolResult{
-		Content: []ToolContent{
-			{Type: "text", Text: fmt.Sprintf("error: %v", err)},
-		},
-	}
 }
