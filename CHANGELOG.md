@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.13 (2026-07-24)
+
+### 🚀 Features
+- **Multi-device daemon**: Removed `Config.Serial`, concurrent multi-device connections with per-serial connect serialization, RPC device_list + per-serial operations, backward-compatible Status()
+
+### 🛠️ Refactor
+- **MCP tools**: Simplified tool definitions (-319 lines), expanded test coverage (+250 lines), streamlined server transport and session lifecycle
+- **CLI**: Restructured entry point for multi-device support
+- **Docs**: Trimmed verbose content from CLI, DEV, phonefast, and README docs
+
+### 🛠️ Build
+- go-astiav v0.35.0 → v0.40.0 (FFmpeg n8.0 compatibility)
+- FFmpeg 7.1 → 8.0 (cross-build-ffmpeg.sh)
+- `scripts/test.sh`: Fixed case-in-`$()` syntax error on macOS
+- `assets/ocr/lib_nolib.go`: Fixed build tag causing `RuntimeLib` redeclaration on linux/amd64 `-full` build
+
+### 🐛 Fixes
+- `pkg/h264`: Decoder improvements and new tests
+- `tests/stress_test_rpc.py`: Stability improvements
+
+---
+
 ## v1.0.11 (2026-07-14)
 
 ### 🚀 Performance
