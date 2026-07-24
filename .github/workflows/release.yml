@@ -324,22 +324,22 @@ jobs:
           cat > release-body.md <<- 'TEMPLATE'
           ## phonefast __VERSION__
 
-          ### :package: 平台支持
-          | 平台 | 架构 | 文件 |
+          ### :package: Platform Support
+          | Platform | Arch | File |
           |------|------|------|
           | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64.tar.gz` |
-          | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64-full.tar.gz` (自包含, OCR 内嵌) |
+          | Linux | amd64 | `phonefast-__VERSION_NOV__-linux-amd64-full.tar.gz` (self-contained, OCR embedded) |
           | Linux | arm64 | `phonefast-__VERSION_NOV__-linux-arm64.tar.gz` |
           | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64.tar.gz` |
-          | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64-full.tar.gz` (自包含, OCR 内嵌) |
+          | macOS | arm64 (Apple Silicon) | `phonefast-__VERSION_NOV__-darwin-arm64-full.tar.gz` (self-contained, OCR embedded) |
           | Windows | amd64 | `phonefast-__VERSION_NOV__-windows-amd64.tar.gz` |
 
-          ### :wrench: 特性
-          - CGO 静态链接 FFmpeg libavcodec (H.264 硬件解码)
-          - x86_64: SSE/AVX/AVX2 SIMD 加速 (nasm asm-on)
-          - ARM64: NEON 优化 (内建于 clang/gcc)
-          - 单文件分发 (jar 内嵌, 即下即用)
-          - `-full` 版本: ONNX Runtime 内嵌, 零依赖部署 (macOS arm64 / Linux amd64)
+          ### :wrench: Highlights
+          - CGO statically-linked FFmpeg libavcodec (H.264 hardware decode)
+          - x86_64: SSE/AVX/AVX2 SIMD acceleration (nasm asm-on)
+          - ARM64: NEON optimized (built-in clang/gcc)
+          - Single-file distribution (jar embedded, download-and-run)
+          - `-full` variant: ONNX Runtime embedded, zero-dependency deployment (macOS arm64 / Linux amd64)
           TEMPLATE
           sed -i \
             -e "s/__VERSION__/${VERSION}/g" \
