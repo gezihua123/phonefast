@@ -16,7 +16,7 @@ phonefast 让你的 Android 手机成为 AI Agent 的原生设备——如同键
 > **4倍速** — Claude Code + phonefast 真实执行过程。  
 > Prompt: `使用phonefast skill，打开GP 安装Instagram`
 
-![phonefast 4x 速度 — Claude Code + phonefast 真实执行](phonefast_demo.gif)
+![phonefast 4x 速度 — Claude Code + phonefast 真实执行](assets/phonefast_demo.gif)
 
 ---
 
@@ -44,7 +44,7 @@ phonefast daemon 模式在所有操作上均保持稳定低延迟。以下数据
 - 12 小时压测：**145,843 次操作、100% 成功、0 次断连**
 - 连续 200 次截图：**P50 = 12ms、P95 = 13ms**（解码器热机后）
 
-> 完整 benchmark 历史、版本对比和测试方法详见 [docs/benchmark.md](docs/benchmark.md)。
+> 完整 benchmark 历史、版本对比和测试方法详见 [docs/BENCHMARK.md](docs/BENCHMARK.md)。
 
 ---
 
@@ -52,39 +52,7 @@ phonefast daemon 模式在所有操作上均保持稳定低延迟。以下数据
 
 ### 安装
 
-**前置依赖：** Go 1.21+、`adb`、`ffmpeg`、`git`、`onnxruntime`（见下方说明）
-
-### ONNX Runtime 安装
-
-**plain** 构建在运行时从系统加载 `libonnxruntime`。**-full** 构建将其内嵌
-（仅 macOS arm64），无需系统库。
-
-如果你使用 **plain** 构建或需要 OCR 功能，请安装 ONNX Runtime：
-
-```bash
-# ── macOS ──
-brew install onnxruntime
-
-# ── Linux (Ubuntu/Debian) ──
-# 方式一：系统包管理器（Ubuntu 24.04+）
-sudo apt install libonnxruntime-dev
-
-# 方式二：从 GitHub Releases 手动下载
-# amd64:
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-x64-1.27.1.tgz
-tar -xzf onnxruntime-linux-x64-1.27.1.tgz
-sudo cp onnxruntime-linux-x64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
-sudo ldconfig
-
-# arm64:
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.27.1/onnxruntime-linux-aarch64-1.27.1.tgz
-tar -xzf onnxruntime-linux-aarch64-1.27.1.tgz
-sudo cp onnxruntime-linux-aarch64-1.27.1/lib/libonnxruntime.so* /usr/local/lib/
-sudo ldconfig
-```
-
-> **注意：** 版本需与 phonefast 编译时使用的 ORT 版本一致（当前为 **1.27.1**）。
-> 如需零依赖部署，可使用 `-full` 构建或下载 macOS arm64 的 `-full` 发布版本。
+**前置依赖：** Go 1.21+、`adb`、`ffmpeg`、`git`
 
 ```bash
 # 从源码构建 — 两种产物:
@@ -100,12 +68,11 @@ bash scripts/build.sh --all                 # 全平台构建 + 打包
 
 | 产物 | 体积 | OCR 运行时 | 运行时依赖 | 适用场景 |
 |------|:----:|:---------:|:---------:|---------|
-| **plain**（默认） | 24MB | 系统 libonnxruntime | 需安装 onnxruntime | 已安装 onnxruntime 的环境 |
+| **plain**（默认） | 24MB | 系统 libonnxruntime | `brew install onnxruntime` | 已安装 onnxruntime 的环境 |
 | **-full**（`--full`） | 42MB | 内嵌 ORT 1.27.1 | 无（自包含） | 未安装 onnxruntime 的环境 |
 
-两种产物均内嵌 PP-OCR v3 模型（det + rec）。-full 版内嵌 ONNX Runtime 共享库，
-实现单文件零依赖部署（支持平台：macOS arm64、Linux amd64）。NCNN 引擎为 opt-in
-（`-tags ncnn`, 快 28%, 见 [docs/DEV.md](docs/DEV.md)）。
+两种产物均内嵌 PP-OCR v3 模型（det + rec）。-full 版内嵌 ONNX Runtime 共享库
+（仅 macOS arm64）, 实现单文件零依赖部署。NCNN 引擎为 opt-in（`-tags ncnn`, 快 28%, 见 [docs/DEV.md](docs/DEV.md)）。
 
 > 构建细节（交叉编译、FFmpeg 静态链接、Python 构建工具）→ [docs/DEV.md](docs/DEV.md)
 
@@ -134,7 +101,7 @@ phonefast serve
 ### 格式说明
 
 ```bash
-phonefast [--foreground|--daemon] <command> [args...]
+phonefast [--foreground|--daemon] [--serial <SERIAL> | -s <SERIAL>] <command> [args...]
 ```
 
 - 默认使用 daemon 模式（自动启动 daemon），延迟 <10ms。
@@ -359,7 +326,7 @@ phonefast --ocr-vision false ocr # 关闭 Vision ANE, 仅用 ONNX 检测
 #### `wait` — 等待
 
 ```bash
-phonefast [--foreground|--daemon] wait <ms>
+phonefast wait <ms>
 ```
 
 | 参数 | 描述 | 默认值 |
@@ -413,7 +380,7 @@ phonefast run '{"action":"list_devices"}'
 
 ## Daemon 管理
 
-Daemon 是一个后台常驻进程，持有设备的长连接，通过 Unix Socket 接收 JSON-RPC 请求。
+Daemon 是单一后台进程，服务所有已连接设备，通过 Unix socket 接收 JSON-RPC 请求。启动时空载，每台设备的会话（DeviceActor）在首次使用时延迟创建。
 
 ```bash
 # 启动 daemon（后台运行）
@@ -422,18 +389,14 @@ phonefast daemon
 # 前台运行（查看实时日志）
 phonefast daemon --foreground
 
-# 指定设备序列号
-phonefast daemon --serial 13709314CF044927
-
-# 自定义 socket/PID 文件路径
-phonefast daemon --socket /tmp/my-phone.sock
-
 # 查看 daemon 状态
 phonefast daemon --status
 
 # 停止 daemon
 phonefast daemon --stop
 ```
+
+> 设备选择是每命令级的，通过顶层 `-s`/`--serial` flag（如 `phonefast -s <serial> tap 540 960`）。`daemon` 子命令不再接收 `--serial` 和 `--socket`。
 
 **自动管理：**
 - 使用 `--daemon` 标志执行命令时，如果 daemon 未运行，会自动在后台启动
@@ -447,16 +410,18 @@ phonefast daemon --stop
 
 ## MCP 服务器
 
-phonefast 可作为 MCP (Model Context Protocol) 服务器，供 Claude Desktop 等 AI 助手直接控制手机。
+phonefast 可作为 MCP (Model Context Protocol) 服务器，供 Claude Desktop 等 AI 助手直接控制手机。每次工具调用都通过统一 daemon 路由（MCP 服务器不自建设备 session）。
 
 ```bash
-# SSE 模式（默认端口 8019）
+# SSE 模式（默认端口 8019），自动检测设备
 phonefast serve
 
-# 自定义端口
-phonefast serve --port 8080
+# 指定目标设备（每请求路由，同 CLI 的 -s）
+phonefast serve -s 13709314CF044927
+phonefast -s 13709314CF044927 serve          # 全局 -s 也生效
 
-# 自定义路径
+# 自定义端口 / 路径
+phonefast serve --port 8080
 phonefast serve --path /mcp
 
 # STDIO 模式（Claude Desktop 集成）
@@ -525,9 +490,9 @@ phonefast serve --transport stdio
 | 文档 | 内容 |
 |------|------|
 | [docs/CLI_zh.md](docs/CLI_zh.md) | 完整 CLI 手册：安装、命令、Daemon、MCP、架构、日志、故障恢复 |
-| [docs/DEV_zh.md](docs/DEV_zh.md) | 开发笔记：架构决策、构建与发布、交叉编译 |
-| [docs/benchmark_zh.md](docs/benchmark_zh.md) | 完整 benchmark 历史：版本对比、测试方法、内存分析 |
-| [docs/phonefast_zh.md](docs/phonefast_zh.md) | 产品对比：phonefast vs agent-device vs adb |
+| [docs/DEV.md](docs/DEV.md) | 开发笔记：架构决策、构建与发布、交叉编译 |
+| [docs/BENCHMARK_zh.md](docs/BENCHMARK_zh.md) | 完整 benchmark 历史：版本对比、测试方法、内存分析 |
+| [docs/PHONEFAST_zh.md](docs/PHONEFAST_zh.md) | 产品对比：phonefast vs agent-device vs adb |
 | [CHANGELOG.md](CHANGELOG.md) | 版本发布历史 |
 
 ---

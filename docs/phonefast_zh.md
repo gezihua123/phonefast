@@ -374,22 +374,7 @@ sequenceDiagram
 | **性能退化** | ❌ 无 |
 | **RSS 峰值** | <62MB |
 
-**12 项操作延迟总览**:
-
-| 操作 | 次数 | P50 | P95 | P99 | Avg | Max |
-|------|:---:|:---:|:---:|:---:|:---:|:---:|
-| `tap` | 49,943 | **13ms** | 13ms | 14ms | 12ms | 453ms |
-| `back` | 16,639 | **13ms** | 13ms | 14ms | 12ms | 474ms |
-| `home` | 16,642 | **13ms** | 13ms | 14ms | 12ms | 18ms |
-| `press_key` | 16,650 | **13ms** | 13ms | 14ms | 12ms | 18ms |
-| `swipe` | 8,384 | **318ms** | 322ms | 323ms | 318ms | 821ms |
-| `screenshot` | 4,185 | **28ms** | 126ms | 128ms | 49ms | 132ms |
-| `observe` | 4,188 | **28ms** | 126ms | 129ms | 51ms | 134ms |
-| `get_ui_elements` | 4,189 | **46ms** | 132ms | 151ms | 61ms | 192ms |
-| `type_text` | 4,188 | **1ms** | 1ms | 2ms | 1ms | 6ms |
-| `launch_app` | 4,187 | **1ms** | 1ms | 2ms | 1ms | 5ms |
-| `status` | 4,189 | **1ms** | 1ms | 2ms | 1ms | 3ms |
-| `wait` | 12,459 | **33ms** | 33ms | 33ms | 32ms | 38ms |
+**12 项操作延迟总览**: screenshot/observe P50=**28ms**、tap 13ms、swipe 318ms（详见 [docs/BENCHMARK.md §7](BENCHMARK.md)）。
 
 ---
 
@@ -411,24 +396,10 @@ phonefast --daemon observe                    # 截图+UI (28ms)
 
 ### 推荐组合
 
-```
-主力: phonefast daemon  (速度王者，Android AI Agent 首选)
-      + phonefast serve  (MCP 模式，含 tap_element)
-
-补充: agent-device       (需要 iOS 自动化 / 录屏回放 / 性能采样时)
-      adb kill           (需要 OCR / 非 ASCII 输入 / 包名搜索时)
-```
+主力 `phonefast daemon` + `phonefast serve`（速度 + Android AI Agent）；按需补充 `agent-device`（iOS / 录屏回放 / 性能采样）和 `adb kill`（OCR / 非 ASCII / 包名搜索）。
 
 ---
 
 ### 为什么 phonefast 更稳定
 
-```
-phonefast:  设备上 scrcpy-server 常驻，TCP 连接持续 12 小时不断
-             daemon 内存持有 session，命令间零状态重建开销
-             三级保活 (TCP keepalive + healthLoop + 写失败检测)
-
-agent-device/adb kill: 每次命令新建 adb shell 子进程，用完即销毁
-                       无持久连接，每次读取 session 或冷启动
-                       命令失败即报错，无自动恢复
-```
+设备上 scrcpy-server 常驻 + TCP 长连接持续 12 小时（vs 每命令 `adb shell` fork 约 50ms 开销）；daemon 内存持有 session（vs 磁盘 session 文件 / 7s 冷启动）；三级保活——TCP keepalive（control 15s / video 30s）+ 10s healthLoop + 写失败检测自动重连。

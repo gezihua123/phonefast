@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -9,6 +11,202 @@ import (
 	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
+
+// fakeRPC is a test stub for rpcCaller. It records the last method/params and
+// returns a canned JSON result (or err if non-nil). This lets us verify the
+// handler→RPC→result-decode path without a real daemon.
+type fakeRPC struct {
+	method string
+	params map[string]any
+	result any // marshaled to JSON before returning
+	err    error
+	// calls counts Call invocations (for retry/recovery tests).
+	calls int
+	// onCall, if set, is invoked before each Call returns — lets a test flip
+	// err/result between calls to simulate a daemon coming back up.
+	onCall func(calls int)
+}
+
+func (f *fakeRPC) Call(method string, params map[string]any) (json.RawMessage, error) {
+	f.method = method
+	f.params = params
+	f.calls++
+	if f.onCall != nil {
+		f.onCall(f.calls)
+	}
+	if f.err != nil {
+		return nil, f.err
+	}
+	data, _ := json.Marshal(f.result)
+	return data, nil
+}
+
+// TestRPCCallDecodesResult verifies rpcCall routes to the client and decodes
+// the JSON result into the out struct.
+func TestRPCCallDecodesResult(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{"message": "Tapped at (1, 2)"}}
+	s := newWithClient(fake)
+
+	var resp struct {
+		Message string `json:"message"`
+	}
+	if err := s.rpcCall("tap", map[string]any{"x": 1, "y": 2}, &resp); err != nil {
+		t.Fatalf("rpcCall failed: %v", err)
+	}
+	if fake.method != "tap" {
+		t.Errorf("method = %q, want tap", fake.method)
+	}
+	if resp.Message != "Tapped at (1, 2)" {
+		t.Errorf("message = %q, want 'Tapped at (1, 2)'", resp.Message)
+	}
+}
+
+// TestHandleTapRoutesRPC verifies handleTap builds params and decodes the
+// daemon's message response end-to-end through the fake client.
+func TestHandleTapRoutesRPC(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{"message": "Tapped at (10, 20)"}}
+	s := newWithClient(fake)
+
+	req := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Arguments: map[string]any{"x": float64(10), "y": float64(20)},
+		},
+	}
+	result, _ := s.handleTap(context.Background(), req)
+	if result.IsError {
+		t.Fatalf("expected success, got error")
+	}
+	if fake.params["x"] != 10 || fake.params["y"] != 20 {
+		t.Errorf("params = %v, want x=10 y=20", fake.params)
+	}
+}
+
+// TestHandleScreenshotDecodesImage verifies screenshot decodes image_data and
+// returns a native ImageContent.
+func TestHandleScreenshotDecodesImage(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{
+		"text":       "Screenshot (488x1080)",
+		"image_data": "iVBORw0KGgoAAA==",
+		"mime_type":  "image/png",
+	}}
+	s := newWithClient(fake)
+
+	result, _ := s.handleScreenshot(context.Background(), mcp.CallToolRequest{})
+	if result.IsError {
+		t.Fatalf("expected success, got error")
+	}
+	var img mcp.ImageContent
+	found := false
+	for _, c := range result.Content {
+		if ic, ok := c.(mcp.ImageContent); ok {
+			img = ic
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected ImageContent in result")
+	}
+	if img.Data != "iVBORw0KGgoAAA==" {
+		t.Errorf("image data = %q", img.Data)
+	}
+}
+
+// TestHandleObserveNoDuplication guards against the regression where the
+// element-list text was reused as the image caption (sending it twice).
+// The caption must be a short "Observe: N elements" summary derived from
+// count, and the element list appears once as a separate TextContent.
+func TestHandleObserveNoDuplication(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{
+		"text":       "[0] text=ok",
+		"image_data": "iVBORw0KGgo==",
+		"mime_type":  "image/png",
+		"count":      1,
+	}}
+	s := newWithClient(fake)
+
+	result, _ := s.handleObserve(context.Background(), mcp.CallToolRequest{})
+	if result.IsError {
+		t.Fatalf("expected success, got error")
+	}
+	// Count the TextContent occurrences of the element list.
+	listCount := 0
+	captionText := ""
+	for _, c := range result.Content {
+		if tc, ok := c.(mcp.TextContent); ok {
+			if tc.Text == "[0] text=ok" {
+				listCount++
+			}
+			if strings.Contains(tc.Text, "Observe:") {
+				captionText = tc.Text
+			}
+		}
+	}
+	if listCount != 1 {
+		t.Errorf("element list should appear exactly once, got %d", listCount)
+	}
+	if !strings.Contains(captionText, "1 interactive elements") {
+		t.Errorf("caption = %q, want it to contain '1 interactive elements'", captionText)
+	}
+}
+
+// TestHandleGetUIElementsDecodesFormatted verifies the formatted field is
+// decoded and returned as text.
+func TestHandleGetUIElementsDecodesFormatted(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{
+		"formatted": "[0] text=btn",
+		"count":     1,
+	}}
+	s := newWithClient(fake)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{}}}
+	result, _ := s.handleGetUIElements(context.Background(), req)
+	if result.IsError {
+		t.Fatalf("expected success, got error")
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content")
+	}
+	tc, ok := result.Content[0].(mcp.TextContent)
+	if !ok || tc.Text != "[0] text=btn" {
+		t.Errorf("text = %q, want '[0] text=btn'", tc.Text)
+	}
+}
+
+// TestHandleListDevicesDecodesArray verifies list_devices decodes the device
+// array returned by the daemon.
+func TestHandleListDevicesDecodesArray(t *testing.T) {
+	fake := &fakeRPC{result: []map[string]any{
+		{"serial": "emulator-5554", "status": "device"},
+	}}
+	s := newWithClient(fake)
+
+	result, _ := s.handleListDevices(context.Background(), mcp.CallToolRequest{})
+	if result.IsError {
+		t.Fatalf("expected success, got error")
+	}
+	tc, ok := result.Content[0].(mcp.TextContent)
+	if !ok {
+		t.Fatal("expected TextContent")
+	}
+	if !strings.Contains(tc.Text, "emulator-5554") {
+		t.Errorf("expected serial in output, got: %s", tc.Text)
+	}
+}
+
+// TestHandleBackDecodesMessage verifies a simple action decodes the message.
+func TestHandleBackDecodesMessage(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{"message": "Back pressed"}}
+	s := newWithClient(fake)
+
+	result, _ := s.handleBack(context.Background(), mcp.CallToolRequest{})
+	if result.IsError {
+		t.Fatalf("expected success, got error")
+	}
+	tc, ok := result.Content[0].(mcp.TextContent)
+	if !ok || tc.Text != "Back pressed" {
+		t.Errorf("text = %q, want 'Back pressed'", tc.Text)
+	}
+}
 
 func TestFormatElementsForLLM(t *testing.T) {
 	result := format.ElementsForLLM(nil, 100, false)
@@ -99,26 +297,56 @@ func TestFormatElementsForLLMClassNameShort(t *testing.T) {
 }
 
 func TestMCPGoServerCreation(t *testing.T) {
-	s := New(nil, "", 0x3f)
+	s := New("")
 	if s.MCPServer() == nil {
 		t.Fatal("mcp-go server not created")
 	}
 }
 
-func TestNeedSessionNil(t *testing.T) {
-	s := New(nil, "", 0)
-	_, err := s.needSession()
+// TestRPCCallNilClient verifies that when no RPC client is configured (daemon
+// not reachable), rpcCall returns the retry-style error handlers surface to
+// callers — the RPC-mode equivalent of the old "nil session" guard.
+func TestRPCCallNilClient(t *testing.T) {
+	s := newWithClient(nil)
+	var out map[string]any
+	err := s.rpcCall("status", nil, &out)
 	if err == nil {
-		t.Error("expected error for nil session")
+		t.Error("expected error for nil RPC client")
+	}
+	if !strings.Contains(err.Error(), "retry") {
+		t.Errorf("expected retry-style error, got: %v", err)
+	}
+}
+
+// TestRPCCallSurfacesClientError verifies rpcCall surfaces a Call error as-is.
+// (Daemon-crash recovery now lives in daemon.Client via SetEnsurer, tested at
+// the e2e level; rpcCall itself is a plain Call + Unmarshal.)
+func TestRPCCallSurfacesClientError(t *testing.T) {
+	fake := &fakeRPC{err: fmt.Errorf("connect device: timeout")}
+	s := newWithClient(fake)
+	var resp struct {
+		Message string `json:"message"`
+	}
+	err := s.rpcCall("tap", map[string]any{"x": 1, "y": 2}, &resp)
+	if err == nil {
+		t.Fatal("expected the RPC error to surface, got nil")
+	}
+	if !strings.Contains(err.Error(), "timeout") {
+		t.Errorf("expected the original error text, got: %v", err)
+	}
+	if fake.calls != 1 {
+		t.Errorf("Call should be invoked once, got %d", fake.calls)
 	}
 }
 
 // --- press_key handler tests ---
 
 // TestHandlePressKeyParamsValidation tests parameter validation for press_key.
-// These tests verify error messages without a real device session.
+// A nil RPC client means valid-key/keycode cases fail at rpcCall with a retry
+// error (daemon not reachable); validation cases (missing/unknown/wrong-type)
+// are rejected before any RPC.
 func TestHandlePressKeyParamsValidation(t *testing.T) {
-	s := New(nil, "", 0)
+	s := newWithClient(nil)
 
 	t.Run("missing both keycode and key", func(t *testing.T) {
 		req := mcp.CallToolRequest{
@@ -142,7 +370,7 @@ func TestHandlePressKeyParamsValidation(t *testing.T) {
 		}
 		result, _ := s.handlePressKey(context.Background(), req)
 		if result.IsError {
-			// unknown key name should be rejected BEFORE reaching session
+			// unknown key name should be rejected BEFORE reaching the daemon
 			hasContent := false
 			for _, c := range result.Content {
 				if tc, ok := c.(mcp.TextContent); ok && strings.Contains(tc.Text, "unknown key name") {
@@ -158,8 +386,8 @@ func TestHandlePressKeyParamsValidation(t *testing.T) {
 	})
 
 	t.Run("valid key name parameter", func(t *testing.T) {
-		// Without a real session, this will fail at needSession() with
-		// "device connecting, retry" — but the key resolution should pass.
+		// With a nil RPC client, this fails at rpcCall with "device
+		// connecting, retry" — but the key resolution should pass.
 		req := mcp.CallToolRequest{
 			Params: mcp.CallToolParams{
 				Arguments: map[string]any{
@@ -169,7 +397,7 @@ func TestHandlePressKeyParamsValidation(t *testing.T) {
 		}
 		result, _ := s.handlePressKey(context.Background(), req)
 		if !result.IsError {
-			t.Error("expected session-not-ready error (no device)")
+			t.Error("expected daemon-not-reachable error (no device)")
 		}
 		hasRetry := false
 		for _, c := range result.Content {
@@ -178,7 +406,7 @@ func TestHandlePressKeyParamsValidation(t *testing.T) {
 			}
 		}
 		if !hasRetry {
-			t.Error("expected 'retry' message for nil session")
+			t.Error("expected 'retry' message for nil RPC client")
 		}
 	})
 
@@ -192,7 +420,7 @@ func TestHandlePressKeyParamsValidation(t *testing.T) {
 		}
 		result, _ := s.handlePressKey(context.Background(), req)
 		if !result.IsError {
-			t.Error("expected session-not-ready error (no device)")
+			t.Error("expected daemon-not-reachable error (no device)")
 		}
 	})
 
@@ -227,7 +455,7 @@ func TestHandlePressKeyParamsValidation(t *testing.T) {
 
 // TestAllMCPToolsRegistered verifies every expected tool is registered.
 func TestAllMCPToolsRegistered(t *testing.T) {
-	srv := New(nil, "", 0x3f)
+	srv := New("")
 	mcpSrv := srv.MCPServer()
 
 	expectedTools := []string{
@@ -236,14 +464,15 @@ func TestAllMCPToolsRegistered(t *testing.T) {
 		"back", "home", "press_key", "launch_app", "wait",
 	}
 
+	tools := mcpSrv.ListTools()
+	got := make(map[string]bool, len(tools))
+	for _, tl := range tools {
+		got[tl.Tool.Name] = true
+	}
 	for _, name := range expectedTools {
-		t.Run(name, func(t *testing.T) {
-			// Verify tool exists by attempting to list tools
-			// mcp-go exposes tools via GetTools() or similar
-			_ = mcpSrv
-			// Tool existence is verified at registration time (AddTool panics on duplicate).
-			// This test ensures no tool name is accidentally removed.
-		})
+		if !got[name] {
+			t.Errorf("expected tool %q to be registered, but it was not", name)
+		}
 	}
 }
 

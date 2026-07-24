@@ -155,7 +155,7 @@ phonefast serve
 ### Format
 
 ```bash
-phonefast [--foreground|--daemon] [--serial <SERIAL>] <command> [args...]
+phonefast [--foreground|--daemon] [--serial <SERIAL> | -s <SERIAL>] <command> [args...]
 ```
 
 ### Flag Descriptions
@@ -164,7 +164,7 @@ phonefast [--foreground|--daemon] [--serial <SERIAL>] <command> [args...]
 |------|-------|-------------|---------|
 | `--daemon` | — | Daemon mode, persistent background process (default behavior) | ✓ |
 | `--foreground` | `--direct` | Direct mode, creates a new scrcpy connection each time | — |
-| `--serial` | — | Specify device serial number (required for multiple devices) | Auto-detect |
+| `--serial` | `-s` | Specify target device serial (required for multiple devices) | Auto-detect |
 
 ### Mode Comparison
 
@@ -178,12 +178,15 @@ phonefast [--foreground|--daemon] [--serial <SERIAL>] <command> [args...]
 
 ### Multi-Device Management
 
-When multiple Android devices are connected, use `--serial` to specify the target device:
+A single daemon process serves all connected devices; each request is routed to the target device via its `device` field. Use `-s` (or `--serial`) to select a device — the flag is per-command, not per-daemon:
 
 ```bash
-phonefast --serial 13709314CF044927 tap 540 960
+phonefast -s 13709314CF044927 tap 540 960
 phonefast --serial R3CNB0000000XYZ screenshot /tmp/s.png
 ```
+
+Without `-s`, the first connected device (per ADB order) is used.
+
 
 ---
 
@@ -204,14 +207,8 @@ phonefast [--foreground|--daemon] tap <x> <y>
 
 **Examples:**
 ```bash
-phonefast tap 540 960                  # Tap the center of the screen
-phonefast tap 100 200                  # Tap the top-left area
-phonefast --foreground tap 244 540     # Tap in direct mode
-```
-
-**Output:**
-```
-Tapped at (540, 960)
+phonefast tap 540 960                  # tap screen center
+phonefast --foreground tap 244 540     # direct mode
 ```
 
 ---
@@ -227,15 +224,9 @@ phonefast [--foreground|--daemon] tap_element <index|text>
 | `index` | Number | UI element index (from `ui` command) | One of two |
 | `text` | String | UI element text or description (fuzzy search) | One of two |
 
-**Examples:**
 ```bash
-# By index (index comes from [N] in `ui` command output)
-phonefast tap_element 5
-
-# By text (fuzzy match, case-insensitive)
-phonefast tap_element "Settings"
-phonefast tap_element "发送"
-phonefast tap_element "compose"
+phonefast tap_element 5              # by index (from [N] in `ui` output)
+phonefast tap_element "Settings"     # by text (fuzzy, case-insensitive)
 ```
 
 **Notes:**
@@ -257,24 +248,9 @@ phonefast [--foreground|--daemon] swipe <x1> <y1> <x2> <y2> [duration_ms]
 | `x2` `y2` | End coordinates (pixels) | — |
 | `duration_ms` | Swipe duration (milliseconds) | `500` |
 
-**Examples:**
 ```bash
-# Swipe up (from bottom to top)
-phonefast swipe 540 1600 540 400
-
-# Swipe down
-phonefast swipe 540 400 540 1600
-
-# Swipe right (300ms fast swipe)
-phonefast swipe 200 500 800 500 300
-
-# Swipe left (800ms slow swipe)
-phonefast swipe 800 500 200 500 800
-```
-
-**Output:**
-```
-Swiped from (540, 1600) to (540, 400)
+phonefast swipe 540 1600 540 400        # swipe up
+phonefast swipe 200 500 800 500 300     # fast swipe right (300ms)
 ```
 
 ---
@@ -313,58 +289,20 @@ Typed: Hello World
 
 ### 4.3 Key Operations
 
-#### `back` — Back Key
+#### `back` / `home` — System Keys
 
 ```bash
-phonefast [--foreground|--daemon] back
+phonefast back     # KEYCODE_BACK (4)
+phonefast home     # KEYCODE_HOME (3), returns to home screen
 ```
-
-Simulates the Android system back key (KeyEvent.KEYCODE_BACK).
-
-**Examples:**
-```bash
-phonefast back
-```
-
-**Output:**
-```
-Back pressed
-```
-
----
-
-#### `home` — Home Key
-
-```bash
-phonefast [--foreground|--daemon] home
-```
-
-Simulates the Android system Home key (KeyEvent.KEYCODE_HOME), returning to the home screen.
-
-**Examples:**
-```bash
-phonefast home
-```
-
-**Output:**
-```
-Home pressed
-```
-
----
 
 #### `key` / `press_key` — Send a Key Event
 
 ```bash
-phonefast [--foreground|--daemon] key <keyname|keycode>
+phonefast key <keyname|keycode>
 ```
 
 Supports both key name and numeric keycode.
-
-| Parameter | Description | Required |
-|-----------|-------------|----------|
-| `keyname` | Key name (see table below) | One of two |
-| `keycode` | Android KeyEvent numeric keycode | One of two |
 
 **Supported Key Names:**
 
@@ -396,26 +334,9 @@ Supports both key name and numeric keycode.
 | | `media_next` | Next Track | 87 |
 | | `media_previous` | Previous Track | 88 |
 
-**Examples:**
 ```bash
-# By name
-phonefast key enter
-phonefast key backspace
-phonefast key volume_up
-phonefast key power
-phonefast key dpad_down
-phonefast key media_play_pause
-
-# By keycode
-phonefast key 4       # BACK
-phonefast key 3       # HOME
-phonefast key 66      # ENTER
-phonefast key 24      # VOLUME_UP
-```
-
-**Output:**
-```
-Key 'enter' pressed
+phonefast key enter        # by name
+phonefast key 66           # by keycode (ENTER)
 ```
 
 ---
@@ -621,8 +542,10 @@ phonefast observe 20
 #### `wait` — Wait
 
 ```bash
-phonefast [--foreground|--daemon] wait <ms>
+phonefast wait <ms>
 ```
+
+A pure local sleep — not routed through the daemon, so it never blocks a device's actor or affects other devices.
 
 Inserts a wait time into a sequence of operations, commonly used to wait for page loading or animations to complete.
 
@@ -745,8 +668,9 @@ Connected devices:
 # Stop the current daemon connection
 phonefast daemon --stop
 
-# Reconnect (start daemon)
-phonefast daemon --serial <SERIAL>
+# Reconnect (start daemon); select a device per-command with -s
+phonefast daemon
+phonefast -s 13709314CF044927 tap 540 960
 ```
 
 ---
@@ -841,7 +765,7 @@ phonefast 1.0.1 (commit a1b2c3d4, built 2026-07-01T10:00:00Z)
 
 ## 5. Daemon Management
 
-The Daemon is the core mechanism of phonefast. It is a persistent background process that holds a long-lived connection to the device, receives JSON-RPC requests via a Unix Socket, and achieves sub-10ms command latency.
+The Daemon is the core mechanism of phonefast: a single persistent background process that serves all connected devices, receives JSON-RPC requests via a Unix socket, and achieves sub-10ms command latency. It does not bind to any device at startup — a per-device session (DeviceActor) is created lazily on the first request that targets that device, and reused thereafter.
 
 ### Start and Stop
 
@@ -859,26 +783,7 @@ phonefast daemon --status
 phonefast daemon --stop
 ```
 
-### Advanced Options
-
-```bash
-# Specify device serial number (for multiple devices)
-phonefast daemon --serial 13709314CF044927
-
-# Custom socket path
-phonefast daemon --socket /tmp/my-phone.sock
-
-# Foreground mode + specify device and socket
-phonefast daemon --foreground --serial R3CNB0000000XYZ --socket /tmp/phone2.sock
-```
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--foreground` / `-f` | Run in foreground, log to stdout | Background |
-| `--stop` | Stop the running daemon | — |
-| `--status` | Check daemon status | — |
-| `--serial` | Specify device serial number | Auto-detect |
-| `--socket` / `-s` | Custom Unix Socket path | Auto-generated |
+> Device selection is per-command via the top-level `-s`/`--serial` flag (see [Multi-Device Management](#multi-device-management)). The `daemon` subcommand no longer takes `--serial` (accepted for backward compat but ignored) or `--socket` (the unified daemon uses a single fixed socket).
 
 ### Auto-Management
 
@@ -894,22 +799,21 @@ When the CLI detects that the daemon is not running, it automatically performs t
 
 ```
 ① Check PID file → ② Clean up residual files → ③ Fork child process
-④ Wait for Unix Socket readiness → ⑤ Poll daemon health status
-⑥ Confirm device is connected → ⑦ Execute command
+④ Wait for Unix Socket readiness → ⑤ Execute command
 ```
 
-Startup timeout is approximately 8 seconds; an error message is output upon timeout.
+The daemon starts empty (no device connection); the target device connects on the first request that uses it. Startup timeout is approximately 8 seconds.
 
-### Device Binding
+### File Paths
 
-The daemon is bound to the device serial number, with one daemon process per device. File path conventions:
+The unified daemon uses a single socket/PID file shared by all devices (the target device is selected per-request, not per-socket):
 
-| File | Path Pattern |
-|------|-------------|
-| PID file | `/tmp/phonefast-{uid}-{serial}.pid` |
-| Socket | `/tmp/phonefast-{uid}-{serial}.sock` |
+| File | Path |
+|------|------|
+| PID file | `/tmp/phonefast-{uid}.pid` |
+| Socket | `/tmp/phonefast-{uid}.sock` |
 
-> **Note:** `{uid}` is the current system user ID (`os.Getuid()`), used to isolate daemon instances of different users. Legacy files without uid (e.g., `/tmp/phonefast-{serial}.sock`) are automatically cleaned up on startup.
+`{uid}` is the current user ID (`os.Getuid()`), isolating daemons of different users.
 
 ---
 
@@ -920,8 +824,12 @@ phonefast can act as an MCP (Model Context Protocol) server, allowing AI assista
 ### Starting the Server
 
 ```bash
-# SSE mode (default)
+# SSE mode (default), auto-detect device
 phonefast serve
+
+# Target a specific device (per-request routing, same as CLI -s)
+phonefast serve -s 13709314CF044927
+phonefast -s 13709314CF044927 serve          # global -s also works
 
 # Custom port
 phonefast serve --port 8080
@@ -942,6 +850,9 @@ phonefast serve --host 127.0.0.1 --port 8019
 | `--port` / `-p` | Port number | `8019` |
 | `--host` / `-H` | Listen address | `0.0.0.0` |
 | `--path` | URL path prefix | `/Phone` |
+| `--serial` / `-s` | Target device serial | Auto-detect |
+
+The MCP server routes every tool call through the unified daemon (it does not hold its own device session). If the daemon crashes mid-session, `phonefast serve` restarts it automatically and retries the failed call.
 
 ### Mode Description
 
@@ -997,72 +908,41 @@ phonefast serve --host 127.0.0.1 --port 8019
 
 ## 7. Use Cases and Best Practices
 
-### Scenario 1: AI Agent Interaction Loop
+### AI Agent Interaction Loop
 
-The typical loop for an AI Agent interacting with a phone: Observe (screenshot + UI) -> Analyze -> Act -> Re-observe.
-
-```bash
-phonefast observe                       # Step 1: Observe
-phonefast tap 540 960                   # Step 2: Act
-phonefast wait 1500                     # Wait for animation
-phonefast observe                       # Step 3: Confirm result
-```
-
-### Scenario 2: Automated Test Script
+The typical loop: Observe (screenshot + UI) → Analyze → Act → Re-observe.
 
 ```bash
-#!/bin/bash
-# app_test.sh — automated test script
-
-# Open Settings
-phonefast launch com.android.settings
-phonefast wait 2000
-
-# Screenshot log
-phonefast screenshot /tmp/step1_settings.png
-
-# Tap search
-phonefast tap_element "搜索"
-phonefast wait 1000
-phonefast type "WiFi"
-phonefast wait 1000
-
-# Return to home
-phonefast home
+phonefast observe                       # 1. observe
+phonefast tap 540 960                   # 2. act
+phonefast wait 1500                     #    wait for animation
+phonefast observe                       # 3. confirm result
 ```
 
-### Scenario 3: JSON Batch Workflow
+### JSON Batch Workflow
 
 ```bash
 phonefast run '[
   {"action":"launch_app","args":{"package":"com.android.chrome"}},
   {"action":"wait","args":{"duration_ms":3000}},
-  {"action":"type_text","text":"hello world"},
-  {"action":"wait","duration_ms":2000},
+  {"action":"type_text","args":{"text":"hello world"}},
   {"action":"screenshot"},
-  {"action":"back"},
   {"action":"home"}
 ]'
 ```
 
-### Scenario 4: Multi-Device Operations
+### Multi-Device
 
 ```bash
-# Terminal 1: Control device A
-phonefast --serial DEVICE_A tap 540 960
-
-# Terminal 2: Control device B
-phonefast --serial DEVICE_B --foreground tap 100 200
+phonefast -s DEVICE_A tap 540 960       # terminal 1
+phonefast -s DEVICE_B tap 100 200       # terminal 2 (parallel, isolated)
 ```
 
 ### Best Practices
 
-1. **Use Daemon mode by default** — Auto-start, low latency, auto-recovery
-2. **Add `wait` between operations** — Allow time for page loading / animations to complete (typically 1-3 seconds)
-3. **Use `tap_element` instead of coordinates** — Text-based search is more robust than coordinate tapping
-4. **Use JSON batch processing for multiple operations** — The `run` command supports JSON arrays
-5. **Specify `--serial` for multiple devices** — Always specify the serial number when multiple devices are connected
-6. **Prefer `observe` over `screenshot` + `ui`** — Atomic operation eliminates race conditions
+1. **Daemon mode by default** — auto-start, <10ms, auto-recovery
+2. **`wait` between operations** — allow page load / animation (1-3s)
+3. **Prefer `observe` over `screenshot` + `ui`** — atomic, no race; prefer `tap_element` over raw coordinates
 
 ---
 
@@ -1072,34 +952,22 @@ phonefast --serial DEVICE_B --foreground tap 100 200
 phonefast CLI
     │
     ├── Daemon Mode ──→ Unix Socket ──→ Daemon Process ──→ TCP ──→ scrcpy-server (device side)
-    │                   JSON-RPC           Holds long conn.       Control+Video+UI
+    │                   JSON-RPC           per-device actor        Control+Video+UI
     │
     └── Direct Mode ──→ New session each time ──→ TCP ──→ scrcpy-server (device side)
                           Deploy+Start+Connect+Close
 ```
 
-### Internal Modules
-
 | Module | Path | Function |
 |--------|------|----------|
-| **CLI** | `cmd/phonefast/main.go` | Command line parsing, command dispatch, mode selection |
-| **ADB** | `internal/adb/` | Device discovery, scrcpy deployment and lifecycle |
-| **Daemon** | `internal/daemon/` | Daemon process, JSON-RPC dispatch, health checking |
-| **MCP** | `internal/mcp/` | MCP server (SSE/STDIO), tool registration |
-| **Session** | `internal/session/` | Device session: video stream, control, UI, screenshot |
-| **H.264** | `pkg/h264/` | Video stream parsing, keyframe extraction |
-| **Protocol** | `pkg/protocol/` | scrcpy protocol encoding and control messages |
+| CLI | `cmd/phonefast/main.go` | Command parsing, dispatch, mode selection |
+| Daemon | `internal/daemon/` | Unified daemon, JSON-RPC, per-device actors, health/recovery |
+| MCP | `internal/mcp/` | MCP server (SSE/STDIO), routes tool calls via daemon |
+| Session | `internal/session/` | Device session: video stream, control, UI, screenshot |
+| ADB | `internal/adb/` | Device discovery, scrcpy deployment/lifecycle |
+| Protocol | `pkg/protocol/` | scrcpy protocol encoding, control messages |
 
-### Technology Stack
-
-| Component | Technology |
-|-----------|-----------|
-| Language | Go (native binary, no runtime dependencies) |
-| Device communication | scrcpy protocol (TCP tunnel) |
-| Process communication | Unix Socket JSON-RPC |
-| Video stream | H.264 → ffmpeg transcode to PNG |
-| UI collection | UISocketHandler (custom scrcpy-server extension) |
-| AI integration | MCP (Model Context Protocol) SSE / STDIO |
+> Architecture deep-dive, screenshot pipeline (astiav CGO / ffmpeg fallback), and build details → [docs/DEV.md](DEV.md)
 
 ---
 
@@ -1150,77 +1018,25 @@ When the device USB is disconnected or scrcpy-server is killed, the daemon autom
 phonefast devices
 ```
 
-Output `device` indicates an authorized connection; `unauthorized` indicates the device has not been authorized (USB debugging authorization must be confirmed on the phone).
+Output `device` indicates an authorized connection; `unauthorized` means USB debugging authorization must be confirmed on the phone.
 
-### 2. How do I select a specific device when multiple are connected?
+### 2. What should I do if the daemon fails to start?
 
-Use the `--serial` flag to specify the target device:
+- **Device not connected / ADB not authorized** — `phonefast devices` to check; confirm USB debugging on the phone
+- **scrcpy-server.jar missing** — ensure dependency files are in place
+- Retry: `adb kill-server && adb start-server && phonefast daemon`
 
-```bash
-phonefast --serial 13709314CF044927 tap 540 960
-```
+### 3. `tap_element` cannot find the element?
 
-### 3. What should I do if the daemon fails to start?
-
-Common causes:
-
-- **Device not connected** — Run `phonefast devices` to check
-- **ADB not authorized** — Confirm USB debugging authorization on the phone
-- **Port conflict** — Close other scrcpy instances if running
-- **scrcpy-server.jar missing** — Ensure dependency files are in the correct location
-
-Solutions:
-
-```bash
-# Restart ADB service
-adb kill-server
-adb start-server
-
-# Reconnect device
-adb devices
-
-# Retry
-phonefast daemon
-```
-
-### 4. `tap_element` cannot find the element?
-
-- First use `phonefast ui` to see what elements are on the current screen
-- Confirm the element is actually visible on screen
-- Text search uses fuzzy matching; check the spelling
+- Use `phonefast ui` first to see what's on screen
+- Text search is fuzzy and case-insensitive; check spelling
 - Some non-standard views may not be captured
 
-### 5. How do I find an app package name?
+### 4. How do I find an app package name?
 
 ```bash
-# List all installed apps
-adb shell pm list packages
-
-# Search by keyword
 adb shell pm list packages | grep -i wechat
-adb shell pm list packages | grep -i chrome
 ```
-
-### 6. How to choose between Daemon mode and Direct mode?
-
-| Your Need | Recommended Mode |
-|-----------|-----------------|
-| Frequent operations, batch scripts | Daemon mode (default) |
-| Occasional one-off operation | Direct mode (`--foreground`) |
-| AI Agent high-frequency interaction | Daemon mode |
-| Temporary use on someone else's computer | Direct mode |
-| Automated CI pipeline | Daemon mode |
-
-### 7. What is the difference between `screenshot` and `observe`?
-
-`screenshot` only captures a screenshot; `observe` atomically captures both the screenshot and UI elements in a single call. `observe` eliminates the race condition where "the screenshot shows one page while the UI data reflects a different page."
-
-### 8. MCP server cannot connect?
-
-- Check if the port is in use: `lsof -i :8019`
-- Ensure the firewall is not blocking the specified port
-- SSE mode URL: `http://localhost:8019/Phone/sse`
-- STDIO mode requires correctly configuring the command and arguments in the MCP client settings
 
 ---
 

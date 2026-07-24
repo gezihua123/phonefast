@@ -6,7 +6,7 @@ import "testing"
 // that never started (no devices map, no actor). This guards the
 // two-value type assertion on actor.status and the map lookup.
 func TestStatusOnUnstartedDaemon(t *testing.T) {
-	d := New(Config{Serial: "fake-serial"})
+	d := New(Config{})
 
 	// No devices registered — must not panic.
 	s := d.Status()
@@ -26,7 +26,7 @@ func TestStatusOnUnstartedDaemon(t *testing.T) {
 // and asserts Status() degrades gracefully instead of panicking on the
 // single-value type assertion.
 func TestStatusWithNilStatusValue(t *testing.T) {
-	d := New(Config{Serial: "fake-serial"})
+	d := New(Config{})
 	// Hand-register an actor that never called updateStatus.
 	a := &DeviceActor{serial: "fake-serial", reqCh: make(chan actorRequest)}
 	d.devices = map[string]*DeviceActor{"fake-serial": a}

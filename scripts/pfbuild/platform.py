@@ -47,8 +47,7 @@ class Target:
         builder.py checks it to avoid silently producing a -full binary that's
         byte-identical to plain (ocr_embed tag → lib_nolib.go → RuntimeLib=nil).
         """
-        return (self.goos == "darwin" and self.goarch == "arm64") or \
-               (self.goos == "linux" and self.goarch == "amd64")
+        return self.goos == "darwin" and self.goarch == "arm64"
 
 
 # The full matrix. download-ocr-models.sh's resolve_target supports all 5;

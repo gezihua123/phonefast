@@ -1,4 +1,4 @@
-//go:build !(darwin && arm64 && ocr_embed) && !(linux && amd64 && ocr_embed)
+//go:build !(darwin && arm64 && ocr_embed)
 
 // lib_nolib.go is the catch-all for builds that do NOT embed the ONNX Runtime
 // shared library: every platform when `ocr_embed` is unset, and non-darwin/arm64
