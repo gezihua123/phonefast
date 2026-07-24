@@ -52,16 +52,41 @@ phonefast daemon 模式在所有操作上均保持稳定低延迟。以下数据
 
 ### 安装
 
-**前置依赖：** Go 1.21+、`adb`、`ffmpeg`、`git`
+**前置依赖：** `adb`（[Android Platform Tools](https://developer.android.com/tools/releases/platform-tools)）、`git`
+
+#### 方式一：快速安装（预编译包）
 
 ```bash
-# 从源码构建 — 两种产物:
+# 自动检测平台，下载并安装最新版本
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/gezihua123/phonefast/master/scripts/install_pkg.sh)"
+
+# 或指定版本
+curl -fsSL https://raw.githubusercontent.com/gezihua123/phonefast/master/scripts/install_pkg.sh | VERSION=1.0.13 bash
+```
+
+安装器将 `phonefast` 放入 `~/.local/bin`（Windows 为 `~/bin`）。确保目录在 `PATH` 中：
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+#### 方式二：手动下载
+
+从 [GitHub Releases](https://github.com/gezihua123/phonefast/releases) 下载预编译包，解压后放入 `PATH`：
+
+```bash
+# 示例：macOS arm64
+tar -xzf phonefast-1.0.13-darwin-arm64.tar.gz
+sudo cp phonefast-darwin-arm64 /usr/local/bin/phonefast
+```
+
+#### 方式三：从源码构建
+
+```bash
+# 需要 Go 1.21+、FFmpeg 开发库（或让构建脚本自动编译）
 bash scripts/build.sh                       # 当前平台 (plain)
 bash scripts/build.sh --full                # 额外构建自包含 -full 版
 bash scripts/build.sh --all                 # 全平台构建 + 打包
-
-# 或从 GitHub Releases 下载预编译二进制
-# https://github.com/gezihua123/phonefast/releases
 ```
 
 **构建产物对比：**

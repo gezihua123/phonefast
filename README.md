@@ -52,16 +52,41 @@ phonefast's daemon mode delivers consistently low latency across all operations.
 
 ### Installation
 
-**Prerequisites:** Go 1.21+, `adb`, `ffmpeg`, `git`
+**Prerequisites:** `adb` ([Android Platform Tools](https://developer.android.com/tools/releases/platform-tools)), `git`
+
+#### Option 1: Quick Install (prebuilt binary)
 
 ```bash
-# Build from source — two variants:
+# Auto-detect platform, download and install latest release
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/gezihua123/phonefast/master/scripts/install_pkg.sh)"
+
+# Or specify a version
+curl -fsSL https://raw.githubusercontent.com/gezihua123/phonefast/master/scripts/install_pkg.sh | VERSION=1.0.13 bash
+```
+
+The installer places `phonefast` in `~/.local/bin` (or `~/bin` on Windows). Make sure it's in your `PATH`:
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+#### Option 2: Manual Download
+
+Download the prebuilt binary from [GitHub Releases](https://github.com/gezihua123/phonefast/releases), extract, and copy to your `PATH`:
+
+```bash
+# Example for macOS arm64
+tar -xzf phonefast-1.0.13-darwin-arm64.tar.gz
+sudo cp phonefast-darwin-arm64 /usr/local/bin/phonefast
+```
+
+#### Option 3: Build from Source
+
+```bash
+# Requires Go 1.21+, FFmpeg dev libraries (or let build script auto-compile)
 bash scripts/build.sh                       # Current platform (plain)
 bash scripts/build.sh --full                # Also build self-contained -full
 bash scripts/build.sh --all                 # Cross-platform build + packaging
-
-# Or download prebuilt binary from GitHub Releases
-# https://github.com/gezihua123/phonefast/releases
 ```
 
 **Build variants:**
