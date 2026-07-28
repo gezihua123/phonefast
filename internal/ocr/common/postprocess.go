@@ -20,33 +20,41 @@ import (
 //  4. Filter tiny boxes (min side < 3px)
 //  5. Sort top-to-bottom, left-to-right
 func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
-	// Step 1: Threshold at 0.3
+	npixels := mapW * mapH
+
+	// Step 1: Threshold at 0.3 — use pooled bool buffer.
 	const threshold = float32(0.3)
-	binary := make([]bool, mapW*mapH)
+	binary := getBool(npixels)
 	for i, v := range probMap {
 		binary[i] = v > threshold
 	}
 
-	// Step 2: Dilate mask to connect nearby text fragments (replaces O(n²) merge)
-	binary = dilateMask(binary, mapW, mapH)
+	// Step 2: Dilate mask to connect nearby text fragments (replaces O(n²) merge).
+	dilated := getBool(npixels)
+	dilateMaskInto(binary, dilated, mapW, mapH)
+	putBool(binary)
+	binary = nil
 
-	// Step 3: Find connected components via flood fill
+	// Step 3: Find connected components via flood fill.
+	visited := getBool(npixels)
+	// visited starts zeroed from pool? Not guaranteed — the pool may return
+	// stale data. Zero it.
+	for i := range visited {
+		visited[i] = false
+	}
+
 	type point struct{ x, y int }
-	visited := make([]bool, mapW*mapH)
 	var boxes [][4][2]float64
-
-	minBoxSide := 3
+	const minBoxSide = 3
 
 	for y := 0; y < mapH; y++ {
 		for x := 0; x < mapW; x++ {
 			idx := y*mapW + x
-			if !binary[idx] || visited[idx] {
+			if !dilated[idx] || visited[idx] {
 				continue
 			}
 
-			// Flood fill to find all pixels in this component. Track only the
-			// bounding box (minX/maxX/minY/maxY) and a pixel count — the
-			// component pixel list itself is unused, so don't allocate it.
+			// Flood fill — track bounding box only (no pixel list allocation).
 			count := 0
 			stack := []point{{x, y}}
 			visited[idx] = true
@@ -71,7 +79,6 @@ func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
 					maxY = p.y
 				}
 
-				// 8-connected neighbors
 				for dy := -1; dy <= 1; dy++ {
 					for dx := -1; dx <= 1; dx++ {
 						if dx == 0 && dy == 0 {
@@ -82,7 +89,7 @@ func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
 							continue
 						}
 						nidx := ny*mapW + nx
-						if binary[nidx] && !visited[nidx] {
+						if dilated[nidx] && !visited[nidx] {
 							visited[nidx] = true
 							stack = append(stack, point{nx, ny})
 						}
@@ -94,17 +101,12 @@ func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
 				continue
 			}
 
-			// Step 3: Compute axis-aligned bounding box from component pixels
 			bw := maxX - minX + 1
 			bh := maxY - minY + 1
-
-			// Filter tiny boxes
 			if bw < minBoxSide || bh < minBoxSide {
 				continue
 			}
 
-			// Step 4: Create quadrilateral from bounding box, then expand
-			// by 2px on each side (crude approximation of DB unclip)
 			expand := 2
 			qMinX := minX - expand
 			qMinY := minY - expand
@@ -127,34 +129,35 @@ func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
 		}
 	}
 
-	// Sort boxes top-to-bottom, left-to-right
+	putBool(dilated)
+	putBool(visited)
 	sortBoxes(boxes)
-
 	return boxes
 }
 
-// dilateMask applies a 3×3 morphological dilation to the binary mask.
+// dilateMaskInto applies a 3×3 morphological dilation from src into dst.
 // This connects nearby text fragments so flood fill produces larger,
-// more coherent boxes — eliminating the need for O(n²) box merging.
-func dilateMask(binary []bool, w, h int) []bool {
-	result := make([]bool, w*h)
+// more coherent boxes. dst must be pre-allocated to w*h. Both src and dst
+// are typically pool buffers (reused across ExtractTextBoxes calls).
+func dilateMaskInto(src []bool, dst []bool, w, h int) {
+	for i := range dst[:w*h] {
+		dst[i] = false
+	}
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			idx := y*w + x
-			if binary[idx] {
-				// Spread this pixel to its 3×3 neighborhood
+			if src[idx] {
 				for dy := -1; dy <= 1; dy++ {
 					for dx := -1; dx <= 1; dx++ {
 						nx, ny := x+dx, y+dy
 						if nx >= 0 && nx < w && ny >= 0 && ny < h {
-							result[ny*w+nx] = true
+							dst[ny*w+nx] = true
 						}
 					}
 				}
 			}
 		}
 	}
-	return result
 }
 
 // fitQuadrilateral creates a 4-point quadrilateral from bounding box coordinates.

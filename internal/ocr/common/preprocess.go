@@ -3,7 +3,47 @@ package common
 import (
 	"image"
 	"math"
+	"sync"
 )
+
+// Postprocessing buffer pools — shared across engines, serialized by the
+// Service mutex. Pools are only used for ExtractTextBoxes' intermediate bool
+// masks which have no external references (safe to reuse).
+var boolPool = sync.Pool{New: func() any { s := make([]bool, 0, 128*1024); return &s }}
+
+// growFloat32 returns a []float32 of length n, reusing buf's backing array when
+// it is large enough and allocating (and growing) only when n exceeds cap(buf).
+// The returned slice aliases buf when reused. Used to keep a long-lived scratch
+// tensor buffer across serialized OCR calls instead of allocating ~5–6 MB per
+// call. The caller must not reuse the returned slice while ORT still references
+// it (zero-copy CreateTensorWithDataAsOrtValue) — i.e. not until the input
+// Value built from it is Closed.
+func growFloat32(buf []float32, n int) []float32 {
+	if cap(buf) >= n {
+		return buf[:n]
+	}
+	return make([]float32, n)
+}
+
+// getBool gets a []bool slice of at least `need` capacity from the pool.
+func getBool(need int) []bool {
+	pp := boolPool.Get().(*[]bool)
+	s := *pp
+	if cap(s) < need {
+		s = make([]bool, need)
+	} else {
+		s = s[:need]
+	}
+	*pp = s
+	return s
+}
+
+// putBool returns a []bool slice to the pool (cap ≤ 4MB only to bound memory).
+func putBool(s []bool) {
+	if s != nil && cap(s) <= 4*1024*1024 {
+		boolPool.Put(&s)
+	}
+}
 
 // RecHeight is the PP-OCR recognition model input height (training resolution).
 const RecHeight = 48
@@ -27,6 +67,21 @@ const RecHeight = 48
 //
 // Returns tensor data, resized width, resized height, and tensor shape.
 func DetPreprocess(img image.Image, maxSide int) ([]float32, int, int, []int64) {
+	return DetPreprocessInto(img, maxSide, nil)
+}
+
+// DetPreprocessInto is the buffer-reusing variant of DetPreprocess. It writes
+// the detection input tensor into `buf` (growing it as needed) and returns the
+// (possibly reallocated) slice along with the geometry. The caller keeps the
+// returned slice to reuse on the next call — this eliminates the ~5.4 MB
+// per-call allocation that DetPreprocess would otherwise make.
+//
+// Safety: the returned slice is referenced zero-copy by ORT's
+// CreateTensorWithDataAsOrtValue; it must not be reused until the input Value
+// built from it has been Closed. The Detector enforces this by reusing its
+// detBuf only across serialized Recognize calls (each closes its input before
+// returning).
+func DetPreprocessInto(img image.Image, maxSide int, buf []float32) ([]float32, int, int, []int64) {
 	const (
 		minSide  = 32
 		detMeanR = 0.485
@@ -67,10 +122,13 @@ func DetPreprocess(img image.Image, maxSide int) ([]float32, int, int, []int64) 
 
 	resized := ResizeImage(img, resizeW, resizeH)
 
-	// Build CHW float32 tensor using direct Pix access (no per-pixel function call)
+	// Build CHW float32 tensor using direct Pix access (no per-pixel function call).
+	// Reuse the caller's buffer when it's big enough; only allocate (and grow)
+	// when the image is larger than anything seen so far.
 	pix := resized.Pix
 	stride := resized.Stride
-	tensor := make([]float32, 3*resizeH*resizeW)
+	tensorSize := 3 * resizeH * resizeW
+	tensor := growFloat32(buf, tensorSize)
 	for y := 0; y < resizeH; y++ {
 		rowPix := pix[y*stride:]
 		for x := 0; x < resizeW; x++ {
@@ -84,6 +142,8 @@ func DetPreprocess(img image.Image, maxSide int) ([]float32, int, int, []int64) 
 			tensor[2*resizeH*resizeW+base] = float32(float64(b)/255.0-detMeanB) / detStdB
 		}
 	}
+	// Release resized intermediate (~2 MB for 480×1024) after tensor is built.
+	resized = nil
 
 	shape := []int64{1, 3, int64(resizeH), int64(resizeW)}
 	return tensor, resizeW, resizeH, shape
@@ -121,13 +181,29 @@ func RecResizeWidth(crop image.Image, capW int) int {
 //  3. Stack into [B, 3, RecHeight, maxW] float32 tensor
 //  4. Normalize each: (pixel/255 - 0.5) / 0.5
 func RecBatchPreprocess(crops []image.Image) ([]float32, int) {
+	return RecBatchPreprocessInto(crops, nil)
+}
+
+// RecBatchPreprocessInto is the buffer-reusing variant of RecBatchPreprocess.
+// It writes the batched [B,3,RecHeight,maxW] tensor into `buf` (grown on demand)
+// and returns the (possibly reallocated) slice. Eliminates the ~6 MB per-call
+// allocation when the caller reuses one scratch buffer across serialized calls.
+//
+// Safety: same zero-copy ORT contract as DetPreprocessInto — do not reuse the
+// returned slice until the input Value built from it is Closed.
+//
+// It also releases each resized intermediate as soon as its channel is written,
+// so the B resized RGBA images (~60 KB each) don't all coexist with the tensor.
+func RecBatchPreprocessInto(crops []image.Image, buf []float32) ([]float32, int) {
 	if len(crops) == 0 {
 		return nil, 0
 	}
 
-	// Step 1: Resize each crop to H=RecHeight, record widths
-	resizedWidths := make([]int, len(crops))
-	resizedImages := make([]*image.RGBA, len(crops))
+	B := len(crops)
+
+	// Step 1: Resize each crop to H=RecHeight, record widths.
+	resizedWidths := make([]int, B)
+	resizedImages := make([]*image.RGBA, B)
 	maxW := 0
 	for i, crop := range crops {
 		rw := RecResizeWidth(crop, RecMaxWidth)
@@ -138,12 +214,14 @@ func RecBatchPreprocess(crops []image.Image) ([]float32, int) {
 		resizedImages[i] = ResizeImage(crop, rw, RecHeight)
 	}
 
-	B := len(crops)
-
-	// Step 2: Build stacked tensor [B, 3, RecHeight, maxW] using direct Pix access
-	tensor := make([]float32, B*3*RecHeight*maxW)
+	// Step 2: Build stacked tensor [B, 3, RecHeight, maxW] reusing buf.
+	tensor := growFloat32(buf, B*3*RecHeight*maxW)
+	stride := 3 * RecHeight * maxW
 	for b := 0; b < B; b++ {
-		writeRecChannel(tensor[b*3*RecHeight*maxW:], resizedImages[b], resizedWidths[b], maxW)
+		writeRecChannel(tensor[b*stride:], resizedImages[b], resizedWidths[b], maxW)
+		// Release this resized image as soon as its channel is written so the
+		// B intermediates don't all live alongside the tensor.
+		resizedImages[b] = nil
 	}
 
 	return tensor, maxW

@@ -37,6 +37,13 @@ type OnnxRecognizer struct {
 	recSess   *onnxruntime.Session
 	ctc       *common.CTCDecoder
 	tempFiles []string // rec model temp path (lib + det model owned by the detector)
+
+	// recBuf is a reusable float32 scratch buffer for the recognition input
+	// tensor. The OCR Service serializes all Recognize calls (mutex), so only
+	// one RecognizeBoxes is ever in flight — the buffer is reused across calls.
+	// ORT references it zero-copy; safe to reuse once the input Value is closed
+	// (runInference closes it via defer before returning). Grown on demand.
+	recBuf []float32
 }
 
 // NewEngine builds the shared detector + the ONNX rec recognizer and returns
@@ -85,7 +92,8 @@ func (r *OnnxRecognizer) RecognizeBoxes(crops []image.Image) ([]common.BoxText, 
 	if len(crops) == 0 {
 		return nil, nil
 	}
-	tensorData, batchW := common.RecBatchPreprocess(crops)
+	tensorData, batchW := common.RecBatchPreprocessInto(crops, r.recBuf)
+	r.recBuf = tensorData // keep the (possibly grown) backing array for reuse
 	shape := []int64{int64(len(crops)), 3, common.RecHeight, int64(batchW)}
 
 	logits, outShape, err := r.runInference(r.recSess, tensorData, shape)

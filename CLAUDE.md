@@ -110,7 +110,7 @@ bash scripts/build.sh
 bash scripts/test.sh
 ```
 
-> **为何用 wrapper 而非裸 `go test`**：裸 `go test ./...` 默认用系统 FFmpeg（macOS homebrew 8.0），该版本移除了 `AVFMT_FLAG_SHORTEST` 宏，而 go-astiav v0.35.0 仍引用它，导致 `pkg/avcodec` → `internal/session` → `internal/daemon` → `internal/mcp` → `cmd/phonefast` 链式构建失败。`test.sh` 自动设 `PKG_CONFIG_PATH` 指向 `build/cross-ffmpeg/` 自编译 FFmpeg 7.x（与 `build.sh` 同源），让测试环境与生产构建一致。自编译 FFmpeg 不存在时自动降级 `CGO_ENABLED=0`（跳过 avcodec CGO 测试）。支持参数转发：`bash scripts/test.sh ./pkg/h264/ -race`。
+> **为何用 wrapper 而非裸 `go test`**：裸 `go test ./...` 默认用系统 FFmpeg，其 ABI 可能与 `build.sh` 链接的版本不同。`test.sh` 自动设 `PKG_CONFIG_PATH` 指向 `build/cross-ffmpeg/` 自编译 FFmpeg 8.0（与 `build.sh` 同源），让测试环境与生产构建一致。自编译 FFmpeg 不存在时自动降级 `CGO_ENABLED=0`（跳过 avcodec CGO 测试）。支持参数转发：`bash scripts/test.sh ./pkg/h264/ -race`。
 
 ### 发布流
 

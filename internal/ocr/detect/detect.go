@@ -79,6 +79,14 @@ type Detector struct {
 	detSess   *onnxruntime.Session
 	useVision bool
 
+	// detBuf is a reusable float32 scratch buffer for the detection input
+	// tensor. The OCR Service serializes all Recognize calls (mutex), so only
+	// one Detect is ever in flight — the buffer is reused across calls. ORT's
+	// CreateTensorWithDataAsOrtValue references this slice zero-copy; it is
+	// safe to reuse once the input Value is closed (runInference closes it via
+	// defer before Detect returns). Grown on demand; never shrinks.
+	detBuf []float32
+
 	// tempFiles are the extracted det model + runtime-lib temp paths; removed
 	// in Close.
 	tempFiles []string
@@ -133,7 +141,8 @@ func (d *Detector) Detect(img image.Image, pngData []byte) ([][4][2]float64, err
 		}
 	}
 
-	tensorData, resizeW, resizeH, shape := common.DetPreprocess(img, 1024)
+	tensorData, resizeW, resizeH, shape := common.DetPreprocessInto(img, 1024, d.detBuf)
+	d.detBuf = tensorData // keep the (possibly grown) backing array for reuse
 	probData, outShape, err := d.runInference(tensorData, shape)
 	if err != nil {
 		return nil, fmt.Errorf("det inference: %w", err)

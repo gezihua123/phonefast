@@ -44,12 +44,15 @@ func (b *BaseEngine) Recognize(pngImage []byte) ([]pkgocr.TextResult, error) {
 		return nil, nil
 	}
 
-	// Crop all boxes, then recognize in one call (the recognizer decides
-	// batch vs per-box internally).
+	// Crop all boxes — copies pixel data so the full image can be freed.
 	crops := make([]image.Image, len(boxes))
 	for i, box := range boxes {
 		crops[i] = common.CropBox(img, box)
 	}
+	// Release the full decoded PNG image (~10 MB for 1080×2400) before
+	// recognition allocates tensors — reduces peak memory by ~10 MB.
+	img = nil
+
 	texts, err := b.Rec.RecognizeBoxes(crops)
 	if err != nil {
 		return nil, fmt.Errorf("text recognition: %w", err)

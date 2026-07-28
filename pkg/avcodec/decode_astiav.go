@@ -25,6 +25,13 @@ type astiavDecoder struct {
 	codecCtx *astiav.CodecContext // persistent codec context, reused across decodes
 	swsCtx   *astiav.SoftwareScaleContext
 
+	// rgbaScratch holds the tightly-packed RGBA pixels wrapped by the
+	// image.NRGBA handed to the PNG/JPEG encoder. Reused across Decode calls
+	// (the caller guarantees single-goroutine access), so screenshots no
+	// longer allocate a fresh w*h*4 (~8.3MB at 1080p) Go image per call.
+	// Grown only when dimensions increase.
+	rgbaScratch []byte
+
 	// Cached dimensions so we know when to recreate the scaler.
 	width  int
 	height int
@@ -207,18 +214,26 @@ func (d *astiavDecoder) scaleToRGBA(src *astiav.Frame, dstW, dstH int) (*astiav.
 	return dst, nil
 }
 
-// frameToImage converts an RGBA astiav.Frame to a Go image.Image.
+// frameToImage converts an RGBA astiav.Frame to a Go image.Image without a
+// per-call allocation: the C frame pixels are copied (packed, align=1) into
+// the decoder's persistent rgbaScratch, and the returned *image.NRGBA wraps
+// that scratch. The image is valid until the NEXT Decode call — callers
+// (Decode → png/jpeg.Encode) consume it synchronously before returning.
 func (d *astiavDecoder) frameToImage(frame *astiav.Frame) (image.Image, error) {
-	// GuessImageFormat returns the correct Go image type for PixelFormatRgba,
-	// which is *image.NRGBA (non-premultiplied alpha).
-	img, err := frame.Data().GuessImageFormat()
-	if err != nil {
-		return nil, fmt.Errorf("guess format: %w", err)
+	w, h := frame.Width(), frame.Height()
+	need := w * h * 4
+	if need <= 0 {
+		return nil, fmt.Errorf("invalid frame dimensions %dx%d", w, h)
 	}
-	if err := frame.Data().ToImage(img); err != nil {
-		return nil, fmt.Errorf("to image: %w", err)
+	if cap(d.rgbaScratch) < need {
+		d.rgbaScratch = make([]byte, need)
 	}
-	return img, nil
+	pix := d.rgbaScratch[:need]
+	// align=1 → tightly packed linesize == w*4, matching NRGBA.Stride.
+	if _, err := frame.ImageCopyToBuffer(pix, 1); err != nil {
+		return nil, fmt.Errorf("copy to buffer: %w", err)
+	}
+	return &image.NRGBA{Pix: pix, Stride: w * 4, Rect: image.Rect(0, 0, w, h)}, nil
 }
 
 // ---- NAL unit helpers ----

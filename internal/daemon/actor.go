@@ -247,7 +247,7 @@ func (a *DeviceActor) reconnect() error {
 	}
 
 	a.session = sess
-	a.serial = sess.Serial // keep in sync (may change if serial was auto-detected)
+	// a.serial is immutable after initial connect; reconnect uses same serial (may change if serial was auto-detected)
 	a.updateStatus(sess)
 	return nil
 }

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.14 (2026-07-27)
+
+### ⚡ Performance
+- **OCR memory & timing (CGO=1)**: per-op allocation 54.7 MB → 44.1 MB (−19%, under the 50 MB target); allocations/op 1.46 M → 2.1 K (−99.9%); median latency 173 ms → 162 ms with no new timing spikes
+  - `ResizeImage`: rewrote bilinear path to convert source to a flat RGBA buffer once instead of `src.At()` per pixel (source of the 1.46 M allocations)
+  - `CropBox`: copy cropped pixels so the full decoded screenshot (~4.5 MB) is collectible before recognition; `BaseEngine.Recognize` nils the image after cropping
+  - Input-tensor scratch buffers (`Detector.detBuf`, `OnnxRecognizer.recBuf`): reuse one growable `[]float32` each across serialized calls — safe because ORT's `CreateTensorWithDataAsOrtValue` is zero-copy and the input `Value` is closed before reuse
+  - `ExtractTextBoxes`: `sync.Pool` for the three `[]bool` masks; `dilateMask` writes into a caller buffer
+- **Screenshot memory churn**: ~24 MB transient allocation per screenshot → ~13 MB (Go side −90%), cutting daemon RSS growth under load by ~30% (6-min Warmup-profile repro: +36.6 MB → +25.8 MB; pixel output byte-identical)
+  - `pkg/avcodec`: PNG/JPEG encoding now wraps a per-decoder reused RGBA scratch (`ImageCopyToBuffer`, packed align=1) instead of allocating a fresh `image.NRGBA` per screenshot (~8.3 MB @1080p per call)
+  - `internal/daemon`: image RPC responses (screenshot/observe) stream base64 directly to the socket (`base64.NewEncoder` over `bufio.Writer`) instead of materializing the base64 string plus two `json.Marshal` copies (~8 MB per call)
+- **New regression guards** (`tests/ocr-benchmark/`): `TestOCRSpike` (spike-factor threshold) and `TestOCRDeterminism` (byte-identical output across iterations — catches tensor-pooling reuse races)
+
+### 🛠️ Tooling
+- **Daemon pprof endpoint**: `PHONEFAST_PPROF=localhost:6060` enables `/debug/pprof/*` (heap/goroutine/profile) on the daemon; unset = zero overhead
+- **Memory profiling tools** (`tests/`): `mem_isolation.py` (per-op-class RSS phases + vmmap/footprint anatomy), `mem_repro_warmup.py` (Warmup-profile RSS replay), `pngdiff.go` (pixel-exact PNG comparison)
+
+---
+
 ## v1.0.13 (2026-07-24)
 
 ### 🚀 Features
