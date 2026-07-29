@@ -182,6 +182,9 @@ func (s *Server) registerTools() {
 			mcp.WithBoolean("summary",
 				mcp.Description("If true, filter out layout containers, return only meaningful elements (default: false)."),
 			),
+			mcp.WithString("format",
+				mcp.Description("Output format: 'flatref' (default) | 'jsonl' | 'simplexml' | 'yml' | 'flat' (legacy)."),
+			),
 		),
 		s.handleObserve,
 	)
@@ -367,6 +370,7 @@ func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*m
 	params := map[string]any{
 		"max_elements": getMaxElements(req, 100),
 		"summary":      getSummary(req),
+		"format":       getFormat(req),
 	}
 	var resp struct {
 		Text      string `json:"text"`

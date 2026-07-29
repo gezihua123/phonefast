@@ -59,9 +59,7 @@ type Daemon struct {
 
 // Config holds daemon startup settings.
 type Config struct {
-	Foreground bool   // stay in foreground (don't daemonize)
-	SocketPath string // override default socket path
-	PidFile    string // override default pid file path
+	Foreground bool // stay in foreground (don't daemonize)
 }
 
 // StatusInfo holds runtime daemon status.
@@ -79,15 +77,6 @@ type StatusInfo struct {
 
 // New creates a new Daemon (does NOT connect to device yet).
 func New(cfg Config) *Daemon {
-	socketPath := cfg.SocketPath
-	if socketPath == "" {
-		socketPath = SocketName()
-	}
-	pidFile := cfg.PidFile
-	if pidFile == "" {
-		pidFile = PidFileName()
-	}
-
 	return &Daemon{
 		devices:    make(map[string]*DeviceActor),
 		scidAlloc:  NewScidAllocator(),
@@ -96,8 +85,8 @@ func New(cfg Config) *Daemon {
 			Engine:    os.Getenv("PHONEFAST_OCR_ENGINE"),          // "onnx" (default) | "ncnn"
 			UseVision: os.Getenv("PHONEFAST_OCR_VISION") != "false",
 		}),
-		socketPath: socketPath,
-		pidFile:    pidFile,
+		socketPath: SocketName(),
+		pidFile:    PidFileName(),
 	}
 }
 

@@ -783,7 +783,7 @@ phonefast daemon --status
 phonefast daemon --stop
 ```
 
-> Device selection is per-command via the top-level `-s`/`--serial` flag (see [Multi-Device Management](#multi-device-management)). The `daemon` subcommand no longer takes `--serial` (accepted for backward compat but ignored) or `--socket` (the unified daemon uses a single fixed socket).
+> Device selection is per-command via the top-level `-s`/`--serial` flag (see [Multi-Device Management](#multi-device-management)). The daemon uses a single fixed socket (`/tmp/phonefast-{uid}.sock`) shared by all devices.
 
 ### Auto-Management
 

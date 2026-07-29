@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.0.15 (2026-07-29)
+
+### 🚀 Features
+- **Hierarchical UI formats**: `observe` and `ui` commands now support `--format` flag with `flatref` (default), `jsonl`, `simplexml`, and `yml` output modes — all include parent-child relationships and depth metadata for LLM-friendly tree navigation
+- **`full` UI socket mode**: Android `UISocketHandler` adds hierarchical dump (`dumpFullHierarchy`) that collects ALL nodes (no filtering) with `parent`/`depth` fields, enabling accurate tree reconstruction on the Go side
+- **JPEG screenshot encoding** for MCP: `screenshot` and `observe` RPCs now return JPEG (quality 85) instead of PNG — ~10× smaller payload while preserving native resolution; `pngToJPEG` conversion with PNG fallback on failure
+
+### ⚡ Performance
+- **Concurrent screenshot + UI dump** in `observe`: `Screenshot()` and `GetUIFull()` now run in parallel goroutines with independent 30s timeouts, halving end-to-end observe latency
+- **Daemon simplification**: removed unused `--socket`/`--serial` flags from daemon subcommand, fixed socket path (`/tmp/phonefast-{uid}.sock`)
+- **MaxSize=0**: use native device resolution for video encoding (was hardcoded 1080)
+
+### 🐛 Fixes
+- **Android node recycling**: `UISocketHandler` now recycles all `AccessibilityNodeInfo` and `AccessibilityWindowInfo` objects in leaf→root order, preventing memory leaks during repeated UI dumps. Window recycling is paired with its root node in the same `try-finally` block — NOT extracted into a separate loop (would cause over-recycling and stale root data). `lastVisited` tracking ensures unvisited windows (early break on maxElements or exception) are still recycled.
+
+### 🛠️ Refactor
+- **Format extraction**: `formatElements` moved from `cmd/phonefast/main.go` to `internal/format.ElementsForLLM`, shared by CLI daemon mode, direct mode, and RPC handlers
+- **Daemon config**: removed `SocketPath`/`PidFile` from `daemon.Config` — paths now resolved inside `New()` via `SocketName()`/`PidFileName()`
+
+### 📝 Docs
+- CLI docs (en/zh): updated daemon socket description, added `--format` flag documentation
+
+---
+
 ## v1.0.14 (2026-07-27)
 
 ### ⚡ Performance

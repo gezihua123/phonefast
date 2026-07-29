@@ -768,7 +768,7 @@ phonefast daemon --status
 phonefast daemon --stop
 ```
 
-> 设备选择是每命令级的，通过顶层 `-s`/`--serial` flag（见[多设备管理](#多设备管理)）。`daemon` 子命令不再接收 `--serial`（向后兼容仍解析但被忽略）和 `--socket`（统一 daemon 使用单一固定 socket）。
+> 设备选择是每命令级的，通过顶层 `-s`/`--serial` flag（见[多设备管理](#多设备管理)）。daemon 使用单一固定 socket（`/tmp/phonefast-{uid}.sock`），所有设备共享。
 
 ### 自动管理
 

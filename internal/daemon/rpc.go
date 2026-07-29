@@ -1,10 +1,15 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png" // register PNG decoder for Screenshot() output
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
 	"github.com/gezihua123/phonefast/internal/format"
@@ -281,10 +286,17 @@ func handleScreenshot(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("screenshot: %v", err))
 	}
 
+	// Convert to JPEG for smaller MCP payload (~10× vs PNG at native res).
+	jpgData, jpgErr := pngToJPEG(pngData, 85)
+	if jpgErr != nil {
+		phonelog.Default().Write("screenshot: png→jpeg failed, falling back: %v", jpgErr)
+		jpgData = pngData
+	}
+
 	return newStreamedImageResponse(req.ID, map[string]any{
 		"text":      fmt.Sprintf("Screenshot (%dx%d)", w, h),
-		"mime_type": "image/png",
-	}, "image_data", pngData)
+		"mime_type": "image/jpeg",
+	}, "image_data", jpgData)
 }
 
 func handleGetUIElements(sess *session.Session, req *Request) *Response {
@@ -360,12 +372,93 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
+	formatType := getFormatFromParams(req)
+	if formatType == "" {
+		formatType = "flatref"
+	}
 	maxShow := getMaxElementsFromParams(req, 100)
 	collectMax := maxShow
 	if collectMax < 0 || collectMax > 500 {
 		collectMax = 0 // server default (500 for full, 100 for summary)
 	}
 	isSummary := getSummaryFromParams(req)
+
+	// Hierarchical formats (flatref, jsonl, simplexml, yml): need full UI tree.
+	// Run screenshot + GetUIFull concurrently; each has its own 30s timeout.
+	if f := format.ByName(formatType); f != nil {
+		type screenRes struct {
+			png []byte
+			err error
+		}
+		type uiRes struct {
+			elements []protocol.UIFullElement
+			err      error
+		}
+		scCh := make(chan screenRes, 1)
+		uiCh := make(chan uiRes, 1)
+
+		go func() {
+			png, _, _, err := sess.Screenshot()
+			scCh <- screenRes{png, err}
+		}()
+		go func() {
+			elems, err := sess.GetUIFull(collectMax)
+			uiCh <- uiRes{elems, err}
+		}()
+
+		var sc screenRes
+		select {
+		case sc = <-scCh:
+		case <-time.After(30 * time.Second):
+			return newErrorResponse(req.ID, ErrTimeout, "screenshot timed out")
+		}
+
+		var ui uiRes
+		select {
+		case ui = <-uiCh:
+		case <-time.After(30 * time.Second):
+			return newErrorResponse(req.ID, ErrTimeout, "get ui elements timed out")
+		}
+
+		if sc.err != nil {
+			return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("observe screenshot: %v", sc.err))
+		}
+		if ui.err != nil {
+			return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("observe ui: %v", ui.err))
+		}
+
+		// Summary mode: keep only the first N elements (already depth-first
+		// from the server, so topmost widgets come first).
+		if isSummary && maxShow > 50 {
+			maxShow = 50
+		}
+		if maxShow > 0 && len(ui.elements) > maxShow {
+			ui.elements = ui.elements[:maxShow]
+		}
+
+		formatted := f.Format(ui.elements)
+
+		// Convert PNG screenshot → JPEG (quality 85) for ~10x smaller MCP
+		// payload. Native resolution is preserved; OCR is unaffected because
+		// it reads decoded video frames, not this screenshot PNG.
+		jpgData, jpgErr := pngToJPEG(sc.png, 85)
+		if jpgErr != nil {
+			// Fall back to original PNG on conversion failure.
+			phonelog.Default().Write("observe: png→jpeg failed, falling back: %v", jpgErr)
+			jpgData = sc.png
+		}
+
+		return newStreamedImageResponse(req.ID, map[string]any{
+			"text":      formatted,
+			"mime_type": "image/jpeg",
+			"count":     len(ui.elements),
+			"width":     sess.DeviceW,
+			"height":    sess.DeviceH,
+			"format":    formatType,
+		}, "image_data", jpgData)
+	}
+
+	// Legacy flat format (no format specified or unknown format).
 	pngData, elements, err := sess.Observe(collectMax, isSummary)
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("observe: %v", err))
@@ -652,4 +745,19 @@ func getSummaryFromParams(req *Request) bool {
 	}
 	v, ok := params["summary"].(bool)
 	return ok && v
+}
+
+// pngToJPEG decodes a PNG image and re-encodes it as JPEG at the given
+// quality (1-100). Used to shrink MCP screenshot payloads ~10× without
+// downscaling — native resolution is preserved.
+func pngToJPEG(png []byte, quality int) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(png))
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

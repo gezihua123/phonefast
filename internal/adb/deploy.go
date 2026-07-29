@@ -149,11 +149,11 @@ func DefaultScrcpyArgs() ScrcpyArgs {
 	return ScrcpyArgs{
 		Scid:          0x3f,
 		LogLevel:      "info",
-		MaxSize:       1080,
+		MaxSize:       0,
 		BitRate:       8,
 		MaxFPS:        15,
 		NoAudio:       true,
-		TunnelForward: true, // device acts as server, PC connects
+		TunnelForward: true,
 	}
 }
 
