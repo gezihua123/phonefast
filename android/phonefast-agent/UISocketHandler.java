@@ -347,21 +347,51 @@ public final class UISocketHandler {
             // Iterate in REVERSE order: topmost windows (dialogs, sheets)
             // come last in z-order but should be processed FIRST so they
             // don't get starved by the main window exhausting maxElements.
+            //
+            // RECYCLE NOTE: Recycle in leaf→root order. Each window and its
+            // root node are recycled inside the same try-finally block after
+            // the entire tree has been collected. DO NOT extract window.recycle()
+            // into a separate loop — that would recycle windows while their
+            // root nodes are still in use (over-recycling), causing stale data.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                List<AccessibilityWindowInfo> windows = null;
+                int lastVisited = -1; // tracks the last index whose window was recycled
                 try {
-                    List<AccessibilityWindowInfo> windows = ua.getWindows();
+                    windows = ua.getWindows();
                     if (windows != null) {
                         for (int i = windows.size() - 1; i >= 0; i--) {
                             if (counter[0] >= maxElements) break;
-                            AccessibilityNodeInfo root = windows.get(i).getRoot();
-                            if (root != null) {
-                                collectNodes(root, jw, counter, maxElements, summaryMode);
+                            AccessibilityWindowInfo window = windows.get(i);
+                            AccessibilityNodeInfo root = null;
+                            try {
+                                root = window.getRoot();
+                                if (root != null) {
+                                    collectNodes(root, jw, counter, maxElements, summaryMode);
+                                }
+                            } finally {
+                                // Recycle root BEFORE window: the Android API
+                                // contract says nodes sourced from a window
+                                // may become invalid after window.recycle().
+                                if (root != null) root.recycle();
+                                window.recycle();
+                                lastVisited = i;
                             }
                         }
                     }
                 } catch (Exception e) {
                     Ln.w("phonefast: getWindows failed, falling back: " + e.getMessage());
                     // fall through to getRootInActiveWindow
+                } finally {
+                    // Recycle any windows that were NOT visited (early break on
+                    // maxElements or exception). Visited windows already recycled
+                    // in the inner finally — we only touch indices < lastVisited
+                    // (in reverse iteration, unvisited are at lower indices).
+                    if (windows != null) {
+                        for (int i = lastVisited - 1; i >= 0; i--) {
+                            AccessibilityWindowInfo w = windows.get(i);
+                            if (w != null) w.recycle();
+                        }
+                    }
                 }
             }
 
@@ -369,7 +399,11 @@ public final class UISocketHandler {
             if (counter[0] == 0) {
                 AccessibilityNodeInfo root = ua.getRootInActiveWindow();
                 if (root != null) {
-                    collectNodes(root, jw, counter, maxElements, summaryMode);
+                    try {
+                        collectNodes(root, jw, counter, maxElements, summaryMode);
+                    } finally {
+                        root.recycle();
+                    }
                 }
             }
 
@@ -442,13 +476,20 @@ public final class UISocketHandler {
             }
         }
 
-        // Recurse into children
+        // Recurse into children — recycle each child after its subtree is fully
+        // processed. Children are recycled BEFORE the parent (leaf→root order),
+        // matching the Android API contract: parent.recycle() may invalidate
+        // child objects still in use, so children must be cleaned up first.
         int childCount = node.getChildCount();
         for (int i = 0; i < childCount; i++) {
             if (counter[0] >= maxElements) break;
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                collectNodes(child, jw, counter, maxElements, summaryMode);
+                try {
+                    collectNodes(child, jw, counter, maxElements, summaryMode);
+                } finally {
+                    child.recycle();
+                }
             }
         }
     }
@@ -469,28 +510,51 @@ public final class UISocketHandler {
             jw.beginArray();
 
             int[] counter = {0};
-            // Iterate windows in reverse order (topmost first)
+            // Iterate windows in reverse order (topmost first).
+            // Recycle window+root together after the tree is fully collected;
+            // never recycle windows in a separate loop (over-recycling).
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                List<AccessibilityWindowInfo> windows = null;
+                int lastVisited = -1;
                 try {
-                    List<AccessibilityWindowInfo> windows = ua.getWindows();
+                    windows = ua.getWindows();
                     if (windows != null) {
                         for (int i = windows.size() - 1; i >= 0; i--) {
                             if (counter[0] >= maxElements) break;
-                            AccessibilityNodeInfo root = windows.get(i).getRoot();
-                            if (root != null) {
-                                collectFullNodes(root, jw, counter, maxElements, -1, 0);
+                            AccessibilityWindowInfo window = windows.get(i);
+                            AccessibilityNodeInfo root = null;
+                            try {
+                                root = window.getRoot();
+                                if (root != null) {
+                                    collectFullNodes(root, jw, counter, maxElements, -1, 0);
+                                }
+                            } finally {
+                                if (root != null) root.recycle();
+                                window.recycle();
+                                lastVisited = i;
                             }
                         }
                     }
                 } catch (Exception e) {
                     Ln.w("phonefast: getWindows failed, falling back: " + e.getMessage());
+                } finally {
+                    if (windows != null) {
+                        for (int i = lastVisited - 1; i >= 0; i--) {
+                            AccessibilityWindowInfo w = windows.get(i);
+                            if (w != null) w.recycle();
+                        }
+                    }
                 }
             }
 
             if (counter[0] == 0) {
                 AccessibilityNodeInfo root = ua.getRootInActiveWindow();
                 if (root != null) {
-                    collectFullNodes(root, jw, counter, maxElements, -1, 0);
+                    try {
+                        collectFullNodes(root, jw, counter, maxElements, -1, 0);
+                    } finally {
+                        root.recycle();
+                    }
                 }
             }
 
@@ -551,13 +615,17 @@ public final class UISocketHandler {
             jw.name("selected").value(node.isSelected());
             jw.endObject();
 
-            // Recurse into children
+            // Recurse into children — recycle each child after its subtree is processed.
             int childCount = node.getChildCount();
             for (int i = 0; i < childCount; i++) {
                 if (counter[0] >= maxElements) break;
                 AccessibilityNodeInfo child = node.getChild(i);
                 if (child != null) {
-                    collectFullNodes(child, jw, counter, maxElements, nodeId, depth + 1);
+                    try {
+                        collectFullNodes(child, jw, counter, maxElements, nodeId, depth + 1);
+                    } finally {
+                        child.recycle();
+                    }
                 }
             }
         }
