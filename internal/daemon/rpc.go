@@ -6,15 +6,17 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
-	_ "image/png" // register PNG decoder for Screenshot() output
+	_ "image/png" // register PNG decoder for Screenshot() fallback output
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
 	"github.com/gezihua123/phonefast/internal/format"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 	"github.com/gezihua123/phonefast/internal/session"
+	"github.com/gezihua123/phonefast/pkg/avcodec"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -163,7 +165,10 @@ func parseParams(raw json.RawMessage) (map[string]any, error) {
 // ── Dispatch ──
 
 // Dispatch routes a JSON-RPC request to the appropriate handler on the
-// current session. The session must be non-nil for all methods except "status".
+// current session. The session must be non-nil for all methods except
+// "status". Daemon-level methods ("connect", "disconnect") are handled
+// in handleConn, not here — they should never reach Dispatch in normal
+// operation; the cases here are defensive fallbacks.
 func Dispatch(sess *session.Session, req *Request) *Response {
 	phonelog.Default().Write("rpc %s", req.Method)
 	switch req.Method {
@@ -171,10 +176,10 @@ func Dispatch(sess *session.Session, req *Request) *Response {
 		return handleStatus(sess, req)
 
 	case "connect":
-		return newErrorResponse(req.ID, ErrInternal, "connect requires daemon-level reconnect; use daemon --stop then daemon")
+		return newErrorResponse(req.ID, ErrInternal, "connect is a daemon-level operation; use phonefast daemon connect <serial>")
 
 	case "disconnect":
-		return newErrorResponse(req.ID, ErrInternal, "disconnect requires daemon-level shutdown; use daemon --stop")
+		return newErrorResponse(req.ID, ErrInternal, "disconnect is a daemon-level operation; use phonefast daemon disconnect <serial>")
 
 	case "list_devices":
 		return handleListDevices(sess, req)
@@ -281,22 +286,28 @@ func handleScreenshot(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	pngData, w, h, err := sess.Screenshot()
+	// Request JPEG directly from the CGO decoder (avoids ~4.6MB image.Decode
+	// allocation that pngToJPEG would incur on the fallback PNG path).
+	imgData, w, h, mime, err := sess.ScreenshotFormat(avcodec.FormatJPEG)
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("screenshot: %v", err))
 	}
 
+	// CLI fallback (ffmpeg) always returns PNG regardless of format request.
 	// Convert to JPEG for smaller MCP payload (~10× vs PNG at native res).
-	jpgData, jpgErr := pngToJPEG(pngData, 85)
-	if jpgErr != nil {
-		phonelog.Default().Write("screenshot: png→jpeg failed, falling back: %v", jpgErr)
-		jpgData = pngData
+	if mime != "image/jpeg" {
+		jpgData, jpgErr := pngToJPEG(imgData, 85)
+		if jpgErr != nil {
+			phonelog.Default().Write("screenshot: png→jpeg failed, falling back: %v", jpgErr)
+			jpgData = imgData
+		}
+		imgData = jpgData
 	}
 
 	return newStreamedImageResponse(req.ID, map[string]any{
 		"text":      fmt.Sprintf("Screenshot (%dx%d)", w, h),
 		"mime_type": "image/jpeg",
-	}, "image_data", jpgData)
+	}, "image_data", imgData)
 }
 
 func handleGetUIElements(sess *session.Session, req *Request) *Response {
@@ -305,12 +316,12 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 	}
 
 	formatType := getFormatFromParams(req)
-	maxShow := getMaxElementsFromParams(req, 100)
+	maxShow := getMaxElementsFromParams(req, 5000)
 	collectMax := maxShow
 	if collectMax < 0 || collectMax > 500 {
 		collectMax = 0 // server default (500 for full, 100 for summary)
 	}
-	isSummary := getSummaryFromParams(req)
+	isSummary := true // 默认 summary 模式（dump=summary，full 需指定 format）
 
 	// Handle hierarchical formats via UIFormatter registry
 	if f := format.ByName(formatType); f != nil {
@@ -376,7 +387,7 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 	if formatType == "" {
 		formatType = "flatref"
 	}
-	maxShow := getMaxElementsFromParams(req, 100)
+	maxShow := getMaxElementsFromParams(req, 5000)
 	collectMax := maxShow
 	if collectMax < 0 || collectMax > 500 {
 		collectMax = 0 // server default (500 for full, 100 for summary)
@@ -387,8 +398,9 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 	// Run screenshot + GetUIFull concurrently; each has its own 30s timeout.
 	if f := format.ByName(formatType); f != nil {
 		type screenRes struct {
-			png []byte
-			err error
+			img  []byte
+			mime string
+			err  error
 		}
 		type uiRes struct {
 			elements []protocol.UIFullElement
@@ -398,8 +410,10 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 		uiCh := make(chan uiRes, 1)
 
 		go func() {
-			png, _, _, err := sess.Screenshot()
-			scCh <- screenRes{png, err}
+			// Request JPEG directly from CGO decoder to avoid ~4.6MB
+			// image.Decode allocation that pngToJPEG would otherwise incur.
+			img, _, _, mime, err := sess.ScreenshotFormat(avcodec.FormatJPEG)
+			scCh <- screenRes{img, mime, err}
 		}()
 		go func() {
 			elems, err := sess.GetUIFull(collectMax)
@@ -438,14 +452,18 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 
 		formatted := f.Format(ui.elements)
 
-		// Convert PNG screenshot → JPEG (quality 85) for ~10x smaller MCP
-		// payload. Native resolution is preserved; OCR is unaffected because
-		// it reads decoded video frames, not this screenshot PNG.
-		jpgData, jpgErr := pngToJPEG(sc.png, 85)
-		if jpgErr != nil {
-			// Fall back to original PNG on conversion failure.
-			phonelog.Default().Write("observe: png→jpeg failed, falling back: %v", jpgErr)
-			jpgData = sc.png
+		// CLI fallback (ffmpeg) always returns PNG regardless of format request.
+		// Convert to JPEG for ~10x smaller MCP payload only when needed.
+		// Native resolution is preserved; OCR is unaffected because
+		// it reads decoded video frames, not this screenshot.
+		imgData := sc.img
+		if sc.mime != "image/jpeg" {
+			jpgData, jpgErr := pngToJPEG(sc.img, 85)
+			if jpgErr != nil {
+				phonelog.Default().Write("observe: png→jpeg failed, falling back: %v", jpgErr)
+				jpgData = sc.img
+			}
+			imgData = jpgData
 		}
 
 		return newStreamedImageResponse(req.ID, map[string]any{
@@ -455,7 +473,7 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 			"width":     sess.DeviceW,
 			"height":    sess.DeviceH,
 			"format":    formatType,
-		}, "image_data", jpgData)
+		}, "image_data", imgData)
 	}
 
 	// Legacy flat format (no format specified or unknown format).
@@ -747,17 +765,30 @@ func getSummaryFromParams(req *Request) bool {
 	return ok && v
 }
 
+// jpegBufPool reuses bytes.Buffer allocations across pngToJPEG calls.
+// Each buffer is typically ~200-500KB (JPEG-encoded 720×1600 image).
+var jpegBufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
 // pngToJPEG decodes a PNG image and re-encodes it as JPEG at the given
-// quality (1-100). Used to shrink MCP screenshot payloads ~10× without
-// downscaling — native resolution is preserved.
+// quality (1-100). Used on the CLI ffmpeg fallback path to shrink MCP
+// screenshot payloads ~10× without downscaling — native resolution is
+// preserved. The primary CGO path returns JPEG directly from the decoder
+// and bypasses this function entirely.
 func pngToJPEG(png []byte, quality int) ([]byte, error) {
 	img, _, err := image.Decode(bytes.NewReader(png))
 	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+	buf := jpegBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jpegBufPool.Put(buf)
+
+	if err := jpeg.Encode(buf, img, &jpeg.Options{Quality: quality}); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	// Copy out before returning to pool: buf.Bytes() aliases the internal
+	// buffer and will be invalidated by the next Get() call.
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out, nil
 }

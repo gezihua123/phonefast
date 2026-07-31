@@ -324,6 +324,21 @@ func stopDaemonForce(pidFile string, pid int) {
 // ── Daemon subcommand ──
 
 func daemonCmd(args []string) {
+	// ── Subcommand dispatch (before flag parsing) ──
+	// connect/disconnect are device-level management commands dispatched via RPC
+	// to the running daemon. They must come before the "already running" check
+	// because they require a live daemon to talk to.
+	if len(args) > 0 {
+		switch args[0] {
+		case "connect":
+			connectCmd(args[1:])
+			return
+		case "disconnect":
+			disconnectCmd(args[1:])
+			return
+		}
+	}
+
 	foreground := false
 	doStop := false
 	doStatus := false
@@ -1006,13 +1021,35 @@ func statusCmd() {
 }
 
 func connectCmd(args []string) {
-	fmt.Fprintf(os.Stderr, "Use '%s daemon --stop' then '%s daemon' to reconnect (select a device with '-s <serial>' on each command)\n", binName, binName)
-	os.Exit(1)
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: phonefast connect <serial>")
+		fmt.Fprintln(os.Stderr, "       phonefast daemon connect <serial>")
+		os.Exit(1)
+	}
+	serial := args[0]
+	client := daemon.NewClient(serial)
+	_, err := client.Call("connect", map[string]any{"device": serial})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting to %s: %v\n", serial, err)
+		os.Exit(1)
+	}
+	fmt.Printf("Connected to %s\n", serial)
 }
 
 func disconnectCmd(args []string) {
-	fmt.Fprintf(os.Stderr, "Use '%s daemon --stop' to disconnect and stop the daemon\n", binName)
-	os.Exit(1)
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: phonefast disconnect <serial>")
+		fmt.Fprintln(os.Stderr, "       phonefast daemon disconnect <serial>")
+		os.Exit(1)
+	}
+	serial := args[0]
+	client := daemon.NewClient(serial)
+	_, err := client.Call("disconnect", map[string]any{"device": serial})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error disconnecting %s: %v\n", serial, err)
+		os.Exit(1)
+	}
+	fmt.Printf("Disconnected %s\n", serial)
 }
 
 // ── MCP server command (unchanged) ──

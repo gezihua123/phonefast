@@ -92,20 +92,6 @@ func ReadUIDumpResponse(r io.Reader) (*UIDumpResponse, error) {
 	return &resp, nil
 }
 
-// WriteUIDumpRequest sends a dump request on the ui socket.
-// If maxElements > 0, includes a limit: "dump:NNN\0".
-// Otherwise sends "dump\0" (server uses its default of 500).
-func WriteUIDumpRequest(w io.Writer, maxElements int) error {
-	var req string
-	if maxElements > 0 {
-		req = fmt.Sprintf("%s:%d\x00", UIDumpRequest, maxElements)
-	} else {
-		req = fmt.Sprintf("%s\x00", UIDumpRequest)
-	}
-	_, err := w.Write([]byte(req))
-	return err
-}
-
 // IsLayoutClass checks if a class name (fully qualified or simple) represents
 // a known Android layout container that should be filtered in summary mode.
 func IsLayoutClass(className string) bool {

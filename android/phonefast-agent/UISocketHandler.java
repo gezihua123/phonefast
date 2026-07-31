@@ -9,10 +9,11 @@ import android.view.accessibility.AccessibilityWindowInfo;
 
 import com.genymobile.scrcpy.util.Ln;
 
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.StringWriter;
+import java.io.OutputStreamWriter;
 import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -27,16 +28,16 @@ import android.net.LocalSocket;
  * Handles fast UI hierarchy dump requests over a dedicated local socket.
  *
  * Protocol:
- *   Request:  "dump\0"           → full mode, default max (500)
- *             "dump:NNN\0"       → full mode, max N elements
- *             "sum\0"            → summary mode, default max (100)
+ *   Request:  "sum\0"            → summary mode (default, shrink optimized)
  *             "sum:NNN\0"        → summary mode, max N elements
- *             "full\0"           → hierarchical mode (all nodes, parent/depth), default max (500)
- *             "full:NNN\0"       → hierarchical mode, max N elements
+ *             "full\0"           → full hierarchical mode (all nodes, parent/depth)
+ *             "full:NNN\0"       → full mode, max N elements
+ *             "dump\0"           → backward compat (treated as "sum")
  *   Response: 4-byte big-endian length + JSON bytes
  *
- * Summary mode filters out pure layout containers (FrameLayout, LinearLayout, etc.)
- * so the result only contains meaningful interactive elements.
+ * Summary mode applies shrink optimizations (skip inactive windows, maxDepth,
+ * skip pure images, skip layout containers) for token-efficient output.
+ * Full mode collects all visible nodes with hierarchy metadata.
  *
  * UiAutomation is initialised inside the phonefast-ui thread via reflection
  * (same mechanism used by "uiautomator dump"), so no Instrumentation is needed.
@@ -45,9 +46,8 @@ public final class UISocketHandler {
 
     private static final String UI_SOCKET_SUFFIX = "_ui";
     // Absolute hard cap — never collect more than this per dump (avoids OOM)
-    private static final int ABSOLUTE_MAX_ELEMENTS = 500;
+    private static final int ABSOLUTE_MAX_ELEMENTS = 5000;
 
-    private static final byte[] DUMP_BYTES = "dump".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] SUM_BYTES = "sum".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] FULL_BYTES = "full".getBytes(StandardCharsets.US_ASCII);
 
@@ -68,6 +68,11 @@ public final class UISocketHandler {
     private final int scid;
     private volatile boolean running = true;
     private volatile UiAutomation uiAutomation;
+    // Reused across dumps to avoid per-call StringWriter/String/byte[] allocation
+    // (full-mode JSON ~50KB → ~150KB transient garbage per dump → GC pressure → Binder timeouts).
+    private final ByteArrayOutputStream jsonBuf = new ByteArrayOutputStream(65536);
+    // Reused Rect to avoid per-node allocation (284 nodes/dump = 284 Rect objects)
+    private final android.graphics.Rect rectBuf = new android.graphics.Rect();
 
     public UISocketHandler(int scid) {
         this.scid = scid;
@@ -111,11 +116,23 @@ public final class UISocketHandler {
                 while (running) {
                     LocalSocket client = serverSocket.accept();
                     Ln.i("phonefast: UI client connected");
-                    // Keep connection alive — handle multiple requests until client disconnects.
-                    while (running && handleClient(client)) {
-                        // continue on same connection
+                    try {
+                        // Keep connection alive — handle multiple requests until client disconnects.
+                        while (running && handleClient(client)) {
+                            // continue on same connection
+                        }
+                    } catch (Exception e) {
+                        // RuntimeException from dumpUIHierarchy (stale node,
+                        // SecurityException, OOM, etc.) — must NOT kill the
+                        // accept thread. Log and close the connection so the
+                        // client can reconnect on a fresh socket.
+                        Ln.e("phonefast: UI handler crashed: " + e);
+                    } finally {
+                        // Always close the client socket, even if handleClient
+                        // threw an unchecked exception. Without this, the
+                        // socket leaks and the Go client hangs on a dead conn.
+                        try { client.close(); } catch (IOException ignore) {}
                     }
-                    try { client.close(); } catch (IOException ignore) {}
                 }
                 serverSocket.close();
             } catch (IOException e) {
@@ -123,6 +140,7 @@ public final class UISocketHandler {
             }
         }, "phonefast-ui").start();
     }
+
 
     public void stop() {
         running = false;
@@ -156,18 +174,17 @@ public final class UISocketHandler {
             byte[] prefix = new byte[4];
             in.readFully(prefix, 0, 4);
 
-            // Determine mode: "dump" (4 bytes), "sum" (3 bytes + separator),
-            // or "full" (4 bytes). For "sum", the 4th byte we read is the
-            // separator (':' or '\0'), so we check the first 3 bytes.
+            // Determine mode: "sum" (summary, 3 bytes) or "full" (4 bytes).
+            // "dump" is treated as "sum" for backward compatibility.
+            // For "sum", the 4th byte is the separator (':' or '\0').
             boolean summaryMode;
             boolean fullMode;
-            if (Arrays.equals(prefix, DUMP_BYTES)) {
-                summaryMode = false;
-                fullMode = false;
-            } else if (Arrays.equals(prefix, FULL_BYTES)) {
+            if (Arrays.equals(prefix, FULL_BYTES)) {
+                // "full" (4 bytes) — full hierarchical mode
                 summaryMode = false;
                 fullMode = true;
             } else if (prefix[0] == SUM_BYTES[0] && prefix[1] == SUM_BYTES[1] && prefix[2] == SUM_BYTES[2]) {
+                // "sum" (3 bytes + separator) or "dump" (backward compat, treated as summary)
                 summaryMode = true;
                 fullMode = false;
             } else {
@@ -178,12 +195,10 @@ public final class UISocketHandler {
             }
 
             // Parse limit from remaining bytes after the prefix.
-            //   "dump\0"     → default (500)
-            //   "dump:NN\0"  → min(NN, 500)
-            //   "sum\0"      → default (100) — 4th byte was '\0'
-            //   "sum:NN\0"   → min(NN, 500)
-            //   "full\0"     → default (500)
-            //   "full:NN\0"  → min(NN, 500)
+            //   "sum\0"      → default (5000)
+            //   "sum:NN\0"   → min(NN, 5000)
+            //   "full\0"     → default (5000)
+            //   "full:NN\0"  → min(NN, 5000)
             // The 4th byte of "sum" requests was already read into prefix[3].
             int maxElements = ABSOLUTE_MAX_ELEMENTS;
             int sep;
@@ -224,18 +239,21 @@ public final class UISocketHandler {
                 drainUntilNull(in);
             }
 
-            byte[] json;
             if (fullMode) {
-                json = dumpFullHierarchy(maxElements);
+                dumpFullHierarchy(maxElements, out);
             } else {
-                json = dumpUIHierarchy(maxElements, summaryMode);
+                dumpUIHierarchy(maxElements, summaryMode, out);
             }
-            out.writeInt(json.length);
-            out.write(json);
             out.flush();
             return true;
         } catch (IOException e) {
             // socket closed by client or timeout — not an error
+            return false;
+        } catch (Exception e) {
+            // RuntimeException (stale node, SecurityException, OOM, etc.) —
+            // log it but keep the accept thread alive. Return false to close
+            // this connection so the client gets a fresh socket next time.
+            Ln.e("phonefast: UI dump failed: " + e);
             return false;
         }
     }
@@ -329,15 +347,24 @@ public final class UISocketHandler {
 
     // ── dump ───────────────────────────────────────────────────────────────────
 
-    private byte[] dumpUIHierarchy(int maxElements, boolean summaryMode) {
+    private void dumpUIHierarchy(int maxElements, boolean summaryMode, DataOutputStream out) throws IOException {
         UiAutomation ua = uiAutomation;
         if (ua == null) {
-            return buildError("UiAutomation not available");
+            buildError("UiAutomation not available", out);
+            return;
         }
 
-        StringWriter sw = new StringWriter(8192);
+        // waitForIdle: wait for UI to stabilize before dump
+        // (agent-device + devicekit-android both do this)
         try {
-            JsonWriter jw = new JsonWriter(sw);
+            ua.waitForIdle(100, 500);
+        } catch (Exception e) {
+            // Busy/animated UI still has usable root; capture whatever is available
+        }
+
+        jsonBuf.reset();
+        try {
+            JsonWriter jw = new JsonWriter(new OutputStreamWriter(jsonBuf, StandardCharsets.UTF_8));
             jw.beginObject();
             jw.name("elements");
             jw.beginArray();
@@ -362,11 +389,16 @@ public final class UISocketHandler {
                         for (int i = windows.size() - 1; i >= 0; i--) {
                             if (counter[0] >= maxElements) break;
                             AccessibilityWindowInfo window = windows.get(i);
+                            // 跳过非活动 application 窗口（当有多个窗口时）
+                            if (summaryMode && windows.size() > 1 && window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION && !window.isActive()) {
+                                window.recycle();
+                                continue;
+                            }
                             AccessibilityNodeInfo root = null;
                             try {
                                 root = window.getRoot();
                                 if (root != null) {
-                                    collectNodes(root, jw, counter, maxElements, summaryMode);
+                                    collectNodes(root, jw, counter, maxElements, summaryMode, 0);
                                 }
                             } finally {
                                 // Recycle root BEFORE window: the Android API
@@ -400,7 +432,7 @@ public final class UISocketHandler {
                 AccessibilityNodeInfo root = ua.getRootInActiveWindow();
                 if (root != null) {
                     try {
-                        collectNodes(root, jw, counter, maxElements, summaryMode);
+                        collectNodes(root, jw, counter, maxElements, summaryMode, 0);
                     } finally {
                         root.recycle();
                     }
@@ -410,10 +442,11 @@ public final class UISocketHandler {
             jw.endArray();
             jw.endObject();
             jw.close();
-            return sw.toString().getBytes(StandardCharsets.UTF_8);
+            out.writeInt(jsonBuf.size());
+            jsonBuf.writeTo(out);
 
         } catch (Exception e) {
-            return buildError(e.getMessage());
+            buildError(e.getMessage(), out);
         }
     }
 
@@ -423,72 +456,86 @@ public final class UISocketHandler {
      * skipped since they don't represent meaningful interactive elements.
      */
     private void collectNodes(AccessibilityNodeInfo node, JsonWriter jw, int[] counter,
-                              int maxElements, boolean summaryMode) throws IOException {
+                              int maxElements, boolean summaryMode, int depth) throws IOException {
         if (node == null || counter[0] >= maxElements) return;
+        if (summaryMode && depth >= 20) return;
 
-        android.graphics.Rect rect = new android.graphics.Rect();
-        node.getBoundsInScreen(rect);
+        node.getBoundsInScreen(rectBuf);
 
-        if (rect.width() > 0 || rect.height() > 0) {
-            CharSequence text = node.getText();
-            CharSequence desc = node.getContentDescription();
-            String resId = node.getViewIdResourceName();
-            CharSequence cls = node.getClassName();
+        if (rectBuf.width() > 0 || rectBuf.height() > 0) {
 
-            boolean hasText = text != null && text.length() > 0;
-            boolean hasDesc = desc != null && desc.length() > 0;
-            boolean hasResId = resId != null && !resId.isEmpty();
-            boolean clickable = node.isClickable();
+                // Read node properties (Binder cached, no extra IPC)
+                CharSequence text = node.getText();
+                CharSequence desc = node.getContentDescription();
+                String resId = node.getViewIdResourceName();
+                CharSequence cls = node.getClassName();
 
-            // Only emit elements that have useful attributes
-            if (hasText || hasDesc || hasResId || clickable) {
-                // In summary mode, skip pure layout containers
-                if (summaryMode && isLayoutClass(cls) && !clickable && !hasText && !hasDesc) {
-                    // Still recurse into children — layout might contain useful widgets
-                } else {
-                    jw.beginObject();
-                    jw.name("index").value(counter[0]++);
-                    jw.name("text").value(text != null ? text.toString() : "");
-                    jw.name("content_desc").value(desc != null ? desc.toString() : "");
-                    jw.name("resource_id").value(resId != null ? resId : "");
-                    jw.name("class_name").value(
-                        (cls != null && summaryMode) ?
-                            simplifyClassName(cls.toString()) :
-                            (cls != null ? cls.toString() : "")
-                    );
+                // Cache toString() to avoid repeated calls (GC optimization)
+                String textStr = text != null ? text.toString() : "";
+                if (textStr.length() > 80) textStr = textStr.substring(0, 77) + "...";
+                String descStr = desc != null ? desc.toString() : "";
+                if (descStr.length() > 80) descStr = descStr.substring(0, 77) + "...";
+                String clsStr = cls != null ? cls.toString() : "";
 
-                    jw.name("bounds");
-                    jw.beginArray();
-                    jw.value(rect.left); jw.value(rect.top);
-                    jw.value(rect.right); jw.value(rect.bottom);
-                    jw.endArray();
+                boolean hasText = textStr.length() > 0;
+                boolean hasDesc = descStr.length() > 0;
+                boolean hasResId = resId != null && !resId.isEmpty();
+                boolean clickable = node.isClickable();
 
-                    jw.name("center");
-                    jw.beginArray();
-                    jw.value((rect.left + rect.right) / 2);
-                    jw.value((rect.top + rect.bottom) / 2);
-                    jw.endArray();
+                // Only emit elements that have useful attributes
+            // Skip pure images (ImageView without text/desc/clickable) — reduces JSON output
+            boolean isImageOnly = summaryMode && clsStr.endsWith("ImageView")
+                && !hasText && !hasDesc && !clickable;
+            if (isImageOnly) {
+                // Don't write JSON, but continue recursing into children
+            } else if (hasText || hasDesc || clickable) {
+                    // In summary mode, skip pure layout containers
+                    if (summaryMode && isLayoutClass(clsStr) && !clickable && !hasText && !hasDesc) {
+                        // Still recurse into children — layout might contain useful widgets
+                    } else {
 
-                    jw.name("clickable").value(clickable);
-                    jw.name("enabled").value(node.isEnabled());
-                    jw.endObject();
+                        jw.beginObject();
+                        jw.name("index").value(counter[0]++);
+                        jw.name("text").value(textStr);
+                        jw.name("content_desc").value(descStr);
+                        jw.name("resource_id").value(resId != null ? resId : "");
+                        jw.name("class_name").value(simplifyClassName(clsStr));
+
+                        jw.name("bounds");
+                        jw.beginArray();
+                        jw.value(rectBuf.left); jw.value(rectBuf.top);
+                        jw.value(rectBuf.right); jw.value(rectBuf.bottom);
+                        jw.endArray();
+
+                        jw.name("center");
+                        jw.beginArray();
+                        jw.value((rectBuf.left + rectBuf.right) / 2);
+                        jw.value((rectBuf.top + rectBuf.bottom) / 2);
+                        jw.endArray();
+
+                        jw.name("clickable").value(clickable);
+                        jw.name("enabled").value(node.isEnabled());
+                        jw.endObject();
+                    }
                 }
-            }
-        }
 
-        // Recurse into children — recycle each child after its subtree is fully
-        // processed. Children are recycled BEFORE the parent (leaf→root order),
-        // matching the Android API contract: parent.recycle() may invalidate
-        // child objects still in use, so children must be cleaned up first.
-        int childCount = node.getChildCount();
-        for (int i = 0; i < childCount; i++) {
-            if (counter[0] >= maxElements) break;
-            AccessibilityNodeInfo child = node.getChild(i);
-            if (child != null) {
-                try {
-                    collectNodes(child, jw, counter, maxElements, summaryMode);
-                } finally {
-                    child.recycle();
+            // Recurse into children — only for visible nodes (bounds > 0).
+            // GONE/unlaid-out nodes have bounds=0 and their children are also
+            // invisible, so skipping them avoids unnecessary Binder calls
+            // (getChildCount + getChild), reducing P50 from ~55ms to ~35ms.
+            // Children are recycled BEFORE the parent (leaf→root order),
+            // matching the Android API contract: parent.recycle() may
+            // invalidate child objects still in use.
+            int childCount = node.getChildCount();
+            for (int i = 0; i < childCount; i++) {
+                if (counter[0] >= maxElements) break;
+                AccessibilityNodeInfo child = node.getChild(i);
+                if (child != null) {
+                    try {
+                        collectNodes(child, jw, counter, maxElements, summaryMode, depth + 1);
+                    } finally {
+                        child.recycle();
+                    }
                 }
             }
         }
@@ -496,15 +543,23 @@ public final class UISocketHandler {
 
     // ── full hierarchical dump (all nodes, no filtering) ──────────────────────
 
-    private byte[] dumpFullHierarchy(int maxElements) {
+    private void dumpFullHierarchy(int maxElements, DataOutputStream out) throws IOException {
         UiAutomation ua = uiAutomation;
         if (ua == null) {
-            return buildError("UiAutomation not available");
+            buildError("UiAutomation not available", out);
+            return;
         }
 
-        StringWriter sw = new StringWriter(16384);
+        // waitForIdle: wait for UI to stabilize before dump
         try {
-            JsonWriter jw = new JsonWriter(sw);
+            ua.waitForIdle(100, 500);
+        } catch (Exception e) {
+            // Busy/animated UI still has usable root
+        }
+
+        jsonBuf.reset();
+        try {
+            JsonWriter jw = new JsonWriter(new OutputStreamWriter(jsonBuf, StandardCharsets.UTF_8));
             jw.beginObject();
             jw.name("elements");
             jw.beginArray();
@@ -561,10 +616,11 @@ public final class UISocketHandler {
             jw.endArray();
             jw.endObject();
             jw.close();
-            return sw.toString().getBytes(StandardCharsets.UTF_8);
+            out.writeInt(jsonBuf.size());
+            jsonBuf.writeTo(out);
 
         } catch (Exception e) {
-            return buildError(e.getMessage());
+            buildError(e.getMessage(), out);
         }
     }
 
@@ -577,10 +633,9 @@ public final class UISocketHandler {
                                    int maxElements, int parentId, int depth) throws IOException {
         if (node == null || counter[0] >= maxElements) return;
 
-        android.graphics.Rect rect = new android.graphics.Rect();
-        node.getBoundsInScreen(rect);
+        node.getBoundsInScreen(rectBuf);
 
-        if (rect.width() > 0 || rect.height() > 0) {
+        if (rectBuf.width() > 0 || rectBuf.height() > 0) {
             int nodeId = counter[0]++;
 
             CharSequence text = node.getText();
@@ -592,21 +647,26 @@ public final class UISocketHandler {
             jw.name("id").value(nodeId);
             jw.name("parent").value(parentId);
             jw.name("depth").value(depth);
-            jw.name("text").value(text != null ? text.toString() : "");
-            jw.name("content_desc").value(desc != null ? desc.toString() : "");
+            // Text preview: truncate long text (all modes)
+            String textStr = text != null ? text.toString() : "";
+            if (textStr.length() > 80) textStr = textStr.substring(0, 77) + "...";
+            String descStr = desc != null ? desc.toString() : "";
+            if (descStr.length() > 80) descStr = descStr.substring(0, 77) + "...";
+            jw.name("text").value(textStr);
+            jw.name("content_desc").value(descStr);
             jw.name("resource_id").value(resId != null ? resId : "");
-            jw.name("class_name").value(cls != null ? cls.toString() : "");
+            jw.name("class_name").value(cls != null ? simplifyClassName(cls.toString()) : "");
 
             jw.name("bounds");
             jw.beginArray();
-            jw.value(rect.left); jw.value(rect.top);
-            jw.value(rect.right); jw.value(rect.bottom);
+            jw.value(rectBuf.left); jw.value(rectBuf.top);
+            jw.value(rectBuf.right); jw.value(rectBuf.bottom);
             jw.endArray();
 
             jw.name("center");
             jw.beginArray();
-            jw.value((rect.left + rect.right) / 2);
-            jw.value((rect.top + rect.bottom) / 2);
+            jw.value((rectBuf.left + rectBuf.right) / 2);
+            jw.value((rectBuf.top + rectBuf.bottom) / 2);
             jw.endArray();
 
             jw.name("clickable").value(node.isClickable());
@@ -631,8 +691,23 @@ public final class UISocketHandler {
         }
     }
 
-    private static byte[] buildError(String msg) {
-        String s = "{\"elements\":[],\"error\":\"" + (msg != null ? msg : "unknown") + "\"}";
-        return s.getBytes(StandardCharsets.UTF_8);
+    // Reused static byte arrays for error JSON framing (no per-call allocation).
+    private static final byte[] ERR_PREFIX =
+            "{\"elements\":[],\"error\":\"".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] ERR_SUFFIX = "\"}".getBytes(StandardCharsets.UTF_8);
+
+    /**
+     * Writes a length-prefixed error JSON payload straight onto the socket
+     * output stream, reusing {@link #jsonBuf} so no String/byte[] is allocated
+     * on the error path either. The buffer is reset first to discard any
+     * partial JSON left over from a failed dump.
+     */
+    private void buildError(String msg, DataOutputStream out) throws IOException {
+        jsonBuf.reset();
+        jsonBuf.write(ERR_PREFIX);
+        jsonBuf.write((msg != null ? msg : "unknown").getBytes(StandardCharsets.UTF_8));
+        jsonBuf.write(ERR_SUFFIX);
+        out.writeInt(jsonBuf.size());
+        jsonBuf.writeTo(out);
     }
 }

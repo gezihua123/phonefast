@@ -37,20 +37,20 @@ func (s *Session) dropUIConn() {
 	}
 }
 
-// GetUIElements retrieves UI hierarchy via the fast UI socket.
-// maxElements controls the element limit (sent to the server as "dump:N\0",
-// also truncated client-side as a safety net). Pass <= 0 for server default (500).
+// GetUIElements retrieves UI hierarchy in summary mode via the fast UI socket.
+// Summary mode applies shrink optimizations (skip inactive windows,
+// maxDepth, skip pure images). Pass <= 0 for server default.
 func (s *Session) GetUIElements(maxElements int) ([]protocol.UIElement, error) {
 	conn, err := s.getUIConn()
 	if err != nil {
 		return nil, err
 	}
 
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	if err := protocol.WriteUIDumpRequest(conn, maxElements); err != nil {
+	if err := protocol.WriteUISummaryRequest(conn, maxElements); err != nil {
 		s.dropUIConn()
-		return nil, fmt.Errorf("write ui dump request: %w", err)
+		return nil, fmt.Errorf("write ui summary request: %w", err)
 	}
 
 	resp, err := protocol.ReadUIDumpResponse(conn)
@@ -75,7 +75,7 @@ func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 		return nil, err
 	}
 
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	if err := protocol.WriteUISummaryRequest(conn, maxElements); err != nil {
 		s.dropUIConn()
@@ -105,7 +105,7 @@ func (s *Session) GetUIFull(maxElements int) ([]protocol.UIFullElement, error) {
 		return nil, err
 	}
 
-	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	if err := protocol.WriteUIFullRequest(conn, maxElements); err != nil {
 		s.dropUIConn()

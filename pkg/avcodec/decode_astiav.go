@@ -32,6 +32,14 @@ type astiavDecoder struct {
 	// Grown only when dimensions increase.
 	rgbaScratch []byte
 
+	// yuvBuf is a reusable buffer for the YUV→JPEG fast path.
+	// ImageCopyToBuffer fills it with raw YUV420P data (Y+Cb+Cr contiguous),
+	// which we slice into image.YCbCr planes. Grown only when dimensions
+	// increase; reused across all Decode calls → zero per-call allocation.
+	// (ToImage was tried first but it calls C.GoBytes internally, allocating
+	// a fresh ~1.7MB slice every call → RSS ballooned to 180MB+ under load.)
+	yuvBuf []byte
+
 	// Cached dimensions so we know when to recreate the scaler.
 	width  int
 	height int
@@ -140,25 +148,39 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 	defer frame.Free()
 	tRecv := time.Since(t0)
 
-	// ---- Step 4: scale YUV420P → RGBA ----
+	// ---- Step 4: convert YUV frame → Go image.Image ----
+	// Fast path: for JPEG output on YUV420P, wrap the frame's YUV planes
+	// directly as an image.YCbCr (zero-copy). JPEG encoding is natively
+	// YUV-based, so this avoids the wasteful YUV→RGBA→YUV round-trip
+	// through swsCtx + rgbaScratch (~7MB saved, plus faster encode).
+	//
+	// Fallback: for PNG or non-YUV420P formats, use the RGBA path
+	// (scaleToRGBA + frameToImage).
 	t0 = time.Now()
-	rgbaFrame, err := d.scaleToRGBA(frame, effectiveW, effectiveH)
-	if err != nil {
-		return nil, 0, 0, "", newDecodeError("scale", err)
-	}
-	defer rgbaFrame.Free()
-	tScale := time.Since(t0)
+	var img image.Image
+	var outW, outH int
 
-	// ---- Step 5: convert to Go image.Image ----
-	t0 = time.Now()
-	img, err := d.frameToImage(rgbaFrame)
-	if err != nil {
-		return nil, 0, 0, "", newDecodeError("to_image", err)
+	if format == FormatJPEG && frame.PixelFormat() == astiav.PixelFormatYuv420P {
+		img, err = d.frameToYCbCr(frame)
+		if err != nil {
+			return nil, 0, 0, "", newDecodeError("to_ycbcr", err)
+		}
+		outW, outH = frame.Width(), frame.Height()
+	} else {
+		rgbaFrame, err := d.scaleToRGBA(frame, effectiveW, effectiveH)
+		if err != nil {
+			return nil, 0, 0, "", newDecodeError("scale", err)
+		}
+		defer rgbaFrame.Free()
+		img, err = d.frameToImage(rgbaFrame)
+		if err != nil {
+			return nil, 0, 0, "", newDecodeError("to_image", err)
+		}
+		outW, outH = rgbaFrame.Width(), rgbaFrame.Height()
 	}
-	outW, outH := rgbaFrame.Width(), rgbaFrame.Height()
 	tToImg := time.Since(t0)
 
-	// ---- Step 6: encode to PNG or JPEG ----
+	// ---- Step 5: encode to PNG or JPEG ----
 	t0 = time.Now()
 	var buf bytes.Buffer
 	switch format {
@@ -173,8 +195,8 @@ func (d *astiavDecoder) Decode(keyframe []byte, width, height int, format ImageF
 	tEncode := time.Since(t0)
 
 	tTotalElapsed := time.Since(tTotal)
-	log.Printf("avcodec timing: ctx=%v send=%v recv=%v scale=%v toImg=%v encode=%v TOTAL=%v",
-		tCtx, tSend, tRecv, tScale, tToImg, tEncode, tTotalElapsed)
+	log.Printf("avcodec timing: ctx=%v send=%v recv=%v toImg=%v encode=%v TOTAL=%v",
+		tCtx, tSend, tRecv, tToImg, tEncode, tTotalElapsed)
 
 	return buf.Bytes(), outW, outH, format.String(), nil
 }
@@ -234,6 +256,70 @@ func (d *astiavDecoder) frameToImage(frame *astiav.Frame) (image.Image, error) {
 		return nil, fmt.Errorf("copy to buffer: %w", err)
 	}
 	return &image.NRGBA{Pix: pix, Stride: w * 4, Rect: image.Rect(0, 0, w, h)}, nil
+}
+
+// frameToYCbCr copies a YUV420P astiav.Frame into a reusable image.YCbCr.
+//
+// We CANNOT use astiav's ToImage() because it internally calls bytesFromC
+// (C.GoBytes) which allocates a fresh ~1.7MB Go []byte on EVERY call —
+// causing RSS to balloon to 180MB+ under sustained load. The old RGBA path
+// reused rgbaScratch so it had zero per-call allocation.
+//
+// Instead we use ImageCopyToBuffer to copy YUV data into a persistent
+// yuvBuf (grown once, reused forever), then slice it into Y/Cb/Cr planes.
+// This gives us both the speed of direct-YUV JPEG encoding AND the low
+// memory of buffer reuse.
+//
+// Layout (YUV420P, align=1): Y[h*yStride] Cb[(h/2)*cStride] Cr[(h/2)*cStride], contiguous.
+func (d *astiavDecoder) frameToYCbCr(frame *astiav.Frame) (image.Image, error) {
+	w, h := frame.Width(), frame.Height()
+	if w <= 0 || h <= 0 {
+		return nil, fmt.Errorf("invalid yuv420p frame %dx%d", w, h)
+	}
+
+	// Get total buffer size for this frame's YUV420P data (align=1 → packed).
+	bufSize, err := frame.ImageBufferSize(1)
+	if err != nil {
+		return nil, fmt.Errorf("image buffer size: %w", err)
+	}
+
+	// Reuse yuvBuf across calls — grown only when dimensions increase.
+	if cap(d.yuvBuf) < bufSize {
+		d.yuvBuf = make([]byte, bufSize)
+	}
+	buf := d.yuvBuf[:bufSize]
+
+	// Copy YUV420P data into the reusable buffer (zero per-call alloc).
+	if _, err := frame.ImageCopyToBuffer(buf, 1); err != nil {
+		return nil, fmt.Errorf("copy to buffer: %w", err)
+	}
+
+	// ImageCopyToBuffer with align=1 packs data with stride=width (no
+	// padding). Do NOT use frame.Linesize() here — that returns the
+	// decoder's internal stride which may include padding (e.g. 736 vs
+	// 720), causing slice bounds out of range panics.
+	//
+	// YUV420P packed layout: Y[h*w] Cb[(h/2)*(w/2)] Cr[(h/2)*(w/2)]
+	yStride := w
+	cStride := w / 2
+	ySize := h * yStride
+	cSize := (h / 2) * cStride
+	off := 0
+	yData := buf[off : off+ySize]
+	off += ySize
+	cbData := buf[off : off+cSize]
+	off += cSize
+	crData := buf[off : off+cSize]
+
+	return &image.YCbCr{
+		Y:              yData,
+		Cb:             cbData,
+		Cr:             crData,
+		YStride:        yStride,
+		CStride:        cStride,
+		SubsampleRatio: image.YCbCrSubsampleRatio420,
+		Rect:           image.Rect(0, 0, w, h),
+	}, nil
 }
 
 // ---- NAL unit helpers ----

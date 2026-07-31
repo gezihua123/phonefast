@@ -229,11 +229,36 @@ func (d *Daemon) getOrCreateActor(serial string) (*DeviceActor, error) {
 	// param. In edge cases (e.g. empty-serial auto-detect) they may differ.
 	d.devices[actor.serial] = actor
 	d.wg.Add(1)
+
+	// Give the actor its own context derived from the daemon context so it can
+	// be stopped independently (disconnect one device) while daemon cancel still
+	// cascades to all actors on full shutdown.
+	actor.ctx, actor.cancel = context.WithCancel(d.ctx)
 	d.mu.Unlock()
 
-	go actor.run(d.ctx, &d.wg)
+	go actor.run(actor.ctx, &d.wg)
 	phonelog.Default().Write("device actor created: %s (scid=%x)", actor.serial, actor.scid)
 	return actor, nil
+}
+
+// removeDevice stops a single device actor, closes its session, releases its
+// scid, and removes it from the daemon's device map. It is safe to call on a
+// serial that is not currently managed (returns an error).
+func (d *Daemon) removeDevice(serial string) error {
+	d.mu.Lock()
+	actor, ok := d.devices[serial]
+	if !ok || actor == nil {
+		d.mu.Unlock()
+		return fmt.Errorf("device not managed: %s", serial)
+	}
+	delete(d.devices, serial)
+	delete(d.connectMu, serial)
+	d.mu.Unlock()
+
+	actor.stop()
+	d.scidAlloc.Release(actor.scid)
+	phonelog.Default().Write("device actor removed: %s (scid=%x)", serial, actor.scid)
+	return nil
 }
 
 // connectMutex returns the per-serial mutex used to serialize same-device
@@ -251,12 +276,13 @@ func (d *Daemon) connectMutex(serial string) *sync.Mutex {
 
 // isConnectionlessMethod reports whether an RPC method can be answered
 // without binding a per-device session. status reports daemon-level info;
-// list_devices is a pure ADB scan; connect/disconnect are daemon-control
-// stubs (rejected in Dispatch); wait is a pure local sleep handled in
-// handleConn (NOT dispatched to the actor — a daemon-side sleep on the
-// actor's single-threaded loop would block every other request to that
-// device). Binding a session for any of these would be a side effect for
-// what should be a cheap or rejected call.
+// list_devices is a pure ADB scan; connect/disconnect manage devices at
+// the daemon level (create/remove actors in d.devices — not per-session
+// operations); wait is a pure local sleep handled in handleConn (NOT
+// dispatched to the actor — a daemon-side sleep on the actor's
+// single-threaded loop would block every other request to that device).
+// Binding a session for any of these would be a side effect for what
+// should be a cheap or daemon-level call.
 func isConnectionlessMethod(method string) bool {
 	switch method {
 	case "status", "list_devices", "connect", "disconnect", "wait":
@@ -325,7 +351,7 @@ func writeStreamedResponse(conn net.Conn, resp *Response) {
 // Start connects to the device, opens the Unix socket, and serves requests.
 // Blocks until ctx is cancelled or a fatal error occurs.
 func (d *Daemon) Start(ctx context.Context) error {
-	// Set up signal handling
+	// Signal handling
 	ctx, d.cancel = context.WithCancel(ctx)
 	d.ctx = ctx
 	sigCh := make(chan os.Signal, 1)
@@ -557,8 +583,44 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			}))
 			return
 		}
-		// Other connectionless methods (list_devices, connect/disconnect)
-		// dispatch fine with a nil session.
+		// "connect" creates a DeviceActor for the specified device (lazy —
+		// getOrCreateActor does the scrcpy handshake). If no device param is
+		// given, it auto-detects the first ADB device.
+		if req.Method == "connect" {
+			if deviceSerial == "" {
+				writeError(conn, req.ID, ErrNoDevice, "no device specified and none connected")
+				return
+			}
+			actor, err := d.getOrCreateActor(deviceSerial)
+			if err != nil {
+				writeError(conn, req.ID, ErrNoDevice, fmt.Sprintf("connect device: %v", err))
+				return
+			}
+			writeResponse(conn, newResultResponse(req.ID, map[string]any{
+				"message": fmt.Sprintf("connected to %s", actor.serial),
+				"serial":  actor.serial,
+			}))
+			return
+		}
+		// "disconnect" stops a single device actor and removes it from the
+		// daemon's device map — shuts down only that device, not the daemon.
+		if req.Method == "disconnect" {
+			if deviceSerial == "" {
+				writeError(conn, req.ID, ErrNoDevice, "no device specified")
+				return
+			}
+			if err := d.removeDevice(deviceSerial); err != nil {
+				writeError(conn, req.ID, ErrNoDevice, err.Error())
+				return
+			}
+			writeResponse(conn, newResultResponse(req.ID, map[string]any{
+				"message": fmt.Sprintf("disconnected %s", deviceSerial),
+				"serial":  deviceSerial,
+			}))
+			return
+		}
+		// Other connectionless methods (list_devices) dispatch fine with a
+		// nil session.
 		conn.SetWriteDeadline(deadline(ctx, 10))
 		writeResponse(conn, Dispatch(nil, &req))
 		return

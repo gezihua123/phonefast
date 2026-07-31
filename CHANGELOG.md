@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.0.16 (2026-07-31)
+
+### 🚀 Features
+- **Daemon-level `connect`/`disconnect`**: `phonefast connect <serial>` and `phonefast disconnect <serial>` are now first-class RPC commands that create/remove device actors on the running daemon - no more `daemon --stop` + restart to switch devices. Each `DeviceActor` owns a context derived from the daemon context, so disconnecting one device shuts down only that session while the daemon and other devices keep running.
+
+### ⚡ Performance
+- **Zero-copy JPEG fast path (CGO decoder)**: YUV420P frames are wrapped directly as `image.YCbCr` for JPEG encoding, bypassing the YUV→RGBA→YUV round-trip through `sws_ctx` + `rgbaScratch` (~7 MB saved per frame). New `frameToYCbCr` reuses a persistent `yuvBuf` instead of `astiav.Frame.ToImage()`, which allocated ~1.7 MB per call via `C.GoBytes` (RSS ballooned to 180 MB+ under sustained load).
+- **Direct JPEG from decoder for screenshots**: `screenshot`/`observe` RPCs request JPEG via `ScreenshotFormat(FormatJPEG)` instead of decoding PNG then re-encoding - avoids a ~4.6 MB `image.Decode` allocation. The CLI ffmpeg fallback (always PNG) still goes through `pngToJPEG`.
+- **`pngToJPEG` buffer pooling**: `sync.Pool` reuses `bytes.Buffer` across calls (~200-500 KB each), copying out before returning to pool.
+- **Android `UISocketHandler` allocation reduction**: reused `ByteArrayOutputStream` (`jsonBuf`) and `Rect` (`rectBuf`) across dumps; JSON streamed directly to the socket instead of materializing intermediate `byte[]`/`String` (~150 KB transient garbage per full-mode dump eliminated).
+- **Skip invisible nodes**: recursion skips GONE/unlaid-out nodes (bounds=0) and their children, cutting Binder calls - P50 ~55 ms → ~35 ms.
+- **`waitForIdle(100, 500)`** before dump for stable UI capture.
+
+### 🐛 Fixes
+- **UI handler crash resilience**: `handleClient` now catches `RuntimeException` (stale node, `SecurityException`, OOM) without killing the accept thread, and always closes the client socket in `finally` - prevents socket leaks that left Go clients hanging on dead connections.
+- **UI socket deadline 3 s → 5 s** for more headroom on heavy hierarchies.
+- **Removed stale `WriteUIDumpRequest` test** that referenced the deleted function (was breaking the `pkg/protocol` test build).
+
+### 🛠️ Refactor
+- **Default UI mode is summary**: `GetUIElements` now sends `sum` instead of `dump`; the Android handler treats `dump` as a backward-compat alias for `sum`. `ABSOLUTE_MAX_ELEMENTS` raised 500 → 5000; default `maxElements` for `get_ui_elements`/`observe` raised 100 → 5000.
+- **Text/desc truncated to 80 chars** and class names simplified via `simplifyClassName` in UI dump output for token efficiency.
+- **Per-actor context**: `DeviceActor` holds its own `ctx`/`cancel`; `Daemon.removeDevice(serial)` stops a single actor, closes its session, and releases its scid.
+
+### 📝 Docs
+- Restored `docs/BENCHMARK_HISTORY.md` (full benchmark timeline recovered from session caches/git history).
+- Added `tests/stress_test_uidump.py` UI-dump stress harness and `tools/ocr_local.go` local OCR debug tool.
+- Synced stale version strings in `docs/CLI.md`, `docs/CLI_zh.md` (1.0.11 → 1.0.16) and `scripts/install_pkg.sh` (1.0.12 → 1.0.16).
+
+---
+
 ## v1.0.15 (2026-07-29)
 
 ### 🚀 Features
