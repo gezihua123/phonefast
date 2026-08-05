@@ -525,7 +525,13 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	// (ADB order vs sorted-actor order) could make the first call target device
 	// X and subsequent calls device Y.
 	connectionless := isConnectionlessMethod(req.Method)
+	// Accept both "serial" and "device" as the device selector.
+	// The Go Client always sends "device", but raw RPC callers may send
+	// "serial" — both are valid unique device identifiers.
 	deviceSerial := parseStringParam(req.Params, "device")
+	if deviceSerial == "" {
+		deviceSerial = parseStringParam(req.Params, "serial")
+	}
 	if deviceSerial == "" && !connectionless {
 		if devs, err := adb.ListDevices(); err == nil && len(devs) > 0 {
 			deviceSerial = devs[0].Serial

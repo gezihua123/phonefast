@@ -209,13 +209,10 @@ func (s *Session) Observe(maxElements int, summary bool) (screenshot []byte, uiE
 	}()
 
 	go func() {
-		var elems []protocol.UIElement
-		var uiErr error
-		if summary {
-			elems, uiErr = s.GetUISummary(maxElements)
-		} else {
-			elems, uiErr = s.GetUIElements(maxElements)
-		}
+		// Flat path always fetches summary-mode elements (layout containers
+		// and pure images filtered server-side). The `summary` param only
+		// affects downstream formatting (viewport collapse), not the fetch.
+		elems, uiErr := s.GetUISummary(maxElements)
 		if uiErr != nil {
 			elems, uiErr = s.GetUIElementsFallbackADB(maxElements)
 		}

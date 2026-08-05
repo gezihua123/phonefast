@@ -318,10 +318,9 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 	formatType := getFormatFromParams(req)
 	maxShow := getMaxElementsFromParams(req, 5000)
 	collectMax := maxShow
-	if collectMax < 0 || collectMax > 500 {
-		collectMax = 0 // server default (500 for full, 100 for summary)
+	if collectMax < 0 || collectMax > protocol.DefMaxElements {
+		collectMax = 0 // server default (DefMaxElements)
 	}
-	isSummary := true // 默认 summary 模式（dump=summary，full 需指定 format）
 
 	// Handle hierarchical formats via UIFormatter registry
 	if f := format.ByName(formatType); f != nil {
@@ -342,14 +341,11 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		})
 	}
 
-	// Legacy flat format (no format specified or unknown format)
-	var elements []protocol.UIElement
-	var err error
-	if isSummary {
-		elements, err = sess.GetUISummary(collectMax)
-	} else {
-		elements, err = sess.GetUIElements(collectMax)
-	}
+	// Legacy flat format (no format specified or unknown format).
+	// Always summary mode: the flat path returns filtered UIElement[]
+	// (layout containers / pure images skipped). Full unfiltered mode
+	// requires a hierarchical format, handled above via GetUIFull.
+	elements, err := sess.GetUISummary(collectMax)
 	if err != nil {
 		elements, err = sess.GetUIElementsFallbackADB(collectMax)
 		if err != nil {
@@ -357,8 +353,7 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		}
 	}
 
-	// Collapse off-screen elements only in summary (token-efficient) mode.
-	// Full mode preserves every element — no viewport filtering.
+	// Collapse off-screen elements for token-efficient output.
 	// Use NativeW×NativeH for the viewport: UI element bounds come from
 	// AccessibilityNodeInfo.getBoundsInScreen(), which reports coordinates
 	// in the physical display space, NOT the scrcpy video resolution
@@ -367,10 +362,10 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 	// DeviceW/H as the viewport would incorrectly classify every element
 	// beyond the video boundary as off-screen.
 	vw, vh := 0, 0
-	if isSummary && sess.NativeW > 0 && sess.NativeH > 0 {
+	if sess.NativeW > 0 && sess.NativeH > 0 {
 		vw, vh = sess.NativeW, sess.NativeH
 	}
-	legacyFormatted := format.ElementsForLLMWithViewport(elements, maxShow, isSummary, vw, vh)
+	legacyFormatted := format.ElementsForLLMWithViewport(elements, maxShow, true, vw, vh)
 	return newResultResponse(req.ID, map[string]any{
 		"elements":  elements,
 		"formatted": legacyFormatted,
@@ -389,8 +384,8 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 	}
 	maxShow := getMaxElementsFromParams(req, 5000)
 	collectMax := maxShow
-	if collectMax < 0 || collectMax > 500 {
-		collectMax = 0 // server default (500 for full, 100 for summary)
+	if collectMax < 0 || collectMax > protocol.DefMaxElements {
+		collectMax = 0 // server default (DefMaxElements)
 	}
 	isSummary := getSummaryFromParams(req)
 
@@ -416,7 +411,12 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 			scCh <- screenRes{img, mime, err}
 		}()
 		go func() {
+			// Retry once on transient errors (stale-node exceptions during
+			// animations are common now that waitForIdle is removed).
 			elems, err := sess.GetUIFull(collectMax)
+			if err != nil {
+				elems, err = sess.GetUIFull(collectMax)
+			}
 			uiCh <- uiRes{elems, err}
 		}()
 
@@ -538,7 +538,7 @@ func handleTapElement(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	elements, fastErr := sess.GetUIElements(0) // collect all elements (server default 500)
+	elements, fastErr := sess.GetUISummary(0) // server default (DefMaxElements)
 	if fastErr != nil {
 		var fallbackErr error
 		elements, fallbackErr = sess.GetUIElementsFallbackADB(0)

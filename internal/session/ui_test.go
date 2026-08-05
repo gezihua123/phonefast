@@ -2,8 +2,6 @@ package session
 
 import (
 	"testing"
-
-	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
 func TestParseNodeLine(t *testing.T) {
@@ -109,6 +107,3 @@ func TestExtractAttr(t *testing.T) {
 		}
 	}
 }
-
-// Ensure protocol import compiles
-var _ = protocol.UIDumpRequest

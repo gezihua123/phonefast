@@ -37,38 +37,9 @@ func (s *Session) dropUIConn() {
 	}
 }
 
-// GetUIElements retrieves UI hierarchy in summary mode via the fast UI socket.
-// Summary mode applies shrink optimizations (skip inactive windows,
-// maxDepth, skip pure images). Pass <= 0 for server default.
-func (s *Session) GetUIElements(maxElements int) ([]protocol.UIElement, error) {
-	conn, err := s.getUIConn()
-	if err != nil {
-		return nil, err
-	}
-
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
-
-	if err := protocol.WriteUISummaryRequest(conn, maxElements); err != nil {
-		s.dropUIConn()
-		return nil, fmt.Errorf("write ui summary request: %w", err)
-	}
-
-	resp, err := protocol.ReadUIDumpResponse(conn)
-	if err != nil {
-		s.dropUIConn()
-		return nil, fmt.Errorf("read ui dump response: %w", err)
-	}
-
-	// Client-side truncation (server always returns its default max)
-	if maxElements > 0 && len(resp.Elements) > maxElements {
-		resp.Elements = resp.Elements[:maxElements]
-	}
-	return resp.Elements, nil
-}
-
 // GetUISummary retrieves UI hierarchy in summary mode via the fast UI socket.
 // Summary mode filters out layout containers on the server side.
-// maxElements controls the element limit. Pass <= 0 for server default (500).
+// maxElements controls the element limit. Pass <= 0 for server default (DefMaxElements).
 func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 	conn, err := s.getUIConn()
 	if err != nil {
@@ -87,6 +58,9 @@ func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 		s.dropUIConn()
 		return nil, fmt.Errorf("read ui summary response: %w", err)
 	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("server error: %s", resp.Error)
+	}
 
 	// Client-side truncation (server always returns its default max)
 	if maxElements > 0 && len(resp.Elements) > maxElements {
@@ -98,7 +72,7 @@ func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 // GetUIFull retrieves the complete UI hierarchy with parent/depth metadata via the fast UI socket.
 // This mode returns ALL nodes (no filtering) for generating hierarchical formats
 // (jsonl, simplexml, flatref).
-// maxElements controls the element limit. Pass <= 0 for server default (500).
+// maxElements controls the element limit. Pass <= 0 for server default (DefMaxElements).
 func (s *Session) GetUIFull(maxElements int) ([]protocol.UIFullElement, error) {
 	conn, err := s.getUIConn()
 	if err != nil {
@@ -116,6 +90,9 @@ func (s *Session) GetUIFull(maxElements int) ([]protocol.UIFullElement, error) {
 	if err != nil {
 		s.dropUIConn()
 		return nil, fmt.Errorf("read ui full response: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("server error: %s", resp.Error)
 	}
 
 	if maxElements > 0 && len(resp.Elements) > maxElements {

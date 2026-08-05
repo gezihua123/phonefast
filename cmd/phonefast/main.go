@@ -608,7 +608,7 @@ func tapElementCmd(args []string) {
 			printMessage(result)
 		} else {
 			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUIElements(0)
+				elements, err := sess.GetUISummary(0)
 				if err != nil {
 					elements, err = sess.GetUIElementsFallbackADB(0)
 					if err != nil {
@@ -636,7 +636,7 @@ func tapElementCmd(args []string) {
 			printMessage(result)
 		} else {
 			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUIElements(0)
+				elements, err := sess.GetUISummary(0)
 				if err != nil {
 					elements, err = sess.GetUIElementsFallbackADB(0)
 					if err != nil {
@@ -853,14 +853,8 @@ func uiCmd(args []string) {
 	} else {
 		withSession(func(sess *session.Session) error {
 			collectMax := maxShow
-			if collectMax < 0 || collectMax > 500 { collectMax = 0 }
-			var elements []protocol.UIElement
-			var err error
-			if isSummary {
-				elements, err = sess.GetUISummary(collectMax)
-			} else {
-				elements, err = sess.GetUIElements(collectMax)
-			}
+			if collectMax < 0 || collectMax > protocol.DefMaxElements { collectMax = 0 }
+			elements, err := sess.GetUISummary(collectMax)
 			if err != nil {
 				elements, err = sess.GetUIElementsFallbackADB(collectMax)
 				if err != nil {
@@ -894,7 +888,7 @@ func observeCmd(args []string) {
 	} else {
 		withSession(func(sess *session.Session) error {
 			collectMax := maxShow
-			if collectMax < 0 || collectMax > 500 {
+			if collectMax < 0 || collectMax > protocol.DefMaxElements {
 				collectMax = 0
 			}
 
@@ -1253,7 +1247,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		b64 := base64.StdEncoding.EncodeToString(png)
 		fmt.Printf(`{"base64":"%s","width":%d,"height":%d,"format":"png"}`+"\n", b64, w, h)
 	case "get_ui_elements":
-		elements, err := sess.GetUIElements(0)
+		elements, err := sess.GetUISummary(0)
 		if err != nil {
 			return err
 		}
@@ -1264,7 +1258,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		if err != nil {
 			return err
 		}
-		elements, err := sess.GetUIElements(0)
+		elements, err := sess.GetUISummary(0)
 		if err != nil {
 			return err
 		}
@@ -1278,7 +1272,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		}
 		fmt.Printf("Tapped at (%d, %d)\n", x, y)
 	case "tap_element":
-		elements, err := sess.GetUIElements(0)
+		elements, err := sess.GetUISummary(0)
 		if err != nil {
 			elements, err = sess.GetUIElementsFallbackADB(0)
 			if err != nil {

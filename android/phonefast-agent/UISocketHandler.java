@@ -1,8 +1,10 @@
 package com.genymobile.scrcpy.control;
 
 import android.app.UiAutomation;
+import android.content.res.Resources;
 import android.os.Build;
 import android.os.Looper;
+import android.util.DisplayMetrics;
 import android.util.JsonWriter;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -46,7 +48,7 @@ public final class UISocketHandler {
 
     private static final String UI_SOCKET_SUFFIX = "_ui";
     // Absolute hard cap — never collect more than this per dump (avoids OOM)
-    private static final int ABSOLUTE_MAX_ELEMENTS = 5000;
+    private static final int ABSOLUTE_MAX_ELEMENTS = 2000;
 
     private static final byte[] SUM_BYTES = "sum".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] FULL_BYTES = "full".getBytes(StandardCharsets.US_ASCII);
@@ -68,11 +70,15 @@ public final class UISocketHandler {
     private final int scid;
     private volatile boolean running = true;
     private volatile UiAutomation uiAutomation;
+    private volatile LocalServerSocket serverSocket; // closed by stop() to unblock accept()
     // Reused across dumps to avoid per-call StringWriter/String/byte[] allocation
     // (full-mode JSON ~50KB → ~150KB transient garbage per dump → GC pressure → Binder timeouts).
     private final ByteArrayOutputStream jsonBuf = new ByteArrayOutputStream(65536);
     // Reused Rect to avoid per-node allocation (284 nodes/dump = 284 Rect objects)
     private final android.graphics.Rect rectBuf = new android.graphics.Rect();
+    // Screen dimensions for visibility calculation (refreshed per dump to handle rotation)
+    private int screenWidth = 1080;
+    private int screenHeight = 1920;
 
     public UISocketHandler(int scid) {
         this.scid = scid;
@@ -110,7 +116,7 @@ public final class UISocketHandler {
 
             // ── Step 3: accept loop ───────────────────────────────────────────
             try {
-                LocalServerSocket serverSocket = new LocalServerSocket(socketName);
+                serverSocket = new LocalServerSocket(socketName);
                 Ln.i("phonefast: UI socket ready on " + socketName);
 
                 while (running) {
@@ -134,7 +140,8 @@ public final class UISocketHandler {
                         try { client.close(); } catch (IOException ignore) {}
                     }
                 }
-                serverSocket.close();
+                LocalServerSocket ss = serverSocket;
+                if (ss != null) ss.close();
             } catch (IOException e) {
                 Ln.e("phonefast: UI socket server error: " + e.getMessage());
             }
@@ -144,6 +151,13 @@ public final class UISocketHandler {
 
     public void stop() {
         running = false;
+        // Close server socket to unblock accept() — without this the phonefast-ui
+        // thread hangs on accept() and prevents clean daemon shutdown/restart.
+        LocalServerSocket ss = serverSocket;
+        if (ss != null) {
+            try { ss.close(); } catch (IOException ignore) { }
+            serverSocket = null;
+        }
         UiAutomation ua = uiAutomation;
         if (ua != null) {
             try {
@@ -195,10 +209,10 @@ public final class UISocketHandler {
             }
 
             // Parse limit from remaining bytes after the prefix.
-            //   "sum\0"      → default (5000)
-            //   "sum:NN\0"   → min(NN, 5000)
-            //   "full\0"     → default (5000)
-            //   "full:NN\0"  → min(NN, 5000)
+            //   "sum\0"      → default (2000)
+            //   "sum:NN\0"   → min(NN, 2000)
+            //   "full\0"     → default (2000)
+            //   "full:NN\0"  → min(NN, 2000)
             // The 4th byte of "sum" requests was already read into prefix[3].
             int maxElements = ABSOLUTE_MAX_ELEMENTS;
             int sep;
@@ -345,6 +359,49 @@ public final class UISocketHandler {
         }
     }
 
+    /**
+     * Refresh screen dimensions from system display metrics.
+     * Called per-dump to handle device rotation correctly.
+     * Falls back to active window bounds if DisplayMetrics is unavailable.
+     * @param ua the UiAutomation already null-checked by the caller (avoids
+     *           re-reading the volatile field — TOCTOU during shutdown).
+     */
+    private void ensureScreenSize(UiAutomation ua) {
+        try {
+            DisplayMetrics metrics = Resources.getSystem().getDisplayMetrics();
+            screenWidth = metrics.widthPixels;
+            screenHeight = metrics.heightPixels;
+            return;
+        } catch (Exception e) {
+            Ln.w("phonefast: DisplayMetrics failed, trying window bounds: " + e.getMessage());
+        }
+        // Fallback: use active window bounds from the caller-provided UiAutomation
+        try {
+            AccessibilityNodeInfo root = ua.getRootInActiveWindow();
+            if (root != null) {
+                try {
+                    root.getBoundsInScreen(rectBuf);
+                    screenWidth = rectBuf.right;
+                    screenHeight = rectBuf.bottom;
+                    return;
+                } finally {
+                    root.recycle();
+                }
+            }
+        } catch (Exception e2) {
+            Ln.w("phonefast: window bounds fallback also failed: " + e2.getMessage());
+        }
+    }
+
+    /**
+     * Returns true if the rect (in screen coordinates) has any overlap with
+     * the visible screen area [0, 0, screenWidth, screenHeight].
+     * Elements entirely above/below/left/right of the screen are invisible.
+     */
+    private boolean isOnScreen(int left, int top, int right, int bottom) {
+        return left < screenWidth && right > 0 && top < screenHeight && bottom > 0;
+    }
+
     // ── dump ───────────────────────────────────────────────────────────────────
 
     private void dumpUIHierarchy(int maxElements, boolean summaryMode, DataOutputStream out) throws IOException {
@@ -354,16 +411,12 @@ public final class UISocketHandler {
             return;
         }
 
-        // waitForIdle: wait for UI to stabilize before dump
-        // (agent-device + devicekit-android both do this)
-        try {
-            ua.waitForIdle(100, 500);
-        } catch (Exception e) {
-            // Busy/animated UI still has usable root; capture whatever is available
-        }
+        ensureScreenSize(ua);
 
         jsonBuf.reset();
         try {
+            long t0 = System.currentTimeMillis();
+
             JsonWriter jw = new JsonWriter(new OutputStreamWriter(jsonBuf, StandardCharsets.UTF_8));
             jw.beginObject();
             jw.name("elements");
@@ -442,8 +495,13 @@ public final class UISocketHandler {
             jw.endArray();
             jw.endObject();
             jw.close();
+
+            long t1 = System.currentTimeMillis();
             out.writeInt(jsonBuf.size());
             jsonBuf.writeTo(out);
+
+            long t2 = System.currentTimeMillis();
+            logDumpTiming("summary", t0, t1, t2, counter[0]);
 
         } catch (Exception e) {
             buildError(e.getMessage(), out);
@@ -515,6 +573,9 @@ public final class UISocketHandler {
 
                         jw.name("clickable").value(clickable);
                         jw.name("enabled").value(node.isEnabled());
+                        if (!isOnScreen(rectBuf.left, rectBuf.top, rectBuf.right, rectBuf.bottom)) {
+                            jw.name("visible").value(false);
+                        }
                         jw.endObject();
                     }
                 }
@@ -550,15 +611,12 @@ public final class UISocketHandler {
             return;
         }
 
-        // waitForIdle: wait for UI to stabilize before dump
-        try {
-            ua.waitForIdle(100, 500);
-        } catch (Exception e) {
-            // Busy/animated UI still has usable root
-        }
+        ensureScreenSize(ua);
 
         jsonBuf.reset();
         try {
+            long t0 = System.currentTimeMillis();
+
             JsonWriter jw = new JsonWriter(new OutputStreamWriter(jsonBuf, StandardCharsets.UTF_8));
             jw.beginObject();
             jw.name("elements");
@@ -616,8 +674,13 @@ public final class UISocketHandler {
             jw.endArray();
             jw.endObject();
             jw.close();
+
+            long t1 = System.currentTimeMillis();
             out.writeInt(jsonBuf.size());
             jsonBuf.writeTo(out);
+
+            long t2 = System.currentTimeMillis();
+            logDumpTiming("full", t0, t1, t2, counter[0]);
 
         } catch (Exception e) {
             buildError(e.getMessage(), out);
@@ -673,6 +736,9 @@ public final class UISocketHandler {
             jw.name("enabled").value(node.isEnabled());
             jw.name("focused").value(node.isFocused());
             jw.name("selected").value(node.isSelected());
+            if (!isOnScreen(rectBuf.left, rectBuf.top, rectBuf.right, rectBuf.bottom)) {
+                jw.name("visible").value(false);
+            }
             jw.endObject();
 
             // Recurse into children — recycle each child after its subtree is processed.
@@ -691,22 +757,34 @@ public final class UISocketHandler {
         }
     }
 
-    // Reused static byte arrays for error JSON framing (no per-call allocation).
-    private static final byte[] ERR_PREFIX =
-            "{\"elements\":[],\"error\":\"".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] ERR_SUFFIX = "\"}".getBytes(StandardCharsets.UTF_8);
+    /**
+     * Logs a dump timing breakdown when total exceeds 80ms, so slow dumps
+     * are diagnosable without flooding the log on fast (normal) dumps.
+     * t0=dump start, t1=jw.close() done (collect end), t2=socket write done.
+     */
+    private void logDumpTiming(String mode, long t0, long t1, long t2, int nodeCount) {
+        if (t2 - t0 <= 80) return;
+        Ln.i("phonefast: dump(" + mode + ") total=" + (t2 - t0) + "ms collect=" + (t1 - t0)
+            + "ms send=" + (t2 - t1) + "ms nodes=" + nodeCount
+            + " json_kb=" + (jsonBuf.size() / 1024));
+    }
 
     /**
      * Writes a length-prefixed error JSON payload straight onto the socket
-     * output stream, reusing {@link #jsonBuf} so no String/byte[] is allocated
-     * on the error path either. The buffer is reset first to discard any
-     * partial JSON left over from a failed dump.
+     * output stream, reusing {@link #jsonBuf}. The message is routed through
+     * JsonWriter so quotes/backslashes/control chars in exception messages
+     * (e.g. {@code Cannot invoke "foo()"}) are properly escaped — otherwise
+     * the JSON is malformed and the Go side fails to unmarshal, masking the
+     * real server error as a transport error.
      */
     private void buildError(String msg, DataOutputStream out) throws IOException {
         jsonBuf.reset();
-        jsonBuf.write(ERR_PREFIX);
-        jsonBuf.write((msg != null ? msg : "unknown").getBytes(StandardCharsets.UTF_8));
-        jsonBuf.write(ERR_SUFFIX);
+        JsonWriter jw = new JsonWriter(new OutputStreamWriter(jsonBuf, StandardCharsets.UTF_8));
+        jw.beginObject();
+        jw.name("elements").beginArray().endArray();
+        jw.name("error").value(msg != null ? msg : "unknown");
+        jw.endObject();
+        jw.close();
         out.writeInt(jsonBuf.size());
         jsonBuf.writeTo(out);
     }

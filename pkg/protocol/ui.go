@@ -8,10 +8,6 @@ import (
 	"strings"
 )
 
-// UIDumpRequest is the base request string sent to the ui socket.
-// A null byte ('\0') terminates the request on the wire.
-const UIDumpRequest = "dump"
-
 // UISummaryRequest is the summary-mode request prefix.
 // Summary mode filters out layout containers on the server side.
 const UISummaryRequest = "sum"
@@ -20,6 +16,10 @@ const UISummaryRequest = "sum"
 // Full mode returns ALL nodes (no filtering) with parent/depth metadata
 // for generating hierarchical formats (jsonl, simplexml, flatref).
 const UIFullRequest = "full"
+
+// DefMaxElements is the server-side default max elements per dump.
+// Kept in sync with UISocketHandler.ABSOLUTE_MAX_ELEMENTS.
+const DefMaxElements = 2000
 
 // UIElement represents a single UI element on screen.
 // Compatible with phone-mcp UIElement format.
@@ -35,11 +35,18 @@ type UIElement struct {
 	Enabled     bool    `json:"enabled"`
 	Focused     bool    `json:"focused,omitempty"`
 	Selected    bool    `json:"selected,omitempty"`
+	Visible     *bool   `json:"visible,omitempty"` // nil or true = visible, false = off-screen
+}
+
+// IsVisible returns true if the element is visible (default when field is absent).
+func (e UIElement) IsVisible() bool {
+	return e.Visible == nil || *e.Visible
 }
 
 // UIDumpResponse is the parsed response from the ui socket.
 type UIDumpResponse struct {
 	Elements []UIElement `json:"elements"`
+	Error    string      `json:"error,omitempty"`
 }
 
 // UIFullElement represents a single UI element with hierarchy metadata.
@@ -58,6 +65,12 @@ type UIFullElement struct {
 	Enabled     bool    `json:"enabled"`
 	Focused     bool    `json:"focused,omitempty"`
 	Selected    bool    `json:"selected,omitempty"`
+	Visible     *bool   `json:"visible,omitempty"` // nil or true = visible, false = off-screen
+}
+
+// IsVisible returns true if the element is visible (default when field is absent).
+func (e UIFullElement) IsVisible() bool {
+	return e.Visible == nil || *e.Visible
 }
 
 // UIFullResponse is the parsed response from the ui socket in full hierarchical mode.
@@ -178,7 +191,7 @@ func SimplifyClassName(className string) string {
 // WriteUISummaryRequest sends a summary-mode dump request on the ui socket.
 // Summary mode filters out layout containers on the server side.
 // If maxElements > 0, includes a limit: "sum:NNN\0".
-// Otherwise sends "sum\0" (server uses its default of 100).
+// Otherwise sends "sum\0" (server uses its default, DefMaxElements).
 func WriteUISummaryRequest(w io.Writer, maxElements int) error {
 	var req string
 	if maxElements > 0 {
@@ -193,7 +206,7 @@ func WriteUISummaryRequest(w io.Writer, maxElements int) error {
 // WriteUIFullRequest sends a full hierarchical-mode dump request on the ui socket.
 // Full mode returns ALL nodes with parent/depth metadata.
 // If maxElements > 0, includes a limit: "full:NNN\0".
-// Otherwise sends "full\0" (server uses its default of 500).
+// Otherwise sends "full\0" (server uses its default, DefMaxElements).
 func WriteUIFullRequest(w io.Writer, maxElements int) error {
 	var req string
 	if maxElements > 0 {

@@ -97,6 +97,9 @@ func writeSimpleXMLNode(b *strings.Builder, node *uiNode, indent int) {
 	if el.Selected {
 		b.WriteString(` selected="True"`)
 	}
+	if !el.IsVisible() {
+		b.WriteString(` visible="False"`)
+	}
 
 	if len(node.children) == 0 {
 		b.WriteString(" />\n")
