@@ -143,7 +143,7 @@ jobs:
         run: bash scripts/download-ocr-models.sh --models
 
       # The ONNX Runtime shared library is platform-specific. Only darwin/arm64
-      # embeds it (assets/ocr/lib_darwin_arm64.go); for that target we fetch the
+      # embeds it (ocr/assets/lib_darwin_arm64.go); for that target we fetch the
       # osx-arm64 lib from the ORT GitHub release (works on any CI runner).
       # Other targets load the system lib at runtime (or OCR returns ErrNotAvailable).
       - name: Download OCR runtime library (darwin/arm64 only)
@@ -166,8 +166,8 @@ jobs:
           tar -xzf /tmp/ort.tgz -C /tmp
           sudo cp /tmp/onnxruntime-${ORT_ARCH}-${ORT_VER}/lib/libonnxruntime.so* /usr/local/lib/
           sudo ldconfig
-          # Also stage for embedding in the -full build (assets/ocr/lib_linux_amd64.go).
-          cp /tmp/onnxruntime-${ORT_ARCH}-${ORT_VER}/lib/libonnxruntime.so assets/ocr/libonnxruntime-${{ matrix.goos }}-${{ matrix.goarch }}.so
+          # Also stage for embedding in the -full build (ocr/assets/lib_linux_amd64.go).
+          cp /tmp/onnxruntime-${ORT_ARCH}-${ORT_VER}/lib/libonnxruntime.so ocr/assets/libonnxruntime-${{ matrix.goos }}-${{ matrix.goarch }}.so
           echo "[✓] libonnxruntime ${ORT_VER} (${ORT_ARCH}) installed"
 
       # Install ONNX Runtime for macOS runner so OCR smoke test can run.
@@ -208,7 +208,7 @@ jobs:
 
       # ── Full build (darwin/arm64 + linux/amd64) ──
       # Self-contained binary with embedded ONNX Runtime library.
-      # The ORT lib must already be staged in assets/ocr/ (see "Download OCR
+      # The ORT lib must already be staged in ocr/assets/ (see "Download OCR
       # runtime library" step above for darwin, or "Install ONNX Runtime"
       # for linux).
       - name: Build phonefast (full)

@@ -14,11 +14,21 @@ from . import log
 from .platform import Target, host_target
 
 
-def setup_cross_cgo(target: Target, root_dir: Path, zig_path: str | None = None) -> dict[str, str]:
+def setup_cross_cgo(
+    target: Target,
+    root_dir: Path,
+    zig_path: str | None = None,
+    force_cgo: bool = False,
+) -> dict[str, str]:
     """Determine CGO env for cross-compiling to target.
 
     Returns a dict of env vars to set/override for `go build`.
-    May downgrade CGO_ENABLED=0 if zig/FFmpeg unavailable (with a warning).
+
+    force_cgo: when True, do NOT downgrade CGO_ENABLED to 0 on missing
+    FFmpeg — warn instead and let the build proceed (relying on system FFmpeg
+    via pkg-config). Used by cgo1/apple variants where downgrading would
+    silently drop the apple engine (the whole point of the variant). Plain
+    keeps the legacy downgrade-for-back-compat behavior.
     """
     env: dict[str, str] = {}
     if os.environ.get("CGO_ENABLED") == "0":
@@ -60,7 +70,15 @@ def setup_cross_cgo(target: Target, root_dir: Path, zig_path: str | None = None)
         env["PKG_CONFIG_PATH"] = str(pkgconfig)
         return env
 
-    # All else failed — downgrade to CGO=0.
+    # FFmpeg unavailable and download didn't help.
+    if force_cgo:
+        # cgo1/apple variant: keep CGO=1, fall back to system FFmpeg via pkg-config.
+        # Downgrading would lose the apple engine — the reason this variant exists.
+        log.warn(f"  手动备选: bash scripts/cross-build-ffmpeg.sh {target.ffmpeg_target}")
+        log.warn("  force_cgo=True: 保持 CGO_ENABLED=1（依赖系统 FFmpeg pkg-config）")
+        return env
+
+    # Plain variant: legacy downgrade to CGO=0 (loses astiav + apple engine).
     log.warn(f"  手动备选: bash scripts/cross-build-ffmpeg.sh {target.ffmpeg_target}")
     log.warn("  或跳过 CGO: CGO_ENABLED=0 go build ./cmd/phonefast/")
     log.warn("  降级 CGO_ENABLED=0")

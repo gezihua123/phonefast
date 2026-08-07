@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.0.18 (2026-08-07)
+
+### 🛠️ Refactor
+- **OCR 模块拆分为独立 Go module**：将原 `internal/ocr/`、`pkg/ocr/`、`assets/ocr/` 整体迁出为独立的 `ocr/` module（自带 `go.mod`/`go.sum`，module path `github.com/gezihua123/phonefast/ocr`）。主 module 通过 `replace github.com/gezihua123/phonefast/ocr => ./ocr` 解析本地 ocr 模块，克隆/CI 无需 `go.work` 即可构建（`go.work` 仅本地开发用，已 gitignore）。
+- **构建变体统一为数据驱动表**：`scripts/pfbuild/variants.py` 成为 OCR 变体（plain / cgo1 / apple / full）的单一真相来源，`builder.py` 数据驱动读取，加新变体只改一张表。旧 `ocr/scripts/build.sh` 退化为 `build.py --variant <name>` 的薄封装。
+- **OCR 资产下载统一入口**：`ocr/scripts/download.sh` 为模型 + ORT 运行时库的规范下载脚本（下载到 `ocr/assets/`）；主仓库 `scripts/download-ocr-models.sh` 转发到它，CI/release 工作流统一调用。
+
+### 🐛 Fixes
+- **CI 构建路径修正**：`ci.yml`/`release.yml` 中 ORT 库暂存路径 `assets/ocr/` -> `ocr/assets/`（匹配 `ocr/assets/lib_*.go` 的 `//go:embed` 路径），修复 `-full` (ocr_embed) 变体的 embed 失败。
+- **`go.mod` 自洽**：补充 `golang.org/x/image`（经 ocr 模块传递依赖）等 indirect require，`GOWORK=off go build` 在 5 平台纯 Go 路径全部通过。
+
+### 📝 Docs
+- 新增 [docs/BUILD.md](docs/BUILD.md)：四类构建产物（Go 主程序 / scrcpy-server.jar / OCR 引擎变体）的完整命令、build tag 语义、CGO 降级机制、环境准备。
+- docs/DEV.md 增补 OCR 变体构建系统、OCR 识别方案选型记录。
+
+---
+
 ## v1.0.16 (2026-07-31)
 
 ### 🚀 Features

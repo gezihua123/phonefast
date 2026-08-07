@@ -48,8 +48,6 @@ config.local.*
 coverage.html
 coverage.out
 ehthumbs.db
-go.work
-go.work.sum
 /phonefast
 .build-tmp
 

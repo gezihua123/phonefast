@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
-	"github.com/gezihua123/phonefast/internal/ocr"
+	"github.com/gezihua123/phonefast/ocr"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 )
 

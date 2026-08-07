@@ -3,9 +3,9 @@ package daemon
 import (
 	"fmt"
 
-	ocrsvc "github.com/gezihua123/phonefast/internal/ocr"
+	ocrsvc "github.com/gezihua123/phonefast/ocr"
 	"github.com/gezihua123/phonefast/internal/session"
-	pkgocr "github.com/gezihua123/phonefast/pkg/ocr"
+	"github.com/gezihua123/phonefast/pkg/avcodec"
 )
 
 // ocrSvc is the daemon-level OCR singleton, set by Daemon.Run().
@@ -32,23 +32,25 @@ func handleOCR(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrInternal, "ocr service not initialized")
 	}
 
-	// Get screenshot from session (session owns device I/O).
-	pngData, w, h, err := sess.Screenshot()
+	// Get screenshot from session (session owns device I/O). Request JPEG
+	// directly from the CGO decoder — it's ~10× smaller than PNG at native
+	// resolution and the OCR engine decodes both formats via image.Decode.
+	imgData, w, h, _, err := sess.ScreenshotFormat(avcodec.FormatJPEG)
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("screenshot: %v", err))
 	}
 
 	// Run OCR via daemon-level service (shared engine, mutex-serialized).
-	results, err := ocrSvc.Recognize(pngData)
+	results, err := ocrSvc.Recognize(imgData)
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("ocr: %v", err))
 	}
 
 	// Build response with text + positions.
-	items := make([]pkgocr.Result, len(results))
+	items := make([]ocrsvc.Result, len(results))
 	for i, r := range results {
 		cx, cy := r.Center()
-		items[i] = pkgocr.Result{
+		items[i] = ocrsvc.Result{
 			Text:       r.Text,
 			Box:        r.Box,
 			Center:     [2]float64{cx, cy},

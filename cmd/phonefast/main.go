@@ -40,8 +40,13 @@ import (
 	"github.com/gezihua123/phonefast/internal/daemon"
 	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/internal/mcp"
-	pkgocr "github.com/gezihua123/phonefast/pkg/ocr"
+	pkgocr "github.com/gezihua123/phonefast/ocr"
 	"github.com/gezihua123/phonefast/internal/session"
+	// Register OCR backends into the engine registry via init().
+	_ "github.com/gezihua123/phonefast/ocr/onnx"
+	_ "github.com/gezihua123/phonefast/ocr/tesseract"
+	_ "github.com/gezihua123/phonefast/ocr/apple"
+	// _ "github.com/gezihua123/phonefast/ocr/ncnn" // opt-in via -tags ncnn
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -109,7 +114,7 @@ func main() {
 	args := os.Args[startIdx+1:]
 
 	// Auto-start daemon if needed (before dispatching the command)
-	if useDaemon && cmd != "daemon" && cmd != "serve" && cmd != "devices" && cmd != "daemon_worker" {
+	if useDaemon && cmd != "daemon" && cmd != "serve" && cmd != "devices" && cmd != "daemon_worker" && cmd != "help" && cmd != "status" {
 		// Resolve serial if not explicitly set
 		if daemonSerial == "" {
 			daemonSerial = resolveSerial()
@@ -805,35 +810,50 @@ func screenshotCmd(args []string) {
 			fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
 			os.Exit(1)
 		}
-		writeScreenshot(args, resp.ImageData)
+		writeScreenshot(args, resp.ImageData, resp.MimeType)
 	} else {
 		withSession(func(sess *session.Session) error {
 			pngData, _, _, err := sess.Screenshot()
 			if err != nil {
 				return err
 			}
-			writeScreenshot(args, base64.StdEncoding.EncodeToString(pngData))
+			writeScreenshot(args, base64.StdEncoding.EncodeToString(pngData), "image/png")
 			return nil
 		})
 	}
 }
 
-func writeScreenshot(args []string, b64 string) {
-	pngData, err := base64.StdEncoding.DecodeString(b64)
+// writeScreenshot writes decoded screenshot bytes to disk. The output path
+// comes from args[0] when given, otherwise a timestamped default is generated
+// whose extension matches the mime_type (JPEG→.jpg, PNG→.png) so the file is
+// always consistent with its actual encoded format.
+func writeScreenshot(args []string, b64, mimeType string) {
+	imgData, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding screenshot: %v\n", err)
 		os.Exit(1)
 	}
+	ext := extFromMimeType(mimeType)
+	var outPath string
 	if len(args) > 0 {
-		outPath := args[0]
-		if err := os.WriteFile(outPath, pngData, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Screenshot saved to %s\n", outPath)
+		outPath = args[0]
 	} else {
-		// Output as data URI
-		fmt.Printf("data:image/png;base64,%s\n", b64)
+		outPath = fmt.Sprintf("screenshot_%s.%s", time.Now().Format("20060102_150405"), ext)
+	}
+	if err := os.WriteFile(outPath, imgData, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Screenshot saved to %s\n", outPath)
+}
+
+// extFromMimeType maps a MIME type to a file extension, defaulting to png.
+func extFromMimeType(mimeType string) string {
+	switch mimeType {
+	case "image/jpeg", "image/jpg":
+		return "jpg"
+	default:
+		return "png"
 	}
 }
 
@@ -997,17 +1017,24 @@ func waitCmd(args []string) {
 }
 
 func statusCmd() {
-	if daemonSerial == "" {
-		daemonSerial = resolveSerial()
-	}
 	if !useDaemon {
 		showDaemonStatus()
+		return
+	}
+	// In daemon mode, check if the daemon is alive. If not, fall back to
+	// simple status without forcing a daemon start — status is a read-only
+	// probe, not an operation that needs a live session.
+	pidFile := daemon.PidFileName()
+	pid, _ := daemon.ReadPID(pidFile)
+	if pid == 0 || !daemon.IsProcessAlive(pid) {
+		fmt.Println("daemon not running")
 		return
 	}
 	client := daemon.NewClient(daemonSerial)
 	status, err := client.Ping()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		// Daemon process exists but socket not responding — report degraded.
+		fmt.Printf("daemon running (pid %d) but not responding: %v\n", pid, err)
 		os.Exit(1)
 	}
 	data, _ := json.MarshalIndent(status, "", "  ")
