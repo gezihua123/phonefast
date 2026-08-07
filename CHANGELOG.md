@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.0.19 (2026-08-07)
+
+### 🐛 Fixes
+- **修复 OCR 下载脚本**：v1.0.18 的 OCR 模块拆分遗留 4 个坏掉的 Python 下载脚本（import 了不存在的 `pfbuild.assets.sync_models`/`http_get`，且下载到旧 `assets/ocr/` 路径）。本次清理：
+  - 删除 `scripts/download_models.py`、`ocr/scripts/download_models.py`（生产模型下载统一由 bash `ocr/scripts/download.sh` 承担）。
+  - `ocr/scripts/download-ocr-models.sh` 转发到 `./download.sh`（与主仓库包装器一致）。
+  - 重写 `ocr/scripts/download_test_models.py` 为纯标准库（urllib，无 pfbuild 依赖），路径 `tests/ocr-models/` -> `ocr/models/`。
+  - `scripts/download-ocr-test-models.sh` 转发到 ocr 模块的 Python 脚本；删除重复的 `scripts/download_test_models.py`。
+- **docs/DEV.md**：更新构建工具章节（下载职责归 bash，`assets.py` 仅管 jar 同步，补充 `variants.py`）。
+
+> 本次为脚本/文档修复，不涉及 Go 代码，二进制与 v1.0.18 字节一致。
+
+---
+
 ## v1.0.18 (2026-08-07)
 
 ### 🛠️ Refactor
