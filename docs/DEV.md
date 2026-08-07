@@ -774,25 +774,26 @@ ARM64 NEON 优化累积, rec 推理快近一倍:
 `lib_nolib.go`（`!ocr_embed`）RuntimeLib=nil → 运行时 `findSystemLib` 找 `/opt/homebrew/lib/`。
 仅 darwin/arm64 有 embed（其他平台 -full = plain, builder 跳过 + warn）。
 
-#### Python 统一构建工具（2026-07）
+#### 构建与下载工具（2026-07）
 
-build.sh + download-ocr-models.sh + build_local.sh + download-ocr-test-models.sh 全部迁移到 Python,
-shell 保留薄 wrapper（`exec python3 ...`）向后兼容 CI/文档引用:
+构建用 Python（`build.py` + `pfbuild/` 共享模块），OCR 资产下载用 bash（`ocr/scripts/download.sh`）。
+shell 保留薄 wrapper 向后兼容 CI/文档引用:
 
-| Python 脚本 | 职责 | 对应 shell wrapper |
+| 脚本 | 职责 | 对应 shell wrapper |
 |---|---|---|
-| `scripts/build.py` | 构建二进制（plain + -full, 全平台, FFmpeg 环境）| build.sh / build_local.sh |
-| `scripts/download_models.py` | 下载生产 OCR 模型 + ORT 库 | download-ocr-models.sh |
-| `scripts/download_test_models.py` | 下载测试模型变体（v3/v4）| download-ocr-test-models.sh |
+| `scripts/build.py` | 构建二进制（plain/cgo1/apple/full, 全平台, FFmpeg 环境）| build.sh / build_local.sh |
+| `ocr/scripts/download.sh` | 下载生产 OCR 模型 + ORT 库 -> `ocr/assets/`（bash）| download-ocr-models.sh |
+| `ocr/scripts/download_test_models.py` | 下载测试模型变体（v3/v4）-> `ocr/models/` | download-ocr-test-models.sh |
 
 共享模块 `scripts/pfbuild/`:
 - `platform.py` — 平台矩阵（`Target` dataclass, 单一 source of truth; 消除原 `os_arch_to_zig` + `os_arch_to_ffmpeg_target` + `resolve_target` 三处重复）
-- `assets.py` — 资产下载（HF 优先 + pip 回退; 系统优先 + GitHub release 回退; 流式解压仅取 lib 文件）
+- `assets.py` — scrcpy-server.jar 同步（sync_jar/sync_all；OCR 资产下载由 ocr/scripts/download.sh 承担）
 - `ffmpeg.py` — FFmpeg/zig/CGO 交叉编译环境
-- `builder.py` — 构建编排（plain/-full 双产物 + archive）
+- `builder.py` — 构建编排（变体产物 + archive）
+- `variants.py` — OCR 变体表（plain/cgo1/apple/full, 数据驱动）
 - `log.py` — 统一日志
 
-CI/workflows 调用 `bash scripts/download-ocr-models.sh` 仍工作（wrapper 透传）, 零改动。
+CI/workflows 调用 `bash scripts/download-ocr-models.sh` 仍工作（wrapper 转发到 ocr/scripts/download.sh）, 零改动。
 
 #### OCR 实现细节
 
@@ -878,7 +879,7 @@ tfgo 链接完整 TF C 库（非 TFLite API），brew `libtensorflow` 2.21.0 一
 - [x] OCR 引擎基类重构（common.Recognizer 接口 + detect.Detector 共享检测 + engine.BaseEngine 骨架; ncnn 解耦 Vision 硬依赖; ORT Runtime 进程单例; onnx/ncnn 真机+图片验证无回归）
 - [x] OCR 准确率对比套件（tests/ocr-benchmark/accuracy_test.go, onnx vs ncnn 同框文本一致性）
 - [x] ORT 1.27.1 升级（MLAS 优化, rec 快 2× vs 1.23.0）+ ocr_embed build tag 双产物（plain 24MB / -full 42MB 自包含）
-- [x] Python 统一构建工具（build.py + download_models.py + download_test_models.py + pfbuild/ 共享模块; shell 保留薄 wrapper）
+- [x] 构建工具统一（build.py + pfbuild/ 共享模块; OCR 资产下载用 bash ocr/scripts/download.sh; shell 保留薄 wrapper）
 - [x] MNN 引擎评估（C++ shim, 工具链通但 runSession 算子 COMPUTE_SIZE_ERROR → 代码已清理）
 - [x] TFLite 引擎评估（macOS C 库 + onnx2tf 工具链障碍 → 代码已清理）
 - [x] tfgo 引擎评估（运行时 brew libtensorflow 通, onnx2tf 转 PP-OCR rec 失败 → 代码已清理）
