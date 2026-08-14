@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"io"
 	"sync"
+	"time"
 )
 
 // NAL unit types.
@@ -78,8 +79,9 @@ type Decoder struct {
 	configRaw []byte
 
 	// latestKeyframe is configRaw + most-recent IDR frame, ready for decoding.
-	latestKeyframe []byte
-	latestPTS      int64
+	latestKeyframe   []byte
+	latestPTS        int64
+	latestKeyframeAt time.Time // wall-clock arrival time of latestKeyframe
 }
 
 // NewDecoder creates a new H.264 stream decoder.
@@ -154,6 +156,7 @@ func (d *Decoder) ReadFrame(r io.Reader) (*Frame, error) {
 	} else if isKeyframe {
 		d.latestKeyframe = d.buildKeyframe(data)
 		d.latestPTS = pts
+		d.latestKeyframeAt = time.Now()
 	}
 
 	return frame, nil
@@ -176,6 +179,18 @@ func (d *Decoder) LatestKeyframePTS() int64 {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.latestPTS
+}
+
+// LatestKeyframeAge returns how long ago the most recent keyframe arrived.
+// A zero value (no keyframe received yet) yields a huge duration so that
+// freshness checks can treat it uniformly as "never".
+func (d *Decoder) LatestKeyframeAge() time.Duration {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.latestKeyframeAt.IsZero() {
+		return 24 * time.Hour
+	}
+	return time.Since(d.latestKeyframeAt)
 }
 
 // buildKeyframe prepends the SPS+PPS config data before the IDR frame.

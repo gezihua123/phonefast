@@ -91,13 +91,19 @@ bash scripts/build.sh --all                 # 全平台构建 + 打包
 
 **构建产物对比：**
 
-| 产物 | 体积 | OCR 运行时 | 运行时依赖 | 适用场景 |
-|------|:----:|:---------:|:---------:|---------|
-| **plain**（默认） | 24MB | 系统 libonnxruntime | `brew install onnxruntime` | 已安装 onnxruntime 的环境 |
-| **-full**（`--full`） | 42MB | 内嵌 ORT 1.27.1 | 无（自包含） | 未安装 onnxruntime 的环境 |
+| 产物 | 体积 | OCR 运行时 | 模型 | 运行时依赖 | 适用场景 |
+|------|:----:|:---------:|:----:|:---------:|---------|
+| **plain**（默认） | ~20MB | 系统 libonnxruntime | 磁盘加载 | `brew install onnxruntime` | 桥接形态 |
+| **cgo1**（`--variant cgo1`） | ~20MB | 系统 libonnxruntime | 磁盘加载 | FFmpeg 开发库 | macOS 桥接（保证 Apple Vision） |
+| **-full**（`--full`） | ~163MB | 内嵌 ORT 1.27.1 | 内嵌 | 无（自包含） | 单文件零依赖部署 |
 
-两种产物均内嵌 PP-OCR v3 模型（det + rec）。-full 版内嵌 ONNX Runtime 共享库
-（仅 macOS arm64）, 实现单文件零依赖部署。NCNN 引擎为 opt-in（`-tags ncnn`, 快 28%, 见 [docs/DEV.md](docs/DEV.md)）。
+仅 -full 内嵌 PP-OCRv6 模型 + ONNX Runtime 共享库（仅 macOS arm64），实现单文件
+零依赖部署。桥接形态（plain/cgo1/apple）运行时从磁盘加载模型——
+`PHONEFAST_OCR_DET_MODEL`/`PHONEFAST_OCR_REC_MODEL` 环境变量、
+`~/.phonefast/models/` 或 `./ocr/assets/`（安装：
+`bash ocr/scripts/download.sh models --to ~/.phonefast/models`）。
+`CGO_ENABLED=0` 构建为纯 Go 形态（~13MB，ffmpeg CLI 解码 + purego 加载系统
+onnxruntime）。NCNN 引擎为 opt-in（`-tags ncnn`, 快 28%, 见 [docs/DEV.md](docs/DEV.md)）。
 
 > 构建细节（交叉编译、FFmpeg 静态链接、Python 构建工具）→ [docs/DEV.md](docs/DEV.md)
 

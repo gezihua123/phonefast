@@ -47,12 +47,24 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 	// Home vs Settings). RESET_VIDEO makes the encoder emit a new IDR
 	// immediately; PTS monotonicity tells us when it has arrived.
 	//
+	// Freshness fast path: a keyframe that arrived within this window
+	// already reflects the current screen — it was preheated by the action
+	// preceding this capture (post-action RESET_VIDEO while the screen
+	// animated). Skip the ~350ms pipeline-recreation round trip. Older than
+	// the window → cold path (correctness preserved: the frame may predate a
+	// screen change).
+	//
 	// When the control connection is dead, no reset can ever produce a fresh
 	// keyframe — skip the 3s wait entirely and serve the cached frame (with a
 	// warning) instead of stalling every call.
-	if s.IsControlAvailable() {
+	if s.IsControlAvailable() && s.decoder.LatestKeyframeAge() >= freshKeyframeWindow {
 		beforePTS := s.decoder.LatestKeyframePTS()
-		s.requestKeyframe()
+		// Cold path: exactly ONE reset, then wait passively. On scrcpy 3.3.x
+		// each RESET_VIDEO recreates the whole encode pipeline
+		// (consumeReset → prepare → MediaCodec configure → start) — repeating
+		// the reset mid-recreation restarts it and pushes the wait to the 3s
+		// deadline. The throttle is bypassed here (correctness over rate).
+		s.forceRequestKeyframe()
 
 		deadline := time.Now().Add(3 * time.Second)
 		for time.Now().Before(deadline) {
@@ -67,8 +79,11 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 		if s.decoder.LatestKeyframePTS() <= beforePTS {
 			phonelog.Default().Write("screenshot: WARN no fresh keyframe after reset (PTS %d), using possibly stale frame", beforePTS)
 		}
-	} else {
+	} else if !s.IsControlAvailable() {
 		phonelog.Default().Write("screenshot: control socket unavailable, serving cached keyframe")
+	} else {
+		phonelog.Default().Write("screenshot: fast path (keyframe %v old)",
+			s.decoder.LatestKeyframeAge().Round(time.Millisecond))
 	}
 	keyframe := s.decoder.LatestKeyframe()
 	if keyframe == nil {
@@ -82,15 +97,47 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 	}
 	phonelog.Default().Write("screenshot: total=%v keyframe=%dKB format=%s",
 		elapsed, len(keyframe)/1024, mime)
+	// NOTE: no post-capture pipelining reset here. Each RESET_VIDEO recreates
+	// the whole device encode pipeline (~350ms warm, up to 3s cold) and a
+	// reset sent mid-recreation restarts it — pipelining after every capture
+	// turned tight screenshot loops into 3s restart storms (measured). The
+	// fast path + action preheat cover the agent patterns instead.
 	return imgData, w, h, mime, nil
 }
 
+// freshKeyframeWindow is the freshness fast-path window: a keyframe this
+// young (~2-3 frame periods at 30fps) is considered "as good as live" and
+// skips the reset+wait round trip.
+const freshKeyframeWindow = 60 * time.Millisecond
+
 // requestKeyframe sends a RESET_VIDEO message to trigger a new keyframe.
+// Rate-limited: each reset recreates the device's whole encode pipeline
+// (scrcpy 3.3.x consumeReset → prepare → MediaCodec restart, ~350ms warm /
+// up to 3s cold on this device), so the background action-preheat caller
+// dedupes via tryMarkReset. The screenshot cold path uses
+// forceRequestKeyframe instead (correctness never defers).
 func (s *Session) requestKeyframe() {
-	// Take the control conn under lock like every other control write. A
-	// failed write marks the control connection broken so IsControlAvailable()
-	// flips false (the actor then reconnects) and ScreenshotFormat skips its
-	// keyframe wait instead of burning the full 3s on every call.
+	if !s.tryMarkReset() {
+		return
+	}
+	s.writeReset()
+}
+
+// forceRequestKeyframe sends RESET_VIDEO unconditionally (cold screenshot
+// path) and refreshes the throttle timestamp so subsequent background
+// resets are suppressed while this one's pipeline recreation is in flight.
+func (s *Session) forceRequestKeyframe() {
+	s.resetMu.Lock()
+	s.lastResetAt = time.Now()
+	s.resetMu.Unlock()
+	s.writeReset()
+}
+
+// writeReset sends the RESET_VIDEO control byte under the control conn lock.
+// A failed write marks the control connection broken so IsControlAvailable()
+// flips false (the actor then reconnects) and ScreenshotFormat skips its
+// keyframe wait instead of burning the full 3s on every call.
+func (s *Session) writeReset() {
 	conn := s.lockControlConn()
 	if conn == nil {
 		return
@@ -98,6 +145,35 @@ func (s *Session) requestKeyframe() {
 	if _, err := conn.Write([]byte{17}); err != nil {
 		s.markControlBroken(err)
 	}
+}
+
+// keyframeResetMinInterval is the minimum spacing between RESET_VIDEO
+// messages (device IDR pipeline latency; see requestKeyframe).
+const keyframeResetMinInterval = 400 * time.Millisecond
+
+// tryMarkReset records a reset attempt under lock. Returns false when a
+// reset was sent within keyframeResetMinInterval (caller drops this one).
+// Safe for concurrent use (the observe path screenshots concurrently with
+// the actor's actions).
+func (s *Session) tryMarkReset() bool {
+	s.resetMu.Lock()
+	defer s.resetMu.Unlock()
+	now := time.Now()
+	if now.Sub(s.lastResetAt) < keyframeResetMinInterval {
+		return false
+	}
+	s.lastResetAt = now
+	return true
+}
+
+// preheatKeyframe sends RESET_VIDEO after a mutating action, so the device
+// rebuilds its encode pipeline while the screen animates from that action
+// (frames flow at ~10fps during activity — the fresh keyframe rides the
+// active stream). The follow-up screenshot then hits ScreenshotFormat's
+// freshness fast path instead of paying the ~350ms pipeline recreation.
+// Best-effort: throttled, no-op on a dead control conn.
+func (s *Session) preheatKeyframe() {
+	s.requestKeyframe()
 }
 
 // WaitStable waits until the video stream stabilizes (no significant frame changes).

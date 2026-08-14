@@ -4,6 +4,7 @@
 #
 # Usage:
 #   bash ocr/scripts/download.sh models            # PP-OCRv6 ONNX models only
+#   bash ocr/scripts/download.sh models --to ~/.phonefast/models   # runtime install
 #   bash ocr/scripts/download.sh lib               # ONNX Runtime lib (current platform)
 #   bash ocr/scripts/download.sh keys              # character set (ppocr_keys.txt)
 #   bash ocr/scripts/download.sh all               # models + lib + keys
@@ -45,8 +46,8 @@ download() {
 # ── Models (PP-OCRv6) ────────────────────────────────────────────
 
 download_models() {
-    local det="$ASSETS_DIR/ppocr-det.onnx"
-    local rec="$ASSETS_DIR/ppocr-rec.onnx"
+    local det="$MODEL_DIR/ppocr-det.onnx"
+    local rec="$MODEL_DIR/ppocr-rec.onnx"
     local got_det=true got_rec=true
 
     [ -s "$det" ] || got_det=false
@@ -171,30 +172,49 @@ download_lib() {
 
 # ── Main ─────────────────────────────────────────────────────────
 
+# --to <dir>: install models to a custom directory instead of ocr/assets/
+# (runtime install for bridge variants, e.g. `--to ~/.phonefast/models`).
+# Applies to `models`/`all` only — keys must stay in ocr/common (embedded)
+# and the lib belongs in ocr/assets (embed source for -full).
+MODEL_DIR="$ASSETS_DIR"
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+    if [ "${args[$i]}" = "--to" ] && [ -n "${args[$i+1]:-}" ]; then
+        MODEL_DIR="${args[$i+1]}"
+        unset 'args[$i]' 'args[$i+1]'
+    fi
+done
+set -- "${args[@]}"
+
 case "${1:-}" in
     models)
-        mkdir -p "$ASSETS_DIR"
+        mkdir -p "$MODEL_DIR"
         download_models
         ;;
     lib)
+        [ "$MODEL_DIR" = "$ASSETS_DIR" ] || warn "--to applies to models only; lib goes to $ASSETS_DIR (embed source)"
         mkdir -p "$ASSETS_DIR"
         download_lib
         ;;
     keys)
+        [ "$MODEL_DIR" = "$ASSETS_DIR" ] || warn "--to applies to models only; keys go to $KEYS_DIR (embedded)"
         download_keys
         ;;
     all)
-        mkdir -p "$ASSETS_DIR"
+        mkdir -p "$MODEL_DIR" "$ASSETS_DIR"
         download_models
         download_lib
         download_keys
         ;;
     *)
-        echo "Usage: $0 {models|lib|keys|all}"
-        echo "  models   PP-OCRv6 ONNX models (det + rec) -> ocr/assets/"
+        echo "Usage: $0 {models|lib|keys|all} [--to <dir>]"
+        echo "  models   PP-OCRv6 ONNX models (det + rec) -> ocr/assets/ (or --to dir)"
         echo "  lib      ONNX Runtime native lib -> ocr/assets/"
         echo "  keys     PP-OCRv6 character set -> ocr/common/ppocr_keys.txt"
         echo "  all      All of the above"
+        echo ""
+        echo "Runtime install for plain/cgo1/apple bridge builds:"
+        echo "  $0 models --to ~/.phonefast/models"
         echo ""
         echo "Environment:"
         echo "  OCR_MODEL   Model level: medium (default), small, tiny"

@@ -58,6 +58,10 @@ type Session struct {
 	controlErr error         // set on first write failure; signals connection is dead
 	videoDied  chan struct{} // closed when video drain loop exits (connection dead)
 	videoPort  int           // forwarded TCP port for video+control (same socket, multiple accepts)
+
+	// resetMu guards lastResetAt (RESET_VIDEO throttle; see requestKeyframe).
+	resetMu     sync.Mutex
+	lastResetAt time.Time
 	uiPort     int           // forwarded TCP port for UI (fresh connection per request)
 	uiReady    bool          // whether UI socket is available
 

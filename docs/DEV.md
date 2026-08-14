@@ -259,7 +259,9 @@ go.mod
 
 > 用法（命令、产物、依赖）见 [docs/BUILD.md §1.1 / §3](BUILD.md)。本节记录脚本内部机制：变体如何定义、调用链如何流转、cgo1 为何不降级。
 
-phonefast 有四种 OCR 构建变体（plain / cgo1 / apple / full），区别在 build tag、CGO 开关、是否内嵌 ORT 库、是否仅 macOS。历史上变体逻辑分散在两套入口（主 `build.py` 只认 plain/-full，`ocr/scripts/build.sh` 另用 if-else 管五个变体），加新变体要改两处、易漏。现统一为**单张数据驱动变体表** `scripts/pfbuild/variants.py`，加变体只改一行。
+phonefast 有四种 OCR 构建变体（plain / cgo1 / apple / full），区别在 build tag、CGO 开关、是否内嵌 ORT 库/模型、是否仅 macOS。历史上变体逻辑分散在两套入口（主 `build.py` 只认 plain/-full，`ocr/scripts/build.sh` 另用 if-else 管五个变体），加新变体要改两处、易漏。现统一为**单张数据驱动变体表** `scripts/pfbuild/variants.py`，加变体只改一行。
+
+> PP-OCRv6 模型（det 59M + rec 73M）内嵌会让非 full 二进制膨胀到 145M+，故 plain/cgo1/apple 全部加 `NO_OCR_MODELS`，运行时从磁盘加载模型（`ocr/detect/modelpath.go`：`PHONEFAST_OCR_DET_MODEL`/`REC_MODEL` env > `~/.phonefast/models/` > `./ocr/assets/`）。仅 full 内嵌（自包含）。apple 因此与 cgo1 完全同构，保留为兼容别名。
 
 #### 变体表 `variants.py`
 
@@ -268,15 +270,15 @@ phonefast 有四种 OCR 构建变体（plain / cgo1 / apple / full），区别�
 class Variant:
     name: str            # plain / cgo1 / apple / full
     suffix: str          # 产物后缀: "" / "-cgo1" / "-apple" / "-full"
-    tags: list[str]      # go build -tags: [] / ["NO_OCR_MODELS"] / ["ocr_embed"]
+    tags: list[str]      # go build -tags: ["NO_OCR_MODELS"] / ["ocr_embed"]
     cgo: str             # 期望 CGO_ENABLED: "1" / "0"
     macos_only: bool     # True = 仅 macOS 有意义（apple 引擎需 darwin&&cgo）
     platform_prefix: bool # True = 产物名带 {goos}-{goarch}（plain/full），False = 不带（cgo1/apple）
 
 VARIANTS = {
-    "plain":  Variant("plain",  "",       [],                cgo="1"),
-    "cgo1":   Variant("cgo1",   "-cgo1",  [],                cgo="1", macos_only=True,  platform_prefix=False),
-    "apple":  Variant("apple", "-apple", ["NO_OCR_MODELS"],  cgo="1", macos_only=True,  platform_prefix=False),
+    "plain":  Variant("plain",  "",       ["NO_OCR_MODELS"], cgo="1"),
+    "cgo1":   Variant("cgo1",   "-cgo1",  ["NO_OCR_MODELS"], cgo="1", macos_only=True,  platform_prefix=False),
+    "apple":  Variant("apple", "-apple", ["NO_OCR_MODELS"],  cgo="1", macos_only=True,  platform_prefix=False),  # cgo1 兼容别名
     "full":   Variant("full",   "-full",  ["ocr_embed"],     cgo="1"),
 }
 ```

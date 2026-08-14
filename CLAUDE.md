@@ -85,15 +85,15 @@
 
 ### 构建验证
 
-**Step 1 — 全平台交叉验证**（CGO_ENABLED=0，秒级快速验证 5 平台纯 Go 路径无编译错误）：
+**Step 1 — 全平台交叉验证**（CGO_ENABLED=0，秒级快速验证 5 平台纯 Go 路径无编译错误；`-tags NO_OCR_MODELS` 免去下载 OCR 模型的依赖，fresh clone 可直接跑）：
 
 ```bash
 export CGO_ENABLED=0
-GOOS=linux   GOARCH=amd64 go build ./cmd/phonefast/ || exit 1
-GOOS=linux   GOARCH=arm64 go build ./cmd/phonefast/ || exit 1
-GOOS=darwin  GOARCH=amd64 go build ./cmd/phonefast/ || exit 1
-GOOS=darwin  GOARCH=arm64 go build ./cmd/phonefast/ || exit 1
-GOOS=windows GOARCH=amd64 go build ./cmd/phonefast/ || exit 1
+GOOS=linux   GOARCH=amd64 go build -tags NO_OCR_MODELS ./cmd/phonefast/ || exit 1
+GOOS=linux   GOARCH=arm64 go build -tags NO_OCR_MODELS ./cmd/phonefast/ || exit 1
+GOOS=darwin  GOARCH=amd64 go build -tags NO_OCR_MODELS ./cmd/phonefast/ || exit 1
+GOOS=darwin  GOARCH=arm64 go build -tags NO_OCR_MODELS ./cmd/phonefast/ || exit 1
+GOOS=windows GOARCH=amd64 go build -tags NO_OCR_MODELS ./cmd/phonefast/ || exit 1
 ```
 
 **Step 2 — 本地构建**（必须通过，验证当前平台完整 CGO 编译链路）：

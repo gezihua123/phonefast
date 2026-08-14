@@ -91,14 +91,21 @@ bash scripts/build.sh --all                 # Cross-platform build + packaging
 
 **Build variants:**
 
-| Variant | Size | OCR Runtime | Runtime Dependency | Best For |
-|---------|:----:|:-----------:|:------------------:|----------|
-| **plain** (default) | 24MB | System libonnxruntime | `brew install onnxruntime` | Environments with onnxruntime installed |
-| **-full** (`--full`) | 42MB | Embedded ORT 1.27.1 | None (self-contained) | Environments without onnxruntime |
+| Variant | Size | OCR Runtime | Models | Runtime Dependency | Best For |
+|---------|:----:|:-----------:|:------:|:------------------:|----------|
+| **plain** (default) | ~20MB | System libonnxruntime | On-disk | `brew install onnxruntime` | Bridge build (models load at runtime) |
+| **cgo1** (`--variant cgo1`) | ~20MB | System libonnxruntime | On-disk | FFmpeg dev libs | macOS bridge (Apple Vision guaranteed) |
+| **-full** (`--full`) | ~163MB | Embedded ORT 1.27.1 | Embedded | None (self-contained) | Single-file zero-dependency |
 
-Both variants embed PP-OCR v3 models (det + rec). The `-full` variant embeds the
-ONNX Runtime shared library (macOS arm64 only) for single-file zero-dependency
-deployment. NCNN engine is opt-in (`-tags ncnn`, 28% faster, see [docs/DEV.md](docs/DEV.md)).
+Only `-full` embeds the PP-OCRv6 models + ONNX Runtime shared library (macOS
+arm64) for single-file zero-dependency deployment. The bridge variants
+(plain/cgo1/apple) load models from disk at runtime —
+`PHONEFAST_OCR_DET_MODEL`/`PHONEFAST_OCR_REC_MODEL` env vars,
+`~/.phonefast/models/`, or `./ocr/assets/` (install with
+`bash ocr/scripts/download.sh models --to ~/.phonefast/models`). A
+`CGO_ENABLED=0` build is the pure-Go form (~13MB, ffmpeg CLI decode + system
+onnxruntime via purego). NCNN engine is opt-in (`-tags ncnn`, 28% faster, see
+[docs/DEV.md](docs/DEV.md)).
 
 > Build details (cross-compilation, FFmpeg static linking, Python build tool) → [docs/DEV.md](docs/DEV.md)
 

@@ -39,21 +39,24 @@ class Variant:
 
 # The variant table. Add a row here to add a variant; build_target adapts.
 VARIANTS: dict[str, Variant] = {
-    # Standard build: ONNX + Tesseract + (Apple Vision on macOS via darwin&&cgo).
-    # Loads system libonnxruntime; embeds PP-OCR models.
-    "plain": Variant("plain", "", []),
+    # Bridge build: NO model embed — PP-OCR models load from disk at runtime
+    # (PHONEFAST_OCR_DET_MODEL/PHONEFAST_OCR_REC_MODEL env vars or
+    # ~/.phonefast/models/, see ocr/detect/modelpath.go). Loads the system
+    # libonnxruntime; Apple Vision on macOS via darwin&&cgo. CGO may downgrade
+    # to 0 (pure-Go form: ffmpeg CLI decode + system onnxruntime via purego).
+    "plain": Variant("plain", "", ["NO_OCR_MODELS"]),
 
-    # CGO=1 explicit: same as plain but pinned CGO=1 so the apple engine is
-    # guaranteed active on macOS (plain can lose it if FFmpeg missing → CGO=0).
+    # CGO=1 explicit bridge: same as plain but pinned CGO=1 so the apple engine
+    # is guaranteed active on macOS (plain can lose it if FFmpeg missing → CGO=0).
     # macos_only because the whole point is the apple engine.
-    "cgo1":  Variant("cgo1", "-cgo1", [], macos_only=True, platform_prefix=False, force_cgo=True),
+    "cgo1":  Variant("cgo1", "-cgo1", ["NO_OCR_MODELS"], macos_only=True, platform_prefix=False, force_cgo=True),
 
-    # Apple Vision only: no ONNX models embedded (NO_OCR_MODELS → DetModel/RecModel
-    # nil → onnx engine returns ErrNotAvailable). Smallest macOS build.
+    # Kept as a cgo1 compat alias: identical tags/CGO (both bridge variants
+    # load models from disk at runtime), only the output name differs.
     "apple": Variant("apple", "-apple", ["NO_OCR_MODELS"], macos_only=True, platform_prefix=False, force_cgo=True),
 
-    # Self-contained: embeds ORT shared lib (ocr_embed) on top of plain.
-    # Only darwin/arm64 is embeddable (platform.py Target.embeddable).
+    # Self-contained: embeds PP-OCR models + ORT shared lib (ocr_embed) on top
+    # of plain. Only darwin/arm64 is embeddable (platform.py Target.embeddable).
     "full":  Variant("full", "-full", ["ocr_embed"], force_cgo=True),
 }
 

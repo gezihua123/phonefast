@@ -45,7 +45,7 @@ type OnnxRecognizer struct {
 	rt        *onnxruntime.Runtime // shared with the detector (not closed here)
 	recSess   *onnxruntime.Session
 	ctc       *common.CTCDecoder
-	tempFiles []string // rec model temp path (lib + det model owned by the detector)
+	tempFiles []string // rec model temp path (+ extracted ORT lib when the recognizer initialized the Runtime)
 
 	// recBuf is a reusable float32 scratch buffer for the recognition input
 	// tensor. The OCR Service serializes all Recognize calls (mutex), so only
@@ -59,40 +59,83 @@ type OnnxRecognizer struct {
 // them assembled into an ocr.BaseEngine.
 //
 // useVision enables the macOS Vision detection fast-path (ignored when
-// unavailable). Returns pkgocr.ErrNotAvailable if the rec/det models are empty
-// (build script didn't download them) or the ONNX Runtime library can't load.
+// unavailable). Returns pkgocr.ErrNotAvailable if the rec model is unavailable
+// (not embedded and not on disk) or the ONNX Runtime library can't load.
 func NewEngine(useVision bool) (pkgocr.Engine, error) {
-	if len(ocrassets.RecModel) == 0 {
-		return nil, fmt.Errorf("%w: PP-OCR rec model not embedded (run build.sh with model download)", pkgocr.ErrNotAvailable)
-	}
-
-	// Detection layer (loads ORT + det model; owns the ORT lib lifecycle).
-	det, err := detect.NewDetector(useVision)
+	// Rec model source: embedded bytes (-full variant) or a file on disk
+	// (bridge variants load models at runtime; see detect.ResolveRecModelPath).
+	recPath, recIsTemp, err := resolveRecSource()
 	if err != nil {
 		return nil, err
 	}
 
-	// Rec session reuses the detector's Runtime/Env (process-global; a second
-	// Runtime would conflict). Only the rec model temp file is owned here.
-	recPath, err := writeTempFile(ocrassets.RecModel, "ppocr-rec-*.onnx")
+	// Detection layer (loads ORT + det model; owns the ORT lib lifecycle
+	// unless the detector is vision-only).
+	det, err := detect.NewDetector(useVision)
 	if err != nil {
-		det.Close()
-		return nil, fmt.Errorf("write rec model: %w", err)
+		if recIsTemp {
+			os.Remove(recPath)
+		}
+		return nil, err
 	}
-	recSess, err := det.Runtime().NewSession(det.Env(), recPath, nil)
+
+	// Rec session reuses the detector's Runtime/Env (process-global; a second
+	// Runtime would conflict). A vision-only detector never initialized the
+	// Runtime — init the shared one here (idempotent) so "Vision det + ONNX
+	// rec" works without a det model.
+	rt, env := det.Runtime(), det.Env()
+	// tempFiles holds ONLY extracted temp files (removed on Close); an
+	// on-disk model path must never be deleted.
+	var tempFiles []string
+	if recIsTemp {
+		tempFiles = append(tempFiles, recPath)
+	}
+	if rt == nil {
+		var libPath string
+		var libIsTemp bool
+		rt, env, libPath, libIsTemp, err = detect.EnsureRuntime()
+		if err != nil {
+			det.Close()
+			return nil, err
+		}
+		if libIsTemp {
+			tempFiles = append(tempFiles, libPath)
+		}
+	}
+
+	recSess, err := rt.NewSession(env, recPath, nil)
 	if err != nil {
-		os.Remove(recPath)
+		if recIsTemp {
+			os.Remove(recPath)
+		}
 		det.Close()
 		return nil, fmt.Errorf("load rec session: %w", err)
 	}
 
 	r := &OnnxRecognizer{
-		rt:        det.Runtime(),
+		rt:        rt,
 		recSess:   recSess,
 		ctc:       common.NewCTCDecoder(),
-		tempFiles: []string{recPath},
+		tempFiles: tempFiles,
 	}
 	return &ocr.BaseEngine{Det: det, Rec: r}, nil
+}
+
+// resolveRecSource picks the rec model source: embedded bytes (temp file the
+// recognizer must clean up) or an on-disk file (bridge variants).
+func resolveRecSource() (path string, isTemp bool, err error) {
+	if len(ocrassets.RecModel) > 0 {
+		p, err := writeTempFile(ocrassets.RecModel, "ppocr-rec-*.onnx")
+		if err != nil {
+			return "", false, fmt.Errorf("write rec model: %w", err)
+		}
+		return p, true, nil
+	}
+	if p := detect.ResolveRecModelPath(); p != "" {
+		return p, false, nil
+	}
+	return "", false, fmt.Errorf("%w: rec model not found (not embedded and not on disk); %s",
+		pkgocr.ErrNotAvailable, detect.ModelHint())
 }
 
 // recMaxBatch is PaddleOCR's recognition batch size: PP-OCRv6_medium_rec's TRT

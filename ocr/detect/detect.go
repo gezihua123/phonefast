@@ -22,7 +22,21 @@ var (
 	rtShared  *onnxruntime.Runtime
 	envShared *onnxruntime.Env
 	rtErr     error
+	rtLibPath string // initialized lib path ("" when system lib)
+	rtLibTemp bool   // true when rtLibPath is an extracted temp file
 )
+
+// EnsureRuntime initializes the process-global ONNX Runtime and Env if not
+// already done (rtOnce makes it idempotent). Used by the onnx rec engine when
+// the detector is vision-only (it skipped runtime init) but rec still needs a
+// Runtime to create its session. Returns the lib path + temp flag so the
+// caller can own cleanup of an extracted embedded lib.
+func EnsureRuntime() (rt *onnxruntime.Runtime, env *onnxruntime.Env, libPath string, libIsTemp bool, err error) {
+	if _, _, err = initRuntime(); err != nil {
+		return nil, nil, "", false, err
+	}
+	return rtShared, envShared, rtLibPath, rtLibTemp, nil
+}
 
 func initRuntime() (libPath string, isTemp bool, err error) {
 	rtOnce.Do(func() {
@@ -34,6 +48,7 @@ func initRuntime() (libPath string, isTemp bool, err error) {
 			return
 		}
 		libPath, isTemp = p, isT
+		rtLibPath, rtLibTemp = p, isT
 		// v23: onnxruntime-purego (upstream) only implements the v23 C API
 		// adapter. ORT's GetApi(23) version negotiation makes a v23 binding
 		// work against newer libonnxruntime (e.g. 1.27.1) — the returned
@@ -66,8 +81,15 @@ type Detector struct {
 }
 
 func NewDetector(useVision bool) (*Detector, error) {
-	if len(ocrassets.DetModel) == 0 {
-		return nil, fmt.Errorf("%w: PP-OCR det model not embedded", errNotAvailable)
+	// Det model source: embedded bytes (-full), a file on disk (bridge
+	// variants), or none — in which case a Vision-capable build runs
+	// vision-only (det via Vision, no ORT dependency at all).
+	detPath, detIsTemp, visionOnly, err := resolveDetSource(useVision)
+	if err != nil {
+		return nil, err
+	}
+	if visionOnly {
+		return &Detector{useVision: true}, nil
 	}
 
 	libPath, libIsTemp, err := initRuntime()
@@ -79,13 +101,9 @@ func NewDetector(useVision bool) (*Detector, error) {
 	if libIsTemp {
 		d.tempFiles = append(d.tempFiles, libPath)
 	}
-
-	detPath, err := WriteTempFile(ocrassets.DetModel, "ppocr-det-*.onnx")
-	if err != nil {
-		d.cleanup()
-		return nil, fmt.Errorf("write det model: %w", err)
+	if detIsTemp {
+		d.tempFiles = append(d.tempFiles, detPath)
 	}
-	d.tempFiles = append(d.tempFiles, detPath)
 
 	if d.detSess, err = rtShared.NewSession(envShared, detPath, nil); err != nil {
 		d.cleanup()
@@ -99,6 +117,27 @@ func NewDetector(useVision bool) (*Detector, error) {
 	return d, nil
 }
 
+// resolveDetSource picks the det model source for NewDetector. Returns the
+// model path, whether it is a temp file the Detector must clean up, and
+// whether to run vision-only (no model, Vision detection only).
+func resolveDetSource(useVision bool) (path string, isTemp bool, visionOnly bool, err error) {
+	if len(ocrassets.DetModel) > 0 {
+		p, err := WriteTempFile(ocrassets.DetModel, "ppocr-det-*.onnx")
+		if err != nil {
+			return "", false, false, fmt.Errorf("write det model: %w", err)
+		}
+		return p, true, false, nil
+	}
+	if p := ResolveDetModelPath(); p != "" {
+		return p, false, false, nil
+	}
+	if useVision && common.VisionDetectAvailable() {
+		return "", false, true, nil
+	}
+	return "", false, false, fmt.Errorf("%w: det model not found (not embedded and not on disk); %s",
+		errNotAvailable, ModelHint())
+}
+
 func (d *Detector) Detect(img image.Image, imgData []byte) ([][4][2]float64, error) {
 	origBounds := img.Bounds()
 	origW, origH := origBounds.Dx(), origBounds.Dy()
@@ -107,6 +146,11 @@ func (d *Detector) Detect(img image.Image, imgData []byte) ([][4][2]float64, err
 		if boxes := common.VisionDetect(imgData, origW, origH); len(boxes) > 0 {
 			return boxes, nil
 		}
+	}
+
+	// Vision-only detector (no det model): no ONNX fallback exists.
+	if d.detSess == nil {
+		return nil, fmt.Errorf("%w: Vision found no text and no det model is available", errNotAvailable)
 	}
 
 	// PP-OCRv6 detection resize: cap the longer side at 960 (matches
@@ -143,6 +187,9 @@ func (d *Detector) Detect(img image.Image, imgData []byte) ([][4][2]float64, err
 }
 
 func (d *Detector) runInference(tensorData []float32, shape []int64) ([]float32, []int64, error) {
+	if d.rt == nil || d.detSess == nil {
+		return nil, nil, fmt.Errorf("%w: no ONNX det session", errNotAvailable)
+	}
 	inputValue, err := onnxruntime.NewTensorValue(d.rt, tensorData, shape)
 	if err != nil {
 		return nil, nil, err

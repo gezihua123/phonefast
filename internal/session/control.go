@@ -38,6 +38,8 @@ func (s *Session) Tap(x, y int) error {
 		return fmt.Errorf("tap up: %w", err)
 	}
 
+	// Preheat the next screenshot's keyframe (see preheatKeyframe).
+	s.preheatKeyframe()
 	return nil
 }
 
@@ -77,6 +79,8 @@ func (s *Session) Swipe(x1, y1, x2, y2, durationMs int) error {
 		return fmt.Errorf("swipe up: %w", err)
 	}
 
+	// Preheat the next screenshot's keyframe (see preheatKeyframe).
+	s.preheatKeyframe()
 	return nil
 }
 
@@ -100,6 +104,8 @@ func (s *Session) PressKey(keycode int) error {
 		return fmt.Errorf("key up: %w", err)
 	}
 
+	// Preheat the next screenshot's keyframe (see preheatKeyframe).
+	s.preheatKeyframe()
 	return nil
 }
 
@@ -119,8 +125,12 @@ func (s *Session) Back() error {
 	time.Sleep(10 * time.Millisecond)
 
 	up := &protocol.ControlMessage{Type: protocol.TypeBackOrScreenOn, ActionBack: 1}
-	_, err := s.controlConn.Write(up.Encode())
-	return err
+	if _, err := s.controlConn.Write(up.Encode()); err != nil {
+		return err
+	}
+	// Preheat the next screenshot's keyframe (see preheatKeyframe).
+	s.preheatKeyframe()
+	return nil
 }
 
 // Home presses the home button.
@@ -190,6 +200,10 @@ func (s *Session) TypeText(text string) error {
 	if err := adb.TypeTextB64(s.serial, text); err != nil {
 		return fmt.Errorf("pfime type: %w", err)
 	}
+	// Preheat the next screenshot's keyframe: the IDR arrives ~300ms later,
+	// after the IME commit renders — so the follow-up screenshot's fast path
+	// sees the typed text (see preheatKeyframe).
+	s.preheatKeyframe()
 	return nil
 }
 
@@ -200,8 +214,12 @@ func (s *Session) LaunchApp(packageName string) error {
 	}
 
 	msg := protocol.NewStartAppMsg(packageName)
-	_, err := s.controlConn.Write(msg.Encode())
-	return err
+	if _, err := s.controlConn.Write(msg.Encode()); err != nil {
+		return err
+	}
+	// Preheat the next screenshot's keyframe (see preheatKeyframe).
+	s.preheatKeyframe()
+	return nil
 }
 
 // Scroll performs a scroll at the specified position.

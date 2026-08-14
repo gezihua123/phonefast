@@ -4,7 +4,7 @@
 
 ---
 
-## dev 压测数据 (7/27, current)
+## dev 压测数据 (7/27)
 
 ### 1-Hour 标准压测
 
@@ -57,6 +57,52 @@
 
 ---
 
+---
+
+## dev 压测数据 (8/14, current)
+
+### 1-Hour 标准压测(桥接形态 cgo1,优化前基线)
+
+**Source**: `test_runs/stress_1h_20260814_135756/summary.json` · CGO=1 cgo1 bridge（OCR 模型磁盘加载，无内嵌）· 1080×1920 portrait · 设备 13709314CF044927
+
+| Metric | Value |
+|---|---|
+| Total Operations | 12,182 (100%) |
+| Reconnects | 0 |
+| Memory | 12.2→**11.5MB (Δ-0.6MB)** ✅ 模型懒加载+无内嵌,较 7/27 dev 的 39.5MB 大幅下降 |
+
+| Operation | Count | P50 | P95 | P99 | Avg | Max |
+|---|---|---|---|---|---|---|
+| tap | 4,220 | 12ms | 15ms | 19ms | 14ms | 5,372ms ⚠️ |
+| swipe | 668 | 313ms | 322ms | 330ms | 320ms | 4,535ms ⚠️ |
+| screenshot | 334 | **286ms** | 372ms | 391ms | 303ms | 3,032ms ⚠️ |
+| observe | 334 | **370ms** | 410ms | 426ms | 370ms | 444ms |
+| get_ui_elements | 334 | 94ms | 200ms | 246ms | 113ms | 3,098ms ⚠️ |
+| back / home / press_key | 1,405×3 | 12ms | ~15ms | ~21ms | 12ms | 43ms |
+| type_text | 334 | 121ms | 140ms | 146ms | 124ms | 656ms |
+| launch_app | 335 | 2ms | 4ms | 7ms | 2ms | 11ms |
+| status | 335 | 1ms | 2ms | 5ms | 1ms | 8ms |
+| wait | 1,071 | 32ms | 34ms | 37ms | 32ms | 44ms |
+
+> ⚠️ max 尖峰为压测最初几秒的冷启动（device actor 连接 + scrcpy 部署）。P99 3.0s 级为 scrcpy 3.3.4 RESET_VIDEO 触发 VDS 重建的设备侧行为（见 DEV.md）。
+>
+> **screenshot 286ms vs 7/27 的 35ms**:daemon 重构将截图从"直接返回缓存 IDR"改为"强制新关键帧"（修复 Home/Settings 同 md5 的 stale bug）——正确性换延迟,286ms = 设备编码管线重建成本(实测拆分:等待 283-365ms + 解码 32ms)。
+>
+> **type_text 0.7→121ms**:ASCII 快速通道(INJECT_TEXT)因软键盘丢字问题被移除,统一走 PFIME 广播(正确性换延迟)。
+
+### 截图优化后 5min 冒烟(60ms 快路径 + 动作预热 + reset 节流)
+
+**Source**: `test_runs/stress_1h_20260814_160606/` · 同设备同二进制变体
+
+| Metric | 优化前 | 优化后 |
+|---|---|---|
+| screenshot P50 | 286ms | **111ms**(快路径命中 18-30ms) |
+| observe P50 | 370ms | 323ms |
+| tap P50 | 12ms | 13ms(预热 +1ms) |
+| Memory | 12.2MB | 12.5MB 持平 |
+
+> 完整 60min 复测待下一发布轮次执行。
+
 ## 版本时间线
 
 | Date | Version | Key Change | Duration | Ops | RSS Peak | screenshot P50 |
@@ -67,7 +113,9 @@
 | 7/14 | v1.0.11 | ThreadCount=1 + frame loop | 12h | 145,843 | 62.0MB | 28ms |
 | 7/24 | v1.0.13 | FFmpeg 8.0 + go-astiav 0.41.0 | 60min | 12,478 | 62.7MB | 35ms |
 | 7/27 | v1.0.14 (leak) | Multi-device daemon refactor | 60min | 12,436 | **86.5MB 💀** | 31ms |
-| 7/27 | **dev (current)** | **Concurrency fix + streaming + lock** | 60min | 12,458 | **39.5MB ✅** | 35ms |
+| 7/27 | dev | Concurrency fix + streaming + lock | 60min | 12,458 | **39.5MB ✅** | 35ms |
+| 8/14 | **dev (current)** | **OCR 桥接形态(模型磁盘加载)+ daemon 重构复测** | 60min | 12,182 | **11.5MB ✅** | 286ms ⚠️ |
+| 8/14 | **dev (current)** | **截图 60ms 快路径 + 预热 + reset 节流** | 5min 冒烟 | 1,109 | 12.5MB | **111ms** |
 
 ---
 

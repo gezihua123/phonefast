@@ -21,22 +21,23 @@ phonefast 有**三类构建产物**，各自独立：
 
 所有变体通过 `--variant` 统一入口选择，定义在 `scripts/pfbuild/variants.py`（单一真相来源，加新变体只改这一张表）：
 
-| 变体 | 命令 | build tag | CGO | Apple Vision | ORT 运行时 | 产物名 | 适用 |
-|---|---|---|---|:---:|---|---|---|
-| **plain**（默认） | `bash scripts/build.sh` | 无 | 1 | ✓（macOS） | 系统库 `libonnxruntime` | `phonefast-<os>-<arch>` | 已装 onnxruntime 的环境 |
-| **cgo1** | `bash scripts/build.sh --variant cgo1` | 无 | 1（**不降级**） | ✓ | 系统库 `libonnxruntime` | `phonefast-cgo1` | macOS 全功能（见 §3.2） |
-| **apple** | `bash scripts/build.sh --variant apple` | `NO_OCR_MODELS` | 1 | ✓ | 无（不嵌 ORT） | `phonefast-apple` | macOS 仅 Apple Vision |
-| **full** | `bash scripts/build.sh --variant full` | `ocr_embed` | 1 | ✓（macOS） | 内嵌 ORT 库（零依赖） | `phonefast-<os>-<arch>-full` | 无 onnxruntime 的环境 |
+| 变体 | 命令 | build tag | CGO | Apple Vision | ORT 运行时 | 模型 | 产物名 | 适用 |
+|---|---|---|---|:---:|---|---|---|---|
+| **plain**（默认） | `bash scripts/build.sh` | `NO_OCR_MODELS` | 1 | ✓（macOS） | 系统库 `libonnxruntime` | 磁盘加载 | `phonefast-<os>-<arch>` | 桥接形态（已装 onnxruntime 的环境） |
+| **cgo1** | `bash scripts/build.sh --variant cgo1` | `NO_OCR_MODELS` | 1（**不降级**） | ✓ | 系统库 `libonnxruntime` | 磁盘加载 | `phonefast-cgo1` | macOS 全功能（见 §3.2） |
+| **apple** | `bash scripts/build.sh --variant apple` | `NO_OCR_MODELS` | 1 | ✓ | 系统库 `libonnxruntime` | 磁盘加载 | `phonefast-apple` | cgo1 兼容别名 |
+| **full** | `bash scripts/build.sh --variant full` | `ocr_embed` | 1 | ✓（macOS） | 内嵌 ORT 库（零依赖） | 内嵌 | `phonefast-<os>-<arch>-full` | 自包含单文件 |
 
 > `--full` / `--full-only` 是 `--variant full` 的旧别名（等价），保留向后兼容。一次调用只构建一个变体；要多变体就多次运行。
 
-**纯 Go 降级路径**（非命名变体，逃逸口）：`CGO_ENABLED=0 go build ./cmd/phonefast/` 产出无 astiav、无 Apple Vision 的纯 Go 二进制（~21MB），用系统 `ffmpeg` CLI 降级解码。等价于 `CGO_ENABLED=0 bash scripts/build.sh --variant plain`。
+**纯 Go 降级路径**（非命名变体，逃逸口）：`CGO_ENABLED=0 go build -tags NO_OCR_MODELS ./cmd/phonefast/` 产出无 astiav、无 Apple Vision 的纯 Go 二进制（~13MB），用系统 `ffmpeg` CLI 降级解码；OCR 的 onnx 引擎走 purego dlopen 加载系统 onnxruntime + 磁盘模型。等价于 `CGO_ENABLED=0 bash scripts/build.sh --variant plain`。
 
-**说明**：
-- plain / cgo1 / full 都内嵌 PP-OCR v3 模型（`ocr/assets/ppocr-det.onnx` + `ppocr-rec.onnx`，由 `embed_default.go` 的 `!NO_OCR_MODELS` tag 自动嵌入）。apple 变体用 `NO_OCR_MODELS` 不内嵌模型。
-- cgo1 / apple 是 `macos_only` 变体：非 macOS 平台自动 skip（log 提示，不报错），产物名不带 `<os>-<arch>` 前缀。
-- full 额外内嵌 ONNX Runtime 共享库。**仅 darwin/arm64 实际可用**：`platform.py` 的 `embeddable` 判定只认 `darwin/arm64`，其它目标直接 skip full（避免产出与 plain 字节相同的废二进制）。
-- full 需要 ORT 库文件存在于 `ocr/assets/<embed_name>`，缺失时警告并提示用 `bash ocr/scripts/download.sh <goos> <goarch>` 下载。
+**说明**（三种产物形态）：
+- **桥接**（plain / cgo1 / apple）：二进制**不内嵌** PP-OCR 模型（`NO_OCR_MODELS`），运行时从磁盘加载（§3.4）。产物 ~20M 级。三种形态中 plain 可降级 CGO=0 即为纯 Go 形态。
+- **full**：唯一内嵌 PP-OCR 模型（`ocr/assets/ppocr-det.onnx` + `ppocr-rec.onnx`，由 `embed_default.go` 的 `!NO_OCR_MODELS` tag 自动嵌入）+ ORT 共享库，自包含零依赖。
+- cgo1 / apple 是 `macos_only` 变体：非 macOS 平台自动 skip（log 提示，不报错），产物名不带 `<os>-<arch>` 前缀。**apple 是 cgo1 的兼容别名**（tags/CGO 完全一致，仅产物名不同）。
+- full 仅 darwin/arm64 实际可用：`platform.py` 的 `embeddable` 判定只认 `darwin/arm64`，其它目标直接 skip full（避免产出与 plain 字节相同的废二进制）。
+- full 需要 ORT 库与模型文件存在于 `ocr/assets/`，缺失时警告并提示用 `bash ocr/scripts/download.sh all` 下载。模型文件缺失时 `sync_all` 自动创建空占位文件（保证 `//go:embed` 可编译，gitignore 已覆盖）。
 
 ### 1.2 平台选择
 
@@ -131,10 +132,10 @@ bash scripts/build-server.sh --skip-build       # 仅打补丁不构建
 
 | 变体 | 命令（统一入口） | 旧别名（等价） | CGO | build tag | 引擎 | 适用 |
 |---|---|---|---|---|---|---|
-| **plain** | `bash scripts/build.sh --variant plain` | — | 1 | 无 | ONNX + Tesseract +（Apple Vision on macOS） | 标准构建 |
-| **cgo1** | `bash scripts/build.sh --variant cgo1` | `ocr/scripts/build.sh cgo1` | 1（不降级） | 无 | ONNX + Tesseract + Apple Vision | macOS 全功能 |
-| **apple** | `bash scripts/build.sh --variant apple` | `ocr/scripts/build.sh apple` | 1 | `NO_OCR_MODELS` | 仅 Apple Vision | macOS 无 ONNX 依赖 |
-| **full** | `bash scripts/build.sh --variant full` | `ocr/scripts/build.sh full` / `--full` | 1 | `ocr_embed` | 全引擎 + 内嵌 ORT 库 | 自包含单文件 |
+| **plain** | `bash scripts/build.sh --variant plain` | — | 1 | `NO_OCR_MODELS` | ONNX（磁盘模型）+ Tesseract +（Apple Vision on macOS） | 标准桥接构建 |
+| **cgo1** | `bash scripts/build.sh --variant cgo1` | `ocr/scripts/build.sh cgo1` | 1（不降级） | `NO_OCR_MODELS` | ONNX（磁盘模型）+ Tesseract + Apple Vision | macOS 全功能桥接 |
+| **apple** | `bash scripts/build.sh --variant apple` | `ocr/scripts/build.sh apple` | 1 | `NO_OCR_MODELS` | ONNX（磁盘模型）+ Tesseract + Apple Vision | cgo1 兼容别名 |
+| **full** | `bash scripts/build.sh --variant full` | `ocr/scripts/build.sh full` / `--full` | 1 | `ocr_embed` | 全引擎 + 内嵌模型 + 内嵌 ORT 库 | 自包含单文件 |
 
 > 无 `all`：build.py 是"单次调用一个变体"模型。要批量编多变体用 shell 循环：`for v in plain cgo1 apple full; do bash scripts/build.sh --variant $v; done`
 
@@ -143,9 +144,11 @@ bash scripts/build-server.sh --skip-build       # 仅打补丁不构建
 CGO=1 时 macOS 上 `apple` 引擎的 build tag（`darwin && cgo`）自动激活，编入 Apple Vision 全功能 OCR（ANE 加速）。用 **cgo1 变体**：
 
 ```bash
-bash scripts/build.sh --variant cgo1    # 产物 dist/dev/phonefast-cgo1（~26M）
+bash scripts/build.sh --variant cgo1    # 产物 dist/dev/phonefast-cgo1（~20M 级，桥接形态）
 # 等价：bash ocr/scripts/build.sh cgo1
 ```
+
+桥接形态二进制**不内嵌模型**，运行时从磁盘加载（见 §3.4）。
 
 **cgo1 不降级（关键差异）**：
 - plain 变体在 `build/cross-ffmpeg` 缺失时会**降级 `CGO_ENABLED=0`**（见 §1.3），降级后 `darwin && cgo` tag 失效，apple 引擎静默丢失。
@@ -167,17 +170,34 @@ PHONEFAST_OCR_ENGINE=apple phonefast-cgo1 …  # 环境变量（默认 onnx）
 
 | 引擎 | 依赖 | 启用方式 |
 |---|---|---|
-| **onnx**（默认） | `libonnxruntime`（系统或内嵌）+ PP-OCR 模型 | 默认（`blank import ocr/onnx`） |
+| **onnx**（默认） | `libonnxruntime`（系统或内嵌）+ PP-OCR 模型（内嵌或磁盘） | 默认（`blank import ocr/onnx`） |
 | **tesseract** | 系统 `tesseract` CLI | 默认 |
 | **apple** | macOS Vision 框架（CGO） | `cgo1` / `apple` / `full` 变体 |
 | **ncnn** | `libncnn`（`brew install`）+ ncnn 模型 | `-tags ncnn`（opt-in，28% 更快） |
 
-### 3.4 build tag 语义（`ocr/assets/*.go`）
+### 3.4 运行时模型加载（桥接变体）
+
+plain / cgo1 / apple 不内嵌 PP-OCR 模型，运行时按以下优先级查找（`ocr/detect/modelpath.go`，每模型独立解析）：
+
+1. 环境变量 `PHONEFAST_OCR_DET_MODEL` / `PHONEFAST_OCR_REC_MODEL`（显式单文件路径）
+2. `~/.phonefast/models/ppocr-det.onnx` / `ppocr-rec.onnx`（默认安装目录）
+3. `./ocr/assets/ppocr-*.onnx`（开发便捷：repo 根目录运行时直接可用，即 download.sh 的下载位置）
+
+全未命中 → onnx 引擎 `ErrNotAvailable`，错误信息含下载提示。安装方式：
+
+```bash
+bash ocr/scripts/download.sh models                      # 下载到 ocr/assets/（embed 源 + dev 路径）
+bash ocr/scripts/download.sh models --to ~/.phonefast/models   # 运行时安装
+```
+
+Vision 检测快速路径不依赖模型：macOS CGO 构建下即使无任何模型，`apple` 引擎与 Vision det 仍可用（detector 自动进入 vision-only 模式）。
+
+### 3.5 build tag 语义（`ocr/assets/*.go`）
 
 | 文件 | tag | 作用 |
 |---|---|---|
-| `embed_default.go` | `!NO_OCR_MODELS` | 内嵌 `ppocr-det.onnx` + `ppocr-rec.onnx`（默认） |
-| `embed_no_models.go` | `NO_OCR_MODELS` | 模型不内嵌（`apple` 变体用） |
+| `embed_default.go` | `!NO_OCR_MODELS` | 内嵌 `ppocr-det.onnx` + `ppocr-rec.onnx`（仅 full） |
+| `embed_no_models.go` | `NO_OCR_MODELS` | 模型不内嵌（plain / cgo1 / apple 桥接变体用） |
 | `lib_darwin_arm64.go` | `darwin && arm64 && ocr_embed` | 内嵌 `libonnxruntime-darwin-arm64.dylib` |
 | `lib_linux_amd64.go` | `linux && amd64 && ocr_embed` | 内嵌 `libonnxruntime-linux-amd64.so` |
 | `lib_nolib.go` | `!ocr_embed` | ORT 库不内嵌，运行时加载系统库 |

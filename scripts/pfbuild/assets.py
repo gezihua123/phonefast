@@ -32,7 +32,32 @@ def sync_jar(assets_dir: Path, root_dir: Path) -> None:
         )
 
 
+def ensure_ocr_model_placeholders(root_dir: Path) -> None:
+    """Create empty placeholder model files so //go:embed compiles without a
+    download.
+
+    The PP-OCR model files are gitignored download artifacts
+    (ocr/scripts/download.sh). //go:embed fails the build on a missing file,
+    so absent/empty models get an empty placeholder: embed yields nil bytes,
+    and the engine loads models from disk at runtime (bridge variants) or
+    errors with a download hint. Only the -full variant needs real bytes —
+    builder.py warns when it builds with empty models.
+    """
+    for name in ("ppocr-det.onnx", "ppocr-rec.onnx"):
+        p = root_dir / "ocr" / "assets" / name
+        if not p.is_file() or p.stat().st_size == 0:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            if not p.is_file():
+                p.touch()
+            log.warn(
+                f"ocr/assets/{name} missing/empty — placeholder created (models not embedded).\n"
+                "  Run: bash ocr/scripts/download.sh models  (needed for -full self-contained builds;\n"
+                "  plain/cgo1/apple load models from disk at runtime)"
+            )
+
+
 def sync_all(assets_dir: Path, root_dir: Path) -> None:
-    """Ensure scrcpy jar is ready for embed."""
+    """Ensure scrcpy jar is ready for embed + OCR model placeholders exist."""
     assets_dir.mkdir(parents=True, exist_ok=True)
     sync_jar(assets_dir, root_dir)
+    ensure_ocr_model_placeholders(root_dir)

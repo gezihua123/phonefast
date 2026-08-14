@@ -38,6 +38,13 @@
 - **`phonefast screenshot` (no path) restores the data-URI stdout contract** — mime-aware (`data:image/jpeg;base64,...`); the file-writing path applies only when a path argument is given.
 - **Flat `observe` timeout no longer discards a valid capture** — results arriving within the drain-grace window are returned instead of erroring.
 
+### 🔧 Cleanups (OCR build variants: three product forms)
+
+- **Non-full variants no longer embed PP-OCR models**: v6 models (det 59M + rec 73M) had inflated plain/cgo1 binaries to ~145M (stale docs said ~26M, a v3-era figure). plain/cgo1/apple now build with `NO_OCR_MODELS` (~13–26M) and load models from disk at runtime — `PHONEFAST_OCR_DET_MODEL`/`PHONEFAST_OCR_REC_MODEL` env vars, then `~/.phonefast/models/`, then `./ocr/assets/` (`ocr/detect/modelpath.go`). `apple` is now a cgo1 compat alias (identical tags/CGO). Only `-full` stays self-contained (models + ORT lib embedded).
+- **Vision-only detection without models**: on macOS CGO builds the detector falls back to a vision-only mode when no det model exists (zero ORT dependency); "Vision det + ONNX rec" works via the shared lazily-initialized ORT Runtime. The pure-Go form (`CGO_ENABLED=0`) keeps OCR via purego dlopen of system onnxruntime + disk models.
+- **Fresh-clone builds need no model download**: `assets.sync_all` creates empty placeholder model files so `//go:embed` compiles without the gitignored downloads; `-full` warns when models are empty. CLAUDE.md Step 1 cross-builds use `-tags NO_OCR_MODELS`.
+- **`download.sh models --to <dir>`**: install models to a runtime dir (e.g. `~/.phonefast/models`) instead of the embed source `ocr/assets/`.
+
 ---
 
 ## v1.0.17 (2026-08-11)

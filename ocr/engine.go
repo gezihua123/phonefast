@@ -71,7 +71,7 @@ var ErrNotAvailable = errors.New("ocr: engine not available")
 // Engine name constants for Config.Engine. Referenced by internal/ocr
 // (dispatch) and cmd/phonefast (flag default/validation).
 const (
-	EngineONNX      = "onnx"      // default; pure-Go, embedded models, zero external deps
+	EngineONNX      = "onnx"      // default; pure-Go, embedded (-full) or on-disk models (bridge builds)
 	EngineNCNN      = "ncnn"      // opt-in; -tags ncnn + brew libncnn, models via env
 	EngineTesseract = "tesseract" // Latin-text fast-path; uses system tesseract CLI
 	EngineApple     = "apple"     // macOS-only; v6 det+rec with Vision detection fast-path (ANE)

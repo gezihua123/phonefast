@@ -439,10 +439,12 @@ class StressTest:
                            capture_output=True, text=True, timeout=30)
         time.sleep(3)
 
-        # 验证 daemon 运行
+        # 验证 daemon 运行。重构后 `daemon --status` 的健康输出是状态 JSON
+        # （无 "running" 字样），异常输出才是 "daemon not running" 或
+        # "daemon running (pid N) but not responding"（后者 exit 1）。
         r = subprocess.run([self.binary, "daemon", "--status", "--serial", self.serial],
                            capture_output=True, text=True, timeout=10)
-        if "running" not in r.stdout.lower():
+        if r.returncode != 0 or "daemon not running" in r.stdout.lower():
             print(f"FATAL: Daemon failed to start\n  stdout: {r.stdout[:300]}\n  stderr: {r.stderr[:300]}")
             return 1
 

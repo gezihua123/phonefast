@@ -57,13 +57,18 @@ def build_target(
 
     tags = list(variant.tags)
 
-    # full variant: verify the ORT lib to embed exists (warning only, build still runs).
+    # full variant: verify the ORT lib + models to embed exist (warning only, build still runs).
     if variant.name == "full":
         lib = root_dir / "ocr" / "assets" / target.embed_name
         if not (lib.is_file() and lib.stat().st_size > 0):
             log.warn(f"ORT lib missing: {lib}")
             log.warn(f"  Download to ocr/assets/ with: bash ocr/scripts/download.sh {target.goos} {target.goarch}")
             log.warn(f"  Or use: bash ocr/scripts/download.sh --help")
+        for model in ("ppocr-det.onnx", "ppocr-rec.onnx"):
+            mp = root_dir / "ocr" / "assets" / model
+            if not (mp.is_file() and mp.stat().st_size > 0):
+                log.warn(f"OCR model missing/empty: {mp} — -full will embed NO models")
+                log.warn(f"  Run: bash ocr/scripts/download.sh models")
 
     log.info(f"构建 {target.goos}/{target.goarch}{variant.suffix} ({variant.name}) ...")
     dist_dir.mkdir(parents=True, exist_ok=True)
