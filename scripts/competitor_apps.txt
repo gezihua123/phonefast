@@ -1,5 +1,0 @@
-com.phenomena.bazihero
-com.horoscope.chinesezodiac
-com.daily.chineseastro
-com.tongbazi.app
-com.IVR.tuhoroscopochino

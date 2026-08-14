@@ -1,0 +1,7 @@
+# OCR model files — never committed, always downloaded.
+# Production PP-OCRv6 models: bash ocr/scripts/download.sh  (writes to ocr/assets/)
+# NCNN rec model:            bash scripts/setup-ncnn.sh --model  (writes to models/ncnn/)
+# Test models:               bash scripts/download-ocr-test-models.sh  (writes to tests/ocr-models/)
+*.onnx
+*.ncnn.bin
+*.ncnn.param

@@ -57,3 +57,6 @@ ehthumbs.db
 # Python 缓存
 __pycache__/
 *.pyc
+
+# OCR 模型（下载产物，不提交）
+/tests/ocr-models/
