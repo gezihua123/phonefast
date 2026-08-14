@@ -97,6 +97,11 @@ func writeYMLNode(b *ymlBuffer, node *uiNode, depth int) {
 	}
 	b.WriteByte('\n')
 
+	if !el.IsVisible() {
+		b.writeIndent(depth + 1)
+		b.WriteString("visible: false\n")
+	}
+
 	b.writeIndent(depth + 1)
 	b.WriteString("bounds: '")
 	b.WriteString(formatBounds(el.Bounds))

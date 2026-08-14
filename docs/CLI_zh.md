@@ -1,6 +1,6 @@
 # phonefast CLI 使用手册
 
-> 版本: 1.0.11 | 协议: MIT | 平台: macOS / Linux / Windows
+> 版本: 1.0.16 | 协议: MIT | 平台: macOS / Linux / Windows
 
 phonefast 是一个高性能 Android 设备控制命令行工具，基于 Go 语言和 scrcpy 协议构建。专为 AI Agent 高频交互场景设计，单次操作延迟 <10ms，支持 Daemon 后台常驻模式和 MCP 协议集成。
 
@@ -768,7 +768,7 @@ phonefast daemon --status
 phonefast daemon --stop
 ```
 
-> 设备选择是每命令级的，通过顶层 `-s`/`--serial` flag（见[多设备管理](#多设备管理)）。`daemon` 子命令不再接收 `--serial`（向后兼容仍解析但被忽略）和 `--socket`（统一 daemon 使用单一固定 socket）。
+> 设备选择是每命令级的，通过顶层 `-s`/`--serial` flag（见[多设备管理](#多设备管理)）。daemon 使用单一固定 socket（`/tmp/phonefast-{uid}.sock`），所有设备共享。
 
 ### 自动管理
 

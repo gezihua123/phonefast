@@ -27,6 +27,12 @@ from collections import defaultdict
 # ── 配置 ────────────────────────────────────────────────────────────────────────
 _BINARY = os.path.join(os.path.dirname(__file__), "..", "dist", "dev", "phonefast-darwin-arm64")
 MEM_INTERVAL = 30  # RSS 采样间隔（秒）
+# How often to persist summary.json/timing.csv/memory.csv mid-run. A hard kill
+# (SIGKILL, OOM, harness stop) bypasses Python's finally block, so without this
+# a 12h run killed at hour 11 loses ALL structured data — only the raw progress
+# log survives. Periodic write_report() in place keeps the latest snapshot on
+# disk; the final call overwrites with complete data. No test-semantics change.
+CHECKPOINT_INTERVAL = 300
 
 # 测试阶段: (分钟, 名称, 间隔秒, 操作池)
 PHASES_FULL = [
@@ -473,6 +479,22 @@ class StressTest:
                 time.sleep(MEM_INTERVAL)
         mem_t = threading.Thread(target=mem_loop, daemon=True)
         mem_t.start()
+
+        # Persist structured data periodically so a hard kill (SIGKILL/OOM)
+        # doesn't lose everything. write_report() is silent (returns the
+        # summary; only run() prints it at the end). Reads self.times while the
+        # main loop appends — safe under CPython GIL for counts/sorted; a
+        # checkpoint may see a slightly stale op count, never a crash.
+        def checkpoint_loop():
+            time.sleep(CHECKPOINT_INTERVAL)
+            while not self.stop_event.is_set():
+                try:
+                    self.write_report()
+                except Exception:
+                    pass
+                time.sleep(CHECKPOINT_INTERVAL)
+        ckpt_t = threading.Thread(target=checkpoint_loop, daemon=True)
+        ckpt_t.start()
 
         # ── 阶段执行 ──
         phases = PHASES_QUICK if self.quick else PHASES_FULL

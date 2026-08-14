@@ -138,6 +138,10 @@ type ScrcpyArgs struct {
 	Scid          int
 	LogLevel      string
 	MaxSize       int
+	// BitRate is the H.264 target bitrate in BITS PER SECOND (scrcpy
+	// server convention: video_bit_rate is bits/s, NOT Mbps). 8 Mbps =
+	// 8_000_000. Do NOT pass 8 - that is 8 bits/s and yields a heavily
+	// compressed, blurry stream. Default 8 Mbps matches scrcpy upstream.
 	BitRate       int
 	MaxFPS        int
 	NoAudio       bool
@@ -149,11 +153,11 @@ func DefaultScrcpyArgs() ScrcpyArgs {
 	return ScrcpyArgs{
 		Scid:          0x3f,
 		LogLevel:      "info",
-		MaxSize:       1080,
-		BitRate:       8,
+		MaxSize:       0,
+		BitRate:       8_000_000, // 8 Mbps (bits/s) — was 8 (=8 bits/s, blurry screenshots)
 		MaxFPS:        15,
 		NoAudio:       true,
-		TunnelForward: true, // device acts as server, PC connects
+		TunnelForward: true,
 	}
 }
 

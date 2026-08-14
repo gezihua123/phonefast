@@ -1,16 +1,22 @@
 package daemon
 
 import (
-	"encoding/base64"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png" // register PNG decoder for Screenshot() fallback output
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
 	"github.com/gezihua123/phonefast/internal/format"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 	"github.com/gezihua123/phonefast/internal/session"
+	"github.com/gezihua123/phonefast/pkg/avcodec"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -30,6 +36,19 @@ type Response struct {
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *RPCError       `json:"error,omitempty"`
 	ID      int64           `json:"id"`
+
+	// Streaming image responses (screenshot/observe): streamPrefix and
+	// streamSuffix are the JSON frame parts around the base64 payload value;
+	// writeStreamedResponse emits them with the payload base64-encoded
+	// incrementally in between. This avoids materializing a megabyte-scale
+	// base64 string plus two json.Marshal copies of it.
+	// All three fields are nil for normal (non-streaming) responses.
+	// Write-path only: json.Marshal on a streaming Response produces an
+	// incomplete result (Result is nil); only writeResponse/writeStreamedResponse
+	// can serialize it correctly.
+	streamPrefix  json.RawMessage
+	streamSuffix  json.RawMessage
+	streamPayload []byte
 }
 
 // RPCError is a JSON-RPC 2.0 error object.
@@ -63,6 +82,40 @@ func newResultResponse(id int64, result any) *Response {
 		JSONRPC: "2.0",
 		ID:      id,
 		Result:  data,
+	}
+}
+
+// newStreamedImageResponse builds a Response whose Result contains a large
+// base64 image field, without copying the payload or using a fragile marker
+// string. Instead, the non-image fields are marshaled separately, then the
+// image_data key is spliced in manually. This eliminates the risk of a field
+// value colliding with a marker string.
+//
+// Wire format: {"jsonrpc":"2.0","result":{...nonImage,"image_data":"<b64>"},"id":N}
+func newStreamedImageResponse(id int64, m map[string]any, b64Field string, payload []byte) *Response {
+	// Remove the image field, marshal the rest.
+	delete(m, b64Field)
+	nonImage, err := json.Marshal(m)
+	if err != nil {
+		return newErrorResponse(id, ErrInternal, fmt.Sprintf("marshal result: %v", err))
+	}
+
+	// Build: nonImage is `{"text":"...","mime_type":"image/png"}`.
+	// Strip the closing '}' and append ,"image_data":" to get the prefix.
+	// The suffix is `"}` to close both the string and the result object.
+	rest := nonImage[:len(nonImage)-1] // strip '}'
+	prefix := make([]byte, 0, len(rest)+len(b64Field)+5)
+	prefix = append(prefix, rest...)
+	prefix = append(prefix, `,"`...)
+	prefix = append(prefix, b64Field...)
+	prefix = append(prefix, `":"`...)
+
+	return &Response{
+		JSONRPC:      "2.0",
+		ID:           id,
+		streamPrefix: prefix,
+		streamSuffix: []byte{'"', '}'},
+		streamPayload: payload,
 	}
 }
 
@@ -112,7 +165,10 @@ func parseParams(raw json.RawMessage) (map[string]any, error) {
 // ── Dispatch ──
 
 // Dispatch routes a JSON-RPC request to the appropriate handler on the
-// current session. The session must be non-nil for all methods except "status".
+// current session. The session must be non-nil for all methods except
+// "status". Daemon-level methods ("connect", "disconnect") are handled
+// in handleConn, not here — they should never reach Dispatch in normal
+// operation; the cases here are defensive fallbacks.
 func Dispatch(sess *session.Session, req *Request) *Response {
 	phonelog.Default().Write("rpc %s", req.Method)
 	switch req.Method {
@@ -120,10 +176,10 @@ func Dispatch(sess *session.Session, req *Request) *Response {
 		return handleStatus(sess, req)
 
 	case "connect":
-		return newErrorResponse(req.ID, ErrInternal, "connect requires daemon-level reconnect; use daemon --stop then daemon")
+		return newErrorResponse(req.ID, ErrInternal, "connect is a daemon-level operation; use phonefast daemon connect <serial>")
 
 	case "disconnect":
-		return newErrorResponse(req.ID, ErrInternal, "disconnect requires daemon-level shutdown; use daemon --stop")
+		return newErrorResponse(req.ID, ErrInternal, "disconnect is a daemon-level operation; use phonefast daemon disconnect <serial>")
 
 	case "list_devices":
 		return handleListDevices(sess, req)
@@ -230,17 +286,28 @@ func handleScreenshot(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	pngData, w, h, err := sess.Screenshot()
+	// Request JPEG directly from the CGO decoder (avoids ~4.6MB image.Decode
+	// allocation that pngToJPEG would incur on the fallback PNG path).
+	imgData, w, h, mime, err := sess.ScreenshotFormat(avcodec.FormatJPEG)
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("screenshot: %v", err))
 	}
 
-	b64 := base64.StdEncoding.EncodeToString(pngData)
-	return newResultResponse(req.ID, map[string]any{
-		"text":       fmt.Sprintf("Screenshot (%dx%d)", w, h),
-		"image_data": b64,
-		"mime_type":  "image/png",
-	})
+	// CLI fallback (ffmpeg) always returns PNG regardless of format request.
+	// Convert to JPEG for smaller MCP payload (~10× vs PNG at native res).
+	if mime != "image/jpeg" {
+		jpgData, jpgErr := pngToJPEG(imgData, 85)
+		if jpgErr != nil {
+			phonelog.Default().Write("screenshot: png→jpeg failed, falling back: %v", jpgErr)
+			jpgData = imgData
+		}
+		imgData = jpgData
+	}
+
+	return newStreamedImageResponse(req.ID, map[string]any{
+		"text":      fmt.Sprintf("Screenshot (%dx%d)", w, h),
+		"mime_type": "image/jpeg",
+	}, "image_data", imgData)
 }
 
 func handleGetUIElements(sess *session.Session, req *Request) *Response {
@@ -249,12 +316,11 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 	}
 
 	formatType := getFormatFromParams(req)
-	maxShow := getMaxElementsFromParams(req, 100)
+	maxShow := getMaxElementsFromParams(req, 5000)
 	collectMax := maxShow
-	if collectMax < 0 || collectMax > 500 {
-		collectMax = 0 // server default (500 for full, 100 for summary)
+	if collectMax < 0 || collectMax > protocol.DefMaxElements {
+		collectMax = 0 // server default (DefMaxElements)
 	}
-	isSummary := getSummaryFromParams(req)
 
 	// Handle hierarchical formats via UIFormatter registry
 	if f := format.ByName(formatType); f != nil {
@@ -275,14 +341,11 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		})
 	}
 
-	// Legacy flat format (no format specified or unknown format)
-	var elements []protocol.UIElement
-	var err error
-	if isSummary {
-		elements, err = sess.GetUISummary(collectMax)
-	} else {
-		elements, err = sess.GetUIElements(collectMax)
-	}
+	// Legacy flat format (no format specified or unknown format).
+	// Always summary mode: the flat path returns filtered UIElement[]
+	// (layout containers / pure images skipped). Full unfiltered mode
+	// requires a hierarchical format, handled above via GetUIFull.
+	elements, err := sess.GetUISummary(collectMax)
 	if err != nil {
 		elements, err = sess.GetUIElementsFallbackADB(collectMax)
 		if err != nil {
@@ -290,8 +353,7 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 		}
 	}
 
-	// Collapse off-screen elements only in summary (token-efficient) mode.
-	// Full mode preserves every element — no viewport filtering.
+	// Collapse off-screen elements for token-efficient output.
 	// Use NativeW×NativeH for the viewport: UI element bounds come from
 	// AccessibilityNodeInfo.getBoundsInScreen(), which reports coordinates
 	// in the physical display space, NOT the scrcpy video resolution
@@ -300,10 +362,10 @@ func handleGetUIElements(sess *session.Session, req *Request) *Response {
 	// DeviceW/H as the viewport would incorrectly classify every element
 	// beyond the video boundary as off-screen.
 	vw, vh := 0, 0
-	if isSummary && sess.NativeW > 0 && sess.NativeH > 0 {
+	if sess.NativeW > 0 && sess.NativeH > 0 {
 		vw, vh = sess.NativeW, sess.NativeH
 	}
-	legacyFormatted := format.ElementsForLLMWithViewport(elements, maxShow, isSummary, vw, vh)
+	legacyFormatted := format.ElementsForLLMWithViewport(elements, maxShow, true, vw, vh)
 	return newResultResponse(req.ID, map[string]any{
 		"elements":  elements,
 		"formatted": legacyFormatted,
@@ -316,18 +378,110 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	maxShow := getMaxElementsFromParams(req, 100)
+	formatType := getFormatFromParams(req)
+	if formatType == "" {
+		formatType = "flatref"
+	}
+	maxShow := getMaxElementsFromParams(req, 5000)
 	collectMax := maxShow
-	if collectMax < 0 || collectMax > 500 {
-		collectMax = 0 // server default (500 for full, 100 for summary)
+	if collectMax < 0 || collectMax > protocol.DefMaxElements {
+		collectMax = 0 // server default (DefMaxElements)
 	}
 	isSummary := getSummaryFromParams(req)
+
+	// Hierarchical formats (flatref, jsonl, simplexml, yml): need full UI tree.
+	// Run screenshot + GetUIFull concurrently; each has its own 30s timeout.
+	if f := format.ByName(formatType); f != nil {
+		type screenRes struct {
+			img  []byte
+			mime string
+			err  error
+		}
+		type uiRes struct {
+			elements []protocol.UIFullElement
+			err      error
+		}
+		scCh := make(chan screenRes, 1)
+		uiCh := make(chan uiRes, 1)
+
+		go func() {
+			// Request JPEG directly from CGO decoder to avoid ~4.6MB
+			// image.Decode allocation that pngToJPEG would otherwise incur.
+			img, _, _, mime, err := sess.ScreenshotFormat(avcodec.FormatJPEG)
+			scCh <- screenRes{img, mime, err}
+		}()
+		go func() {
+			// Retry once on transient errors (stale-node exceptions during
+			// animations are common now that waitForIdle is removed).
+			elems, err := sess.GetUIFull(collectMax)
+			if err != nil {
+				elems, err = sess.GetUIFull(collectMax)
+			}
+			uiCh <- uiRes{elems, err}
+		}()
+
+		var sc screenRes
+		select {
+		case sc = <-scCh:
+		case <-time.After(30 * time.Second):
+			return newErrorResponse(req.ID, ErrTimeout, "screenshot timed out")
+		}
+
+		var ui uiRes
+		select {
+		case ui = <-uiCh:
+		case <-time.After(30 * time.Second):
+			return newErrorResponse(req.ID, ErrTimeout, "get ui elements timed out")
+		}
+
+		if sc.err != nil {
+			return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("observe screenshot: %v", sc.err))
+		}
+		if ui.err != nil {
+			return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("observe ui: %v", ui.err))
+		}
+
+		// Summary mode: keep only the first N elements (already depth-first
+		// from the server, so topmost widgets come first).
+		if isSummary && maxShow > 50 {
+			maxShow = 50
+		}
+		if maxShow > 0 && len(ui.elements) > maxShow {
+			ui.elements = ui.elements[:maxShow]
+		}
+
+		formatted := f.Format(ui.elements)
+
+		// CLI fallback (ffmpeg) always returns PNG regardless of format request.
+		// Convert to JPEG for ~10x smaller MCP payload only when needed.
+		// Native resolution is preserved; OCR is unaffected because
+		// it reads decoded video frames, not this screenshot.
+		imgData := sc.img
+		if sc.mime != "image/jpeg" {
+			jpgData, jpgErr := pngToJPEG(sc.img, 85)
+			if jpgErr != nil {
+				phonelog.Default().Write("observe: png→jpeg failed, falling back: %v", jpgErr)
+				jpgData = sc.img
+			}
+			imgData = jpgData
+		}
+
+		return newStreamedImageResponse(req.ID, map[string]any{
+			"text":      formatted,
+			"mime_type": "image/jpeg",
+			"count":     len(ui.elements),
+			"width":     sess.DeviceW,
+			"height":    sess.DeviceH,
+			"format":    formatType,
+		}, "image_data", imgData)
+	}
+
+	// Legacy flat format (no format specified or unknown format).
 	pngData, elements, err := sess.Observe(collectMax, isSummary)
 	if err != nil {
 		return newErrorResponse(req.ID, ErrDevice, fmt.Sprintf("observe: %v", err))
 	}
 
-	b64 := base64.StdEncoding.EncodeToString(pngData)
 	// Collapse off-screen only in summary mode; full mode keeps all elements.
 	// Use NativeW×NativeH — see handleGetUIElements for rationale.
 	ovw, ovh := 0, 0
@@ -336,14 +490,13 @@ func handleObserve(sess *session.Session, req *Request) *Response {
 	}
 	formatted := format.ElementsForLLMWithViewport(elements, maxShow, isSummary, ovw, ovh)
 
-	return newResultResponse(req.ID, map[string]any{
-		"text":       formatted,
-		"image_data": b64,
-		"mime_type":  "image/png",
-		"count":      len(elements),
-		"width":      sess.DeviceW,
-		"height":     sess.DeviceH,
-	})
+	return newStreamedImageResponse(req.ID, map[string]any{
+		"text":      formatted,
+		"mime_type": "image/png",
+		"count":     len(elements),
+		"width":     sess.DeviceW,
+		"height":    sess.DeviceH,
+	}, "image_data", pngData)
 }
 
 func handleTap(sess *session.Session, req *Request) *Response {
@@ -385,7 +538,7 @@ func handleTapElement(sess *session.Session, req *Request) *Response {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
 	}
 
-	elements, fastErr := sess.GetUIElements(0) // collect all elements (server default 500)
+	elements, fastErr := sess.GetUISummary(0) // server default (DefMaxElements)
 	if fastErr != nil {
 		var fallbackErr error
 		elements, fallbackErr = sess.GetUIElementsFallbackADB(0)
@@ -610,4 +763,32 @@ func getSummaryFromParams(req *Request) bool {
 	}
 	v, ok := params["summary"].(bool)
 	return ok && v
+}
+
+// jpegBufPool reuses bytes.Buffer allocations across pngToJPEG calls.
+// Each buffer is typically ~200-500KB (JPEG-encoded 720×1600 image).
+var jpegBufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+// pngToJPEG decodes a PNG image and re-encodes it as JPEG at the given
+// quality (1-100). Used on the CLI ffmpeg fallback path to shrink MCP
+// screenshot payloads ~10× without downscaling — native resolution is
+// preserved. The primary CGO path returns JPEG directly from the decoder
+// and bypasses this function entirely.
+func pngToJPEG(png []byte, quality int) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(png))
+	if err != nil {
+		return nil, err
+	}
+	buf := jpegBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jpegBufPool.Put(buf)
+
+	if err := jpeg.Encode(buf, img, &jpeg.Options{Quality: quality}); err != nil {
+		return nil, err
+	}
+	// Copy out before returning to pool: buf.Bytes() aliases the internal
+	// buffer and will be invalidated by the next Get() call.
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out, nil
 }

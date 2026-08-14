@@ -173,6 +173,14 @@ func (s *Server) registerTools() {
 	)
 
 	// observe
+	// ocr
+	s.mcpServer.AddTool(
+		mcp.NewTool("ocr",
+			mcp.WithDescription("OCR the current screen. Returns recognized text regions with bounding boxes, center coordinates, and confidence. Captures text invisible to accessibility: app-drawn labels, bitmap text, image overlays. Falls back to accessibility when OCR is unavailable."),
+		),
+		s.handleOcr,
+	)
+
 	s.mcpServer.AddTool(
 		mcp.NewTool("observe",
 			mcp.WithDescription("Capture screenshot and UI elements in one call (fast)."),
@@ -181,6 +189,9 @@ func (s *Server) registerTools() {
 			),
 			mcp.WithBoolean("summary",
 				mcp.Description("If true, filter out layout containers, return only meaningful elements (default: false)."),
+			),
+			mcp.WithString("format",
+				mcp.Description("Output format: 'flatref' (default) | 'jsonl' | 'simplexml' | 'yml' | 'flat' (legacy)."),
 			),
 		),
 		s.handleObserve,
@@ -367,6 +378,7 @@ func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*m
 	params := map[string]any{
 		"max_elements": getMaxElements(req, 100),
 		"summary":      getSummary(req),
+		"format":       getFormat(req),
 	}
 	var resp struct {
 		Text      string `json:"text"`
@@ -396,6 +408,36 @@ func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*m
 		})
 	}
 	return result, nil
+}
+
+func (s *Server) handleOcr(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	type ocrItem struct {
+		Text       string        `json:"text"`
+		Box        [4][2]float64 `json:"box"`
+		Center     [2]float64    `json:"center"`
+		Confidence float32       `json:"confidence"`
+	}
+	var resp struct {
+		Items  []ocrItem `json:"items"`
+		Count  int       `json:"count"`
+		Width  int       `json:"image_width"`
+		Height int       `json:"image_height"`
+	}
+	if err := s.rpcCall("ocr", nil, &resp); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	if resp.Count == 0 {
+		return mcp.NewToolResultText("OCR found no text on the current screen."), nil
+	}
+	// Build a concise text summary suitable for LLM consumption.
+	lines := make([]string, 0, resp.Count)
+	for _, item := range resp.Items {
+		lines = append(lines, fmt.Sprintf("[%.0f,%.0f] \"%s\" (%.0f%%)",
+			item.Center[0], item.Center[1], item.Text, item.Confidence*100))
+	}
+	summary := fmt.Sprintf("OCR: %d text regions (%dx%d)\n%s",
+		resp.Count, resp.Width, resp.Height, strings.Join(lines, "\n"))
+	return mcp.NewToolResultText(summary), nil
 }
 
 // simpleAction dispatches a parameter-less action (back/home) and returns the

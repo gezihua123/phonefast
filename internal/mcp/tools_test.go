@@ -459,7 +459,7 @@ func TestAllMCPToolsRegistered(t *testing.T) {
 	mcpSrv := srv.MCPServer()
 
 	expectedTools := []string{
-		"list_devices", "screenshot", "get_ui_elements", "observe",
+		"list_devices", "screenshot", "get_ui_elements", "observe", "ocr",
 		"tap", "tap_element", "swipe", "type_text",
 		"back", "home", "press_key", "launch_app", "wait",
 	}

@@ -142,7 +142,17 @@ func ElementsForLLMWithViewport(elements []protocol.UIElement, maxShow int, isSu
 	var onScreen []protocol.UIElement
 	var offScreenInteractive []protocol.UIElement
 	for _, el := range elements {
-		if hasViewport && isOffScreen(el.Bounds, screenW, screenH) {
+		// If the Java server explicitly marked the element off-screen
+		// (Visible == &false), trust it — avoids the DisplayMetrics (Java)
+		// vs NativeW/NativeH (Go) dimension mismatch that would otherwise
+		// reclassify a genuinely off-screen element as on-screen.
+		offScreen := false
+		if !el.IsVisible() {
+			offScreen = true
+		} else if hasViewport {
+			offScreen = isOffScreen(el.Bounds, screenW, screenH)
+		}
+		if offScreen {
 			if el.Text != "" || el.ContentDesc != "" || el.Clickable {
 				offScreenInteractive = append(offScreenInteractive, el)
 			}

@@ -41,6 +41,13 @@ type DeviceActor struct {
 
 	status atomic.Value // *ActorStatus, updated after connect/reconnect
 
+	// Per-actor context derived from the daemon context. Cancelling it stops
+	// only this actor's event loop (session.Close + status cleanup + wg.Done)
+	// without affecting other devices or the daemon itself. Daemon-level cancel
+	// cascades to all actors automatically (parent → child).
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	// Reconnect throttling (read/written only from the actor goroutine, so
 	// unsynchronized). After a failed reconnect we refuse to retry for
 	// reconnectCooldown so a down device doesn't make every queued request
@@ -101,6 +108,15 @@ func newDeviceActor(serial string, alloc *ScidAllocator) (*DeviceActor, error) {
 
 // Scid returns the scrcpy scid this actor is bound to.
 func (a *DeviceActor) Scid() int { return a.scid }
+
+// stop signals the actor to shut down. It cancels the per-actor context, which
+// causes the event loop to exit, close the session (via defer), update status
+// to disconnected, and call wg.Done. Safe to call multiple times.
+func (a *DeviceActor) stop() {
+	if a.cancel != nil {
+		a.cancel()
+	}
+}
 
 // run is the actor's event loop. It processes requests and health checks
 // serially — no mutexes needed for session access.
@@ -247,7 +263,7 @@ func (a *DeviceActor) reconnect() error {
 	}
 
 	a.session = sess
-	a.serial = sess.Serial // keep in sync (may change if serial was auto-detected)
+	// a.serial is immutable after initial connect; reconnect uses same serial (may change if serial was auto-detected)
 	a.updateStatus(sess)
 	return nil
 }

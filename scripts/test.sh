@@ -2,10 +2,11 @@
 # scripts/test.sh — run `go test` against the same FFmpeg headers `build.sh` uses.
 #
 # Why this exists: bare `go test ./...` defaults to the system FFmpeg
-# (homebrew 8.0 on macOS), which removed AVFMT_FLAG_SHORTEST — a macro
-# go-astiav v0.35.0 still references. build.sh avoids this by compiling its own
-# FFmpeg 7.x under build/cross-ffmpeg and pointing PKG_CONFIG_PATH at it. This
-# wrapper does the same, so `go test` matches the production build environment.
+# (homebrew 8.0 on macOS), whose ABI may differ from the FFmpeg build.sh links
+# against (it removed AVFMT_FLAG_SHORTEST — a macro go-astiav v0.40.0 references).
+# build.sh avoids this by compiling its own FFmpeg 8.0 under build/cross-ffmpeg
+# and pointing PKG_CONFIG_PATH at it. This wrapper does the same, so `go test`
+# matches the production build environment.
 #
 # Usage:
 #   bash scripts/test.sh                      # go test ./...

@@ -76,6 +76,9 @@ func (f *flatRefFormatter) Format(elements []protocol.UIFullElement) string {
 		if !el.Enabled {
 			b.WriteString(" [disabled]")
 		}
+		if !el.IsVisible() {
+			b.WriteString(" [off-screen]")
+		}
 
 		// --- tree metadata ---
 		b.WriteString(" | depth=")

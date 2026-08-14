@@ -48,10 +48,12 @@ config.local.*
 coverage.html
 coverage.out
 ehthumbs.db
-go.work
-go.work.sum
 /phonefast
 .build-tmp
 
 # 交叉编译 FFmpeg 缓存
 /cross-ffmpeg/
+
+# Python 缓存
+__pycache__/
+*.pyc

@@ -3,9 +3,12 @@ package daemon
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
+	_ "net/http/pprof" // registers handlers on DefaultServeMux
 	"os"
 	"os/signal"
 	"sort"
@@ -14,7 +17,7 @@ import (
 	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
-	"github.com/gezihua123/phonefast/internal/ocr"
+	"github.com/gezihua123/phonefast/ocr"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 )
 
@@ -49,13 +52,14 @@ type Daemon struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	lockFile    *os.File      // PID file handle held for the process lifetime (flock)
+	pprofServer *http.Server  // non-nil when pprof is enabled (PHONEFAST_PPROF)
 }
 
 // Config holds daemon startup settings.
 type Config struct {
-	Foreground bool   // stay in foreground (don't daemonize)
-	SocketPath string // override default socket path
-	PidFile    string // override default pid file path
+	Foreground bool // stay in foreground (don't daemonize)
 }
 
 // StatusInfo holds runtime daemon status.
@@ -73,24 +77,16 @@ type StatusInfo struct {
 
 // New creates a new Daemon (does NOT connect to device yet).
 func New(cfg Config) *Daemon {
-	socketPath := cfg.SocketPath
-	if socketPath == "" {
-		socketPath = SocketName()
-	}
-	pidFile := cfg.PidFile
-	if pidFile == "" {
-		pidFile = PidFileName()
-	}
-
 	return &Daemon{
+		devices:    make(map[string]*DeviceActor),
 		scidAlloc:  NewScidAllocator(),
 		connectMu:  make(map[string]*sync.Mutex),
 		ocrService: ocr.NewService(ocr.Config{
 			Engine:    os.Getenv("PHONEFAST_OCR_ENGINE"),          // "onnx" (default) | "ncnn"
 			UseVision: os.Getenv("PHONEFAST_OCR_VISION") != "false",
 		}),
-		socketPath: socketPath,
-		pidFile:    pidFile,
+		socketPath: SocketName(),
+		pidFile:    PidFileName(),
 	}
 }
 
@@ -102,8 +98,9 @@ func (d *Daemon) Status() StatusInfo {
 		Pid:        os.Getpid(),
 		StartedAt:  d.startedAt,
 	}
-	if conns := d.snapshotConnected(); len(conns) > 0 {
-		as := conns[0]
+	snap := d.snapshotDaemon()
+	if len(snap.connected) > 0 {
+		as := snap.connected[0]
 		s.Connected = as.Connected
 		s.Serial = as.Serial
 		s.DeviceWidth = as.DeviceWidth
@@ -125,21 +122,33 @@ type connectedSnapshot struct {
 	UIAvail      bool   `json:"ui_available,omitempty"`
 }
 
-// snapshotConnected returns the status of every currently-connected device
-// actor, under a single RLock, sorted by serial for deterministic ordering.
-// Shared by Status() (takes [0]) and writeDaemonStatus() (takes all). The sort
-// matters: handleConn's auto-detect picks conns[0] when no device is specified,
-// so an unsorted map iteration would make "phonefast tap" with multiple devices
-// non-deterministically target a random one.
-func (d *Daemon) snapshotConnected() []connectedSnapshot {
+// daemonSnapshot captures the daemon device state under a single RLock so all
+// fields are mutually consistent (no TOCTOU between connected vs. device counts).
+// Shared by Status() (takes connected[0]) and writeDaemonStatus() (takes all).
+type daemonSnapshot struct {
+	connected []connectedSnapshot // active sessions, sorted by serial
+	serials   []string            // all registered device serials (keys from devices map)
+}
+
+// snapshotDaemon returns a consistent snapshot of all device actors.
+// The sort matters: handleConn's auto-detect picks conns[0] when no device is
+// specified, so an unsorted map iteration would make "phonefast tap" with
+// multiple devices non-deterministically target a random one.
+func (d *Daemon) snapshotDaemon() daemonSnapshot {
 	d.mu.RLock()
-	out := make([]connectedSnapshot, 0, len(d.devices))
+	defer d.mu.RUnlock()
+
+	snap := daemonSnapshot{
+		connected: make([]connectedSnapshot, 0, len(d.devices)),
+		serials:   make([]string, 0, len(d.devices)),
+	}
 	for _, a := range d.devices {
+		snap.serials = append(snap.serials, a.serial)
 		as, _ := a.status.Load().(*ActorStatus)
 		if as == nil || !as.Connected {
 			continue
 		}
-		out = append(out, connectedSnapshot{
+		snap.connected = append(snap.connected, connectedSnapshot{
 			Connected:    as.Connected,
 			Serial:       as.Serial,
 			DeviceWidth:  as.DeviceWidth,
@@ -148,9 +157,9 @@ func (d *Daemon) snapshotConnected() []connectedSnapshot {
 			UIAvail:      as.UIAvail,
 		})
 	}
-	d.mu.RUnlock()
-	sort.Slice(out, func(i, j int) bool { return out[i].Serial < out[j].Serial })
-	return out
+	sort.Slice(snap.connected, func(i, j int) bool { return snap.connected[i].Serial < snap.connected[j].Serial })
+	sort.Strings(snap.serials)
+	return snap
 }
 
 // getOrCreateActor returns the DeviceActor for the given serial, creating one
@@ -162,20 +171,22 @@ func (d *Daemon) snapshotConnected() []connectedSnapshot {
 //     newDeviceActor runs for a given serial at a time. Without this, two
 //     concurrent first-requests for one device would each call session.Connect,
 //     and Connect kills the device's existing scrcpy server (pkill by serial,
-//     not by scid) — so the loser would tear down the winner's server. The
-//     per-serial mutex also makes the double-check path below effectively
-//     unreachable in practice, but it is kept as a defensive guard.
+//     not by scid) — so the loser would tear down the winner's server.
 //
 // The ~2.5s handshake runs OUTSIDE d.mu so a slow connect on one device never
 // blocks another device's RLock fast path or the accept loop.
+//
+// Actors are stored under actor.serial (resolved by connectDevice), not the
+// caller's serial param. Lookups are direct map lookups by that key.
 func (d *Daemon) getOrCreateActor(serial string) (*DeviceActor, error) {
-	// Fast path: actor already exists.
+	// Fast path: actor already exists. Direct map lookup by caller serial —
+	// map keys are always actor.serial (see comment at insertion below).
 	d.mu.RLock()
-	actor, ok := d.devices[serial]
-	d.mu.RUnlock()
-	if ok && actor != nil {
+	if actor, ok := d.devices[serial]; ok && actor != nil {
+		d.mu.RUnlock()
 		return actor, nil
 	}
+	d.mu.RUnlock()
 
 	// Serialize same-device connects. Different serials get different mutexes
 	// and proceed in parallel.
@@ -186,11 +197,11 @@ func (d *Daemon) getOrCreateActor(serial string) (*DeviceActor, error) {
 	// Re-check under the per-serial lock: a prior holder of this same mutex may
 	// have just finished creating the actor.
 	d.mu.RLock()
-	actor, ok = d.devices[serial]
-	d.mu.RUnlock()
-	if ok && actor != nil {
+	if actor, ok := d.devices[serial]; ok && actor != nil {
+		d.mu.RUnlock()
 		return actor, nil
 	}
+	d.mu.RUnlock()
 
 	// Connect outside d.mu. newDeviceActor allocates a scid and does the
 	// device handshake synchronously; on failure it has already released its
@@ -201,10 +212,12 @@ func (d *Daemon) getOrCreateActor(serial string) (*DeviceActor, error) {
 	}
 
 	d.mu.Lock()
-	// Defensive double-check: with per-serial serialization this should not
-	// trigger, but guard against any future path that inserts without the
-	// serial mutex. Discard our duplicate and return the winner.
-	if existing, ok := d.devices[serial]; ok && existing != nil {
+	// Defensive double-check: another goroutine may have created an actor for
+	// the same device via a different caller-serial (e.g. "" vs "ABC123" both
+	// resolving to "ABC123"). The per-serial mutex does NOT cover this — the
+	// two callers hold DIFFERENT mutexes. Discard our duplicate: close its
+	// session and release its scid before returning the winner.
+	if existing, ok := d.devices[actor.serial]; ok && existing != nil {
 		d.mu.Unlock()
 		if actor.session != nil {
 			actor.session.Close()
@@ -212,14 +225,40 @@ func (d *Daemon) getOrCreateActor(serial string) (*DeviceActor, error) {
 		d.scidAlloc.Release(actor.scid)
 		return existing, nil
 	}
-
-	d.devices[serial] = actor
+	// Store under actor.serial (resolved by connectDevice), not the caller's
+	// param. In edge cases (e.g. empty-serial auto-detect) they may differ.
+	d.devices[actor.serial] = actor
 	d.wg.Add(1)
+
+	// Give the actor its own context derived from the daemon context so it can
+	// be stopped independently (disconnect one device) while daemon cancel still
+	// cascades to all actors on full shutdown.
+	actor.ctx, actor.cancel = context.WithCancel(d.ctx)
 	d.mu.Unlock()
 
-	go actor.run(d.ctx, &d.wg)
-	phonelog.Default().Write("device actor created: %s (scid=%x)", serial, actor.scid)
+	go actor.run(actor.ctx, &d.wg)
+	phonelog.Default().Write("device actor created: %s (scid=%x)", actor.serial, actor.scid)
 	return actor, nil
+}
+
+// removeDevice stops a single device actor, closes its session, releases its
+// scid, and removes it from the daemon's device map. It is safe to call on a
+// serial that is not currently managed (returns an error).
+func (d *Daemon) removeDevice(serial string) error {
+	d.mu.Lock()
+	actor, ok := d.devices[serial]
+	if !ok || actor == nil {
+		d.mu.Unlock()
+		return fmt.Errorf("device not managed: %s", serial)
+	}
+	delete(d.devices, serial)
+	delete(d.connectMu, serial)
+	d.mu.Unlock()
+
+	actor.stop()
+	d.scidAlloc.Release(actor.scid)
+	phonelog.Default().Write("device actor removed: %s (scid=%x)", serial, actor.scid)
+	return nil
 }
 
 // connectMutex returns the per-serial mutex used to serialize same-device
@@ -237,12 +276,13 @@ func (d *Daemon) connectMutex(serial string) *sync.Mutex {
 
 // isConnectionlessMethod reports whether an RPC method can be answered
 // without binding a per-device session. status reports daemon-level info;
-// list_devices is a pure ADB scan; connect/disconnect are daemon-control
-// stubs (rejected in Dispatch); wait is a pure local sleep handled in
-// handleConn (NOT dispatched to the actor — a daemon-side sleep on the
-// actor's single-threaded loop would block every other request to that
-// device). Binding a session for any of these would be a side effect for
-// what should be a cheap or rejected call.
+// list_devices is a pure ADB scan; connect/disconnect manage devices at
+// the daemon level (create/remove actors in d.devices — not per-session
+// operations); wait is a pure local sleep handled in handleConn (NOT
+// dispatched to the actor — a daemon-side sleep on the actor's
+// single-threaded loop would block every other request to that device).
+// Binding a session for any of these would be a side effect for what
+// should be a cheap or daemon-level call.
 func isConnectionlessMethod(method string) bool {
 	switch method {
 	case "status", "list_devices", "connect", "disconnect", "wait":
@@ -257,24 +297,20 @@ func isConnectionlessMethod(method string) bool {
 // "connected" is true if at least one managed device actor is currently
 // connected (mirrors the Status() semantics), so a status probe against a
 // daemon that does have live devices no longer falsely reports connected=false.
+//
+// All fields come from a single daemonSnapshot so device_count, devices, and
+// connected_devices are mutually consistent (no TOCTOU between reads).
 func writeDaemonStatus(conn net.Conn, id int64, d *Daemon) {
-	conns := d.snapshotConnected()
-	d.mu.RLock()
-	deviceCount := len(d.devices)
-	serials := make([]string, 0, len(d.devices))
-	for s := range d.devices {
-		serials = append(serials, s)
-	}
-	d.mu.RUnlock()
+	snap := d.snapshotDaemon()
 
 	info := map[string]any{
-		"connected":         len(conns) > 0,
+		"connected":         len(snap.connected) > 0,
 		"pid":               os.Getpid(),
 		"socket_path":       d.socketPath,
 		"started_at":        d.startedAt,
-		"device_count":      deviceCount,
-		"devices":           serials,
-		"connected_devices": conns,
+		"device_count":      len(snap.serials),
+		"devices":           snap.serials,
+		"connected_devices": snap.connected,
 	}
 	writeResponse(conn, newResultResponse(id, info))
 }
@@ -283,15 +319,39 @@ func writeDaemonStatus(conn net.Conn, id int64, d *Daemon) {
 // writes it to the connection. Shared by writeError, writeDaemonStatus, and
 // the inline response paths in handleConn.
 func writeResponse(conn net.Conn, resp *Response) {
+	if resp.streamPayload != nil {
+		writeStreamedResponse(conn, resp)
+		return
+	}
 	respBytes, _ := json.Marshal(resp)
 	respBytes = append(respBytes, '\n')
 	conn.Write(respBytes)
 }
 
+// writeStreamedResponse writes a response carrying a large base64 image
+// field without materializing the base64 string or the marshaled envelope:
+//
+//	{"jsonrpc":"2.0","result":<prefix> <b64 chunks> <suffix>,"id":N}\n
+//
+// Only small framing allocations occur (bufio + base64's internal state).
+// The emitted bytes are identical to the non-streaming path.
+func writeStreamedResponse(conn net.Conn, resp *Response) {
+	bw := bufio.NewWriterSize(conn, 32*1024)
+	bw.WriteString(`{"jsonrpc":"2.0","result":`)
+	bw.Write(resp.streamPrefix)
+	enc := base64.NewEncoder(base64.StdEncoding, bw)
+	enc.Write(resp.streamPayload)
+	enc.Close()
+	bw.Write(resp.streamSuffix)
+	fmt.Fprintf(bw, `,"id":%d}`, resp.ID)
+	bw.WriteByte('\n')
+	bw.Flush()
+}
+
 // Start connects to the device, opens the Unix socket, and serves requests.
 // Blocks until ctx is cancelled or a fatal error occurs.
 func (d *Daemon) Start(ctx context.Context) error {
-	// Set up signal handling
+	// Signal handling
 	ctx, d.cancel = context.WithCancel(ctx)
 	d.ctx = ctx
 	sigCh := make(chan os.Signal, 1)
@@ -300,6 +360,19 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 	// Wire daemon-level OCR service into RPC dispatch.
 	SetOCRService(d.ocrService)
+
+	// Optional pprof endpoint for memory/CPU profiling (debug builds).
+	// Set PHONEFAST_PPROF=localhost:6060 to enable; unset = zero overhead.
+	// Uses http.DefaultServeMux for automatic pprof handler registration.
+	if addr := os.Getenv("PHONEFAST_PPROF"); addr != "" {
+		d.pprofServer = &http.Server{Addr: addr}
+		go func() {
+			phonelog.Default().Write("pprof listening on %s", addr)
+			if err := d.pprofServer.ListenAndServe(); err != http.ErrServerClosed {
+				phonelog.Default().Write("pprof server stopped: %v", err)
+			}
+		}()
+	}
 
 	// OCR is lazy: the engine + PP-OCR models (~60-90MB) load on the first
 	// OCR RPC, not at daemon startup. This keeps the daemon's baseline memory
@@ -326,17 +399,20 @@ func (d *Daemon) Start(ctx context.Context) error {
 		}
 	}()
 
+	// Acquire exclusive daemon lock via PID file flock. This prevents a second
+	// daemon instance (from ANY binary path) from starting while one is already
+	// running. Without this, two daemons race on os.Remove+net.Listen and the
+	// loser silently deletes the winner's socket file.
+	if err := d.acquireLock(); err != nil {
+		d.teardownActor()
+		return err
+	}
+
 	// Remove stale socket file
 	os.Remove(d.socketPath)
 
-	// Initialize the devices map. Actors are created lazily on first request
-	// (see getOrCreateActor), not eagerly at startup — the daemon listens on
-	// one socket for all devices.
-	d.mu.Lock()
-	if d.devices == nil {
-		d.devices = make(map[string]*DeviceActor)
-	}
-	d.mu.Unlock()
+	// devices map is initialized in New(); actors are created lazily on first
+	// request (see getOrCreateActor), not eagerly at startup.
 
 	// Create Unix socket listener
 	listener, err := net.Listen("unix", d.socketPath)
@@ -349,8 +425,10 @@ func (d *Daemon) Start(ctx context.Context) error {
 	// Restrict socket permissions to current user
 	os.Chmod(d.socketPath, 0600)
 
-	// Write PID file
-	if err := WritePID(d.pidFile); err != nil {
+	// Write PID directly to the already-locked PID file (flock'd in acquireLock).
+	// The PID file serves as both lock and PID record, so we can't use WritePID
+	// (which creates a new file via temp+rename, breaking the flock).
+	if err := d.writePIDLocked(); err != nil {
 		listener.Close()
 		d.listener = nil
 		d.teardownActor()
@@ -447,7 +525,13 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	// (ADB order vs sorted-actor order) could make the first call target device
 	// X and subsequent calls device Y.
 	connectionless := isConnectionlessMethod(req.Method)
+	// Accept both "serial" and "device" as the device selector.
+	// The Go Client always sends "device", but raw RPC callers may send
+	// "serial" — both are valid unique device identifiers.
 	deviceSerial := parseStringParam(req.Params, "device")
+	if deviceSerial == "" {
+		deviceSerial = parseStringParam(req.Params, "serial")
+	}
 	if deviceSerial == "" && !connectionless {
 		if devs, err := adb.ListDevices(); err == nil && len(devs) > 0 {
 			deviceSerial = devs[0].Serial
@@ -505,8 +589,44 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			}))
 			return
 		}
-		// Other connectionless methods (list_devices, connect/disconnect)
-		// dispatch fine with a nil session.
+		// "connect" creates a DeviceActor for the specified device (lazy —
+		// getOrCreateActor does the scrcpy handshake). If no device param is
+		// given, it auto-detects the first ADB device.
+		if req.Method == "connect" {
+			if deviceSerial == "" {
+				writeError(conn, req.ID, ErrNoDevice, "no device specified and none connected")
+				return
+			}
+			actor, err := d.getOrCreateActor(deviceSerial)
+			if err != nil {
+				writeError(conn, req.ID, ErrNoDevice, fmt.Sprintf("connect device: %v", err))
+				return
+			}
+			writeResponse(conn, newResultResponse(req.ID, map[string]any{
+				"message": fmt.Sprintf("connected to %s", actor.serial),
+				"serial":  actor.serial,
+			}))
+			return
+		}
+		// "disconnect" stops a single device actor and removes it from the
+		// daemon's device map — shuts down only that device, not the daemon.
+		if req.Method == "disconnect" {
+			if deviceSerial == "" {
+				writeError(conn, req.ID, ErrNoDevice, "no device specified")
+				return
+			}
+			if err := d.removeDevice(deviceSerial); err != nil {
+				writeError(conn, req.ID, ErrNoDevice, err.Error())
+				return
+			}
+			writeResponse(conn, newResultResponse(req.ID, map[string]any{
+				"message": fmt.Sprintf("disconnected %s", deviceSerial),
+				"serial":  deviceSerial,
+			}))
+			return
+		}
+		// Other connectionless methods (list_devices) dispatch fine with a
+		// nil session.
 		conn.SetWriteDeadline(deadline(ctx, 10))
 		writeResponse(conn, Dispatch(nil, &req))
 		return
@@ -560,6 +680,26 @@ func (d *Daemon) Stop() error {
 	return d.cleanup()
 }
 
+// writePIDLocked writes the current PID into the already-locked PID file.
+// The PID file was opened and flock'd in acquireLock; we write directly to it
+// (no temp+rename, which would break the lock).
+func (d *Daemon) writePIDLocked() error {
+	if d.lockFile == nil {
+		return fmt.Errorf("pid file not locked")
+	}
+	if err := d.lockFile.Truncate(0); err != nil {
+		return fmt.Errorf("truncate pid file: %w", err)
+	}
+	if _, err := d.lockFile.Seek(0, 0); err != nil {
+		return fmt.Errorf("seek pid file: %w", err)
+	}
+	content := fmt.Sprintf("%d\n", os.Getpid())
+	if _, err := d.lockFile.WriteString(content); err != nil {
+		return fmt.Errorf("write pid: %w", err)
+	}
+	return nil
+}
+
 // teardownActor cancels the context, waits for the actor goroutine to exit
 // (closing its session), releases the actor's scid back to the allocator, and
 // clears the devices map. Used on Start() failure paths so a half-initialized
@@ -569,11 +709,15 @@ func (d *Daemon) teardownActor() {
 		d.cancel()
 	}
 	d.wg.Wait()
+	d.releaseLock()
 	d.mu.Lock()
 	for _, a := range d.devices {
 		d.scidAlloc.Release(a.scid)
 	}
-	d.devices = nil
+	// Clear the map (don't set to nil — New() guarantees non-nil).
+	for k := range d.devices {
+		delete(d.devices, k)
+	}
 	d.mu.Unlock()
 }
 
@@ -593,6 +737,17 @@ func (d *Daemon) cleanup() error {
 	// Close daemon-level OCR service (releases engine models). ocrService is
 	// always set by New(), so no nil guard needed.
 	d.ocrService.Close()
+
+	// Release daemon lock (flock is released when the file is closed).
+	d.releaseLock()
+
+	// Shut down pprof server if enabled.
+	if d.pprofServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		d.pprofServer.Shutdown(ctx)
+		cancel()
+		d.pprofServer = nil
+	}
 
 	// Remove socket and PID files (both current serial-specific and legacy UID-only)
 	os.Remove(d.socketPath)

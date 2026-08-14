@@ -65,8 +65,8 @@ jobs:
           tar -xzf /tmp/ort.tgz -C /tmp
           sudo cp /tmp/onnxruntime-linux-x64-${ORT}/lib/libonnxruntime.so* /usr/local/lib/
           sudo ldconfig
-          # Also stage for embedding in the -full build.
-          cp /tmp/onnxruntime-linux-x64-${ORT}/lib/libonnxruntime.so assets/ocr/libonnxruntime-linux-amd64.so
+          # Also stage for embedding in the -full build (ocr/assets/lib_linux_amd64.go).
+          cp /tmp/onnxruntime-linux-x64-${ORT}/lib/libonnxruntime.so ocr/assets/libonnxruntime-linux-amd64.so
           echo "[✓] libonnxruntime ${ORT} installed"
 
       # ── Plain build (no ocr_embed tag, loads system lib at runtime) ──
@@ -155,7 +155,7 @@ jobs:
       - name: Download OCR models
         run: bash scripts/download-ocr-models.sh --models
 
-      # The ONNX Runtime shared library for darwin/arm64; staged in assets/ocr/
+      # The ONNX Runtime shared library for darwin/arm64; staged in ocr/assets/
       # so the `ocr_embed` build tag can embed it (lib_darwin_arm64.go).
       - name: Download OCR runtime library
         run: bash scripts/download-ocr-models.sh --lib --target darwin/arm64

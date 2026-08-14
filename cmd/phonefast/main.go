@@ -40,8 +40,13 @@ import (
 	"github.com/gezihua123/phonefast/internal/daemon"
 	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/internal/mcp"
-	pkgocr "github.com/gezihua123/phonefast/pkg/ocr"
+	pkgocr "github.com/gezihua123/phonefast/ocr"
 	"github.com/gezihua123/phonefast/internal/session"
+	// Register OCR backends into the engine registry via init().
+	_ "github.com/gezihua123/phonefast/ocr/onnx"
+	_ "github.com/gezihua123/phonefast/ocr/tesseract"
+	_ "github.com/gezihua123/phonefast/ocr/apple"
+	// _ "github.com/gezihua123/phonefast/ocr/ncnn" // opt-in via -tags ncnn
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -109,7 +114,7 @@ func main() {
 	args := os.Args[startIdx+1:]
 
 	// Auto-start daemon if needed (before dispatching the command)
-	if useDaemon && cmd != "daemon" && cmd != "serve" && cmd != "devices" && cmd != "daemon_worker" {
+	if useDaemon && cmd != "daemon" && cmd != "serve" && cmd != "devices" && cmd != "daemon_worker" && cmd != "help" && cmd != "status" {
 		// Resolve serial if not explicitly set
 		if daemonSerial == "" {
 			daemonSerial = resolveSerial()
@@ -324,10 +329,24 @@ func stopDaemonForce(pidFile string, pid int) {
 // ── Daemon subcommand ──
 
 func daemonCmd(args []string) {
+	// ── Subcommand dispatch (before flag parsing) ──
+	// connect/disconnect are device-level management commands dispatched via RPC
+	// to the running daemon. They must come before the "already running" check
+	// because they require a live daemon to talk to.
+	if len(args) > 0 {
+		switch args[0] {
+		case "connect":
+			connectCmd(args[1:])
+			return
+		case "disconnect":
+			disconnectCmd(args[1:])
+			return
+		}
+	}
+
 	foreground := false
 	doStop := false
 	doStatus := false
-	socketPath := ""
 	ocrVision := true
 	// Precedence: --ocr-engine flag > PHONEFAST_OCR_ENGINE env > "onnx".
 	// Reading the env as the default lets `PHONEFAST_OCR_ENGINE=ncnn phonefast
@@ -347,17 +366,6 @@ func daemonCmd(args []string) {
 			doStop = true
 		case "--status":
 			doStatus = true
-		case "--socket", "-s":
-			if i+1 < len(args) {
-				socketPath = args[i+1]
-				i++
-			}
-		case "--serial":
-			// Accepted for backward compat but ignored: the unified daemon
-			// routes devices per-request, so there is no per-daemon serial.
-			if i+1 < len(args) {
-				i++
-			}
 		case "--ocr-vision":
 			if i+1 < len(args) {
 				ocrVision = args[i+1] != "false"
@@ -371,11 +379,7 @@ func daemonCmd(args []string) {
 		}
 	}
 
-	// Resolve socket/pid paths (serial-independent for the unified daemon).
 	pidFile := daemon.PidFileName()
-	if socketPath == "" {
-		socketPath = daemon.SocketName()
-	}
 
 	if doStop {
 		stopDaemon()
@@ -396,7 +400,7 @@ func daemonCmd(args []string) {
 	if pid, _ := daemon.ReadPID(pidFile); pid > 0 {
 		daemon.RemovePID(pidFile)
 	}
-	os.Remove(socketPath)
+	os.Remove(daemon.SocketName())
 
 	if foreground {
 		if err := os.Setenv("PHONEFAST_OCR_VISION", fmt.Sprintf("%v", ocrVision)); err != nil {
@@ -405,7 +409,7 @@ func daemonCmd(args []string) {
 		if err := os.Setenv("PHONEFAST_OCR_ENGINE", ocrEngine); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: cannot set PHONEFAST_OCR_ENGINE: %v\n", err)
 		}
-		runDaemon(socketPath)
+		runDaemon()
 		return
 	}
 
@@ -416,9 +420,6 @@ func daemonCmd(args []string) {
 	}
 
 	childArgs := []string{"daemon_worker"}
-	if socketPath != "" {
-		childArgs = append(childArgs, "--socket", socketPath)
-	}
 
 	childEnv := os.Environ()
 	childEnv = append(childEnv, fmt.Sprintf("PHONEFAST_OCR_VISION=%v", ocrVision))
@@ -450,25 +451,12 @@ func daemonCmd(args []string) {
 // daemonRunCmd handles the hidden internal subcommand daemon_worker.
 // This is the child process spawned by "phonefast daemon" — not shown in usage.
 func daemonRunCmd(args []string) {
-	socketPath := ""
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--socket", "-s":
-			if i+1 < len(args) {
-				socketPath = args[i+1]
-				i++
-			}
-		}
-	}
-
-	runDaemon(socketPath)
+	runDaemon()
 }
 
-func runDaemon(socketPath string) {
+func runDaemon() {
 	cfg := daemon.Config{
 		Foreground: true,
-		SocketPath: socketPath,
 	}
 	d := daemon.New(cfg)
 
@@ -625,7 +613,7 @@ func tapElementCmd(args []string) {
 			printMessage(result)
 		} else {
 			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUIElements(0)
+				elements, err := sess.GetUISummary(0)
 				if err != nil {
 					elements, err = sess.GetUIElementsFallbackADB(0)
 					if err != nil {
@@ -653,7 +641,7 @@ func tapElementCmd(args []string) {
 			printMessage(result)
 		} else {
 			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUIElements(0)
+				elements, err := sess.GetUISummary(0)
 				if err != nil {
 					elements, err = sess.GetUIElementsFallbackADB(0)
 					if err != nil {
@@ -822,35 +810,50 @@ func screenshotCmd(args []string) {
 			fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
 			os.Exit(1)
 		}
-		writeScreenshot(args, resp.ImageData)
+		writeScreenshot(args, resp.ImageData, resp.MimeType)
 	} else {
 		withSession(func(sess *session.Session) error {
 			pngData, _, _, err := sess.Screenshot()
 			if err != nil {
 				return err
 			}
-			writeScreenshot(args, base64.StdEncoding.EncodeToString(pngData))
+			writeScreenshot(args, base64.StdEncoding.EncodeToString(pngData), "image/png")
 			return nil
 		})
 	}
 }
 
-func writeScreenshot(args []string, b64 string) {
-	pngData, err := base64.StdEncoding.DecodeString(b64)
+// writeScreenshot writes decoded screenshot bytes to disk. The output path
+// comes from args[0] when given, otherwise a timestamped default is generated
+// whose extension matches the mime_type (JPEG→.jpg, PNG→.png) so the file is
+// always consistent with its actual encoded format.
+func writeScreenshot(args []string, b64, mimeType string) {
+	imgData, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding screenshot: %v\n", err)
 		os.Exit(1)
 	}
+	ext := extFromMimeType(mimeType)
+	var outPath string
 	if len(args) > 0 {
-		outPath := args[0]
-		if err := os.WriteFile(outPath, pngData, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Printf("Screenshot saved to %s\n", outPath)
+		outPath = args[0]
 	} else {
-		// Output as data URI
-		fmt.Printf("data:image/png;base64,%s\n", b64)
+		outPath = fmt.Sprintf("screenshot_%s.%s", time.Now().Format("20060102_150405"), ext)
+	}
+	if err := os.WriteFile(outPath, imgData, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Screenshot saved to %s\n", outPath)
+}
+
+// extFromMimeType maps a MIME type to a file extension, defaulting to png.
+func extFromMimeType(mimeType string) string {
+	switch mimeType {
+	case "image/jpeg", "image/jpg":
+		return "jpg"
+	default:
+		return "png"
 	}
 }
 
@@ -870,22 +873,15 @@ func uiCmd(args []string) {
 	} else {
 		withSession(func(sess *session.Session) error {
 			collectMax := maxShow
-			if collectMax < 0 || collectMax > 500 { collectMax = 0 }
-			var elements []protocol.UIElement
-			var err error
-			if isSummary {
-				elements, err = sess.GetUISummary(collectMax)
-			} else {
-				elements, err = sess.GetUIElements(collectMax)
-			}
+			if collectMax < 0 || collectMax > protocol.DefMaxElements { collectMax = 0 }
+			elements, err := sess.GetUISummary(collectMax)
 			if err != nil {
 				elements, err = sess.GetUIElementsFallbackADB(collectMax)
 				if err != nil {
 					return err
 				}
 			}
-			// Format elements (mirrored from daemon/rpc.go)
-			fmt.Println(formatElements(elements, maxShow, isSummary))
+			fmt.Println(format.ElementsForLLM(elements, maxShow, isSummary))
 			return nil
 		})
 	}
@@ -893,6 +889,9 @@ func uiCmd(args []string) {
 
 func observeCmd(args []string) {
 	maxShow, isSummary, formatType := parseUIShowArgs(args, 100)
+	if formatType == "" {
+		formatType = "flatref"
+	}
 	if useDaemon {
 		result := daemonCall("observe", map[string]any{
 			"max_elements": maxShow,
@@ -909,13 +908,73 @@ func observeCmd(args []string) {
 	} else {
 		withSession(func(sess *session.Session) error {
 			collectMax := maxShow
-			if collectMax < 0 || collectMax > 500 { collectMax = 0 }
+			if collectMax < 0 || collectMax > protocol.DefMaxElements {
+				collectMax = 0
+			}
+
+			// Hierarchical formats: screenshot + GetUIFull concurrently.
+			if f := format.ByName(formatType); f != nil {
+				type screenRes struct {
+					png []byte
+					err error
+				}
+				type uiRes struct {
+					elements []protocol.UIFullElement
+					err      error
+				}
+				scCh := make(chan screenRes, 1)
+				uiCh := make(chan uiRes, 1)
+
+				go func() {
+					png, _, _, e := sess.Screenshot()
+					scCh <- screenRes{png, e}
+				}()
+				go func() {
+					elems, e := sess.GetUIFull(collectMax)
+					uiCh <- uiRes{elems, e}
+				}()
+
+				var sc screenRes
+				select {
+				case sc = <-scCh:
+				case <-time.After(30 * time.Second):
+					return fmt.Errorf("screenshot timed out")
+				}
+
+				var ui uiRes
+				select {
+				case ui = <-uiCh:
+				case <-time.After(30 * time.Second):
+					return fmt.Errorf("get ui elements timed out")
+				}
+
+				if sc.err != nil {
+					return fmt.Errorf("screenshot: %w", sc.err)
+				}
+				if ui.err != nil {
+					return fmt.Errorf("ui: %w", ui.err)
+				}
+
+				// Summary mode: reduce max elements shown.
+				if isSummary && maxShow > 50 {
+					maxShow = 50
+				}
+				if maxShow > 0 && len(ui.elements) > maxShow {
+					ui.elements = ui.elements[:maxShow]
+				}
+
+				fmt.Printf("elements: %d (format=%s)\n", len(ui.elements), formatType)
+				fmt.Println(f.Format(ui.elements))
+				return nil
+			}
+
+			// Legacy flat format.
 			_, elements, err := sess.Observe(collectMax, isSummary)
 			if err != nil {
 				return err
 			}
 			fmt.Printf("elements: %d\n", len(elements))
-			fmt.Println(formatElements(elements, maxShow, isSummary))
+			fmt.Println(format.ElementsForLLM(elements, maxShow, isSummary))
 			return nil
 		})
 	}
@@ -958,17 +1017,24 @@ func waitCmd(args []string) {
 }
 
 func statusCmd() {
-	if daemonSerial == "" {
-		daemonSerial = resolveSerial()
-	}
 	if !useDaemon {
 		showDaemonStatus()
+		return
+	}
+	// In daemon mode, check if the daemon is alive. If not, fall back to
+	// simple status without forcing a daemon start — status is a read-only
+	// probe, not an operation that needs a live session.
+	pidFile := daemon.PidFileName()
+	pid, _ := daemon.ReadPID(pidFile)
+	if pid == 0 || !daemon.IsProcessAlive(pid) {
+		fmt.Println("daemon not running")
 		return
 	}
 	client := daemon.NewClient(daemonSerial)
 	status, err := client.Ping()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		// Daemon process exists but socket not responding — report degraded.
+		fmt.Printf("daemon running (pid %d) but not responding: %v\n", pid, err)
 		os.Exit(1)
 	}
 	data, _ := json.MarshalIndent(status, "", "  ")
@@ -976,13 +1042,35 @@ func statusCmd() {
 }
 
 func connectCmd(args []string) {
-	fmt.Fprintf(os.Stderr, "Use '%s daemon --stop' then '%s daemon' to reconnect (select a device with '-s <serial>' on each command)\n", binName, binName)
-	os.Exit(1)
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: phonefast connect <serial>")
+		fmt.Fprintln(os.Stderr, "       phonefast daemon connect <serial>")
+		os.Exit(1)
+	}
+	serial := args[0]
+	client := daemon.NewClient(serial)
+	_, err := client.Call("connect", map[string]any{"device": serial})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error connecting to %s: %v\n", serial, err)
+		os.Exit(1)
+	}
+	fmt.Printf("Connected to %s\n", serial)
 }
 
 func disconnectCmd(args []string) {
-	fmt.Fprintf(os.Stderr, "Use '%s daemon --stop' to disconnect and stop the daemon\n", binName)
-	os.Exit(1)
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: phonefast disconnect <serial>")
+		fmt.Fprintln(os.Stderr, "       phonefast daemon disconnect <serial>")
+		os.Exit(1)
+	}
+	serial := args[0]
+	client := daemon.NewClient(serial)
+	_, err := client.Call("disconnect", map[string]any{"device": serial})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error disconnecting %s: %v\n", serial, err)
+		os.Exit(1)
+	}
+	fmt.Printf("Disconnected %s\n", serial)
 }
 
 // ── MCP server command (unchanged) ──
@@ -1186,7 +1274,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		b64 := base64.StdEncoding.EncodeToString(png)
 		fmt.Printf(`{"base64":"%s","width":%d,"height":%d,"format":"png"}`+"\n", b64, w, h)
 	case "get_ui_elements":
-		elements, err := sess.GetUIElements(0)
+		elements, err := sess.GetUISummary(0)
 		if err != nil {
 			return err
 		}
@@ -1197,7 +1285,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		if err != nil {
 			return err
 		}
-		elements, err := sess.GetUIElements(0)
+		elements, err := sess.GetUISummary(0)
 		if err != nil {
 			return err
 		}
@@ -1211,7 +1299,7 @@ func dispatchDirect(sess *session.Session, action jsonAction) error {
 		}
 		fmt.Printf("Tapped at (%d, %d)\n", x, y)
 	case "tap_element":
-		elements, err := sess.GetUIElements(0)
+		elements, err := sess.GetUISummary(0)
 		if err != nil {
 			elements, err = sess.GetUIElementsFallbackADB(0)
 			if err != nil {
@@ -1361,58 +1449,6 @@ func devicesCmd() {
 	}
 }
 
-// ── Element formatting (for direct mode ui/observe) ──
-
-func formatElements(elements []protocol.UIElement, maxShow int, isSummary bool) string {
-	if len(elements) == 0 {
-		return "No interactive elements found on screen."
-	}
-	if maxShow < 0 || maxShow > len(elements) {
-		maxShow = len(elements)
-	}
-	var lines []string
-	lines = append(lines, "Interactive elements on screen:")
-	lines = append(lines, strings.Repeat("=", 50))
-	for i, el := range elements {
-		if i >= maxShow {
-			lines = append(lines, fmt.Sprintf("... and %d more elements", len(elements)-maxShow))
-			break
-		}
-		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
-			maxShow++ // don't count this filtered element
-			continue
-		}
-		line := fmt.Sprintf("[%d]", el.Index)
-		if el.Text != "" {
-			line += fmt.Sprintf(` text="%s"`, format.CollapseWS(el.Text))
-		}
-		if el.ContentDesc != "" {
-			line += fmt.Sprintf(` desc="%s"`, format.CollapseWS(el.ContentDesc))
-		}
-		if el.ResourceID != "" && !format.IsObfuscatedID(el.ResourceID) {
-			id := el.ResourceID
-			if idx := strings.LastIndex(id, "/"); idx >= 0 {
-				id = id[idx+1:]
-			}
-			line += fmt.Sprintf(` id="%s"`, id)
-		}
-		if el.ClassName != "" {
-			cn := el.ClassName
-			if idx := strings.LastIndex(cn, "."); idx >= 0 {
-				cn = cn[idx+1:]
-			}
-			line += fmt.Sprintf(" (%s)", cn)
-		}
-		if el.Clickable {
-			line += " [clickable]"
-		}
-		line += fmt.Sprintf(" bounds=[%d,%d][%d,%d]",
-			el.Bounds[0], el.Bounds[1], el.Bounds[2], el.Bounds[3])
-		lines = append(lines, line)
-	}
-	return strings.Join(lines, "\n")
-}
-
 // ── Helpers ──
 
 func parseUIShowArgs(args []string, defaultVal int) (int, bool, string) {
@@ -1480,9 +1516,10 @@ Commands (default: daemon mode, auto-starts daemon, <10ms):
   phonefast key <name|keycode>              Send key event
   phonefast launch <package>                Launch app
   phonefast screenshot [file]               Capture screenshot
-  phonefast ui                              Get UI elements
-  phonefast observe                         Screenshot + UI
+  phonefast ui [--format <fmt>]             Get UI elements
+  phonefast observe [--format <fmt>]        Screenshot + UI
   phonefast wait <ms>                       Wait N ms
+    --format: flatref (default) | jsonl | simplexml | yml | flat (legacy)
 
 Direct mode (no daemon, connects each time, ~2.5s):
   phonefast --foreground tap <x> <y>        Tap at coordinates

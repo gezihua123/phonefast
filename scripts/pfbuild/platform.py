@@ -35,7 +35,7 @@ class Target:
 
     @property
     def embed_name(self) -> str:
-        """The embedded lib filename in assets/ocr/ (libonnxruntime-<goos>-<goarch>.<ext>)."""
+        """The embedded lib filename in ocr/assets/ (libonnxruntime-<goos>-<goarch>.<ext>)."""
         return f"libonnxruntime-{self.goos}-{self.goarch}.{_LIBEXT[self.goos]}"
 
     @property

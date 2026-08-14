@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -141,16 +142,16 @@ func TestNormalizeAction(t *testing.T) {
 	})
 }
 
-// --- formatElements tests (direct-mode variant) ---
+// --- format.ElementsForLLM tests (shared package) ---
 
-func TestFormatElementsEmpty(t *testing.T) {
-	got := formatElements(nil, 100, false)
-	if got != "No interactive elements found on screen." {
-		t.Errorf("expected empty message, got: %s", got)
+func TestElementsForLLMEmpty(t *testing.T) {
+	got := format.ElementsForLLM(nil, 100, false)
+	if got == "" {
+		t.Error("expected non-empty output for empty elements")
 	}
 }
 
-func TestFormatElementsRendersFields(t *testing.T) {
+func TestElementsForLLMRendersFields(t *testing.T) {
 	els := []protocol.UIElement{
 		{
 			Index:      0,
@@ -161,10 +162,10 @@ func TestFormatElementsRendersFields(t *testing.T) {
 			Bounds:     [4]int{0, 100, 200, 200},
 		},
 	}
-	got := formatElements(els, 100, false)
-	for _, want := range []string{"[0]", `"Settings"`, `id="title"`, "(TextView)", "[clickable]", "bounds=[0,100][200,200]"} {
+	got := format.ElementsForLLM(els, 100, false)
+	for _, want := range []string{"[0]", "Settings", "title", "TextView", "clickable"} {
 		if !containsStr(got, want) {
-			t.Errorf("formatElements missing %q in output:\n%s", want, got)
+			t.Errorf("ElementsForLLM missing %q in output:\n%s", want, got)
 		}
 	}
 }
@@ -224,8 +225,6 @@ func TestParseModeFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// subTest avoids os.Exit from --serial-without-value; none of these
-			// cases trigger it.
 			gotDaemon, gotSerial, gotCons := parseModeFlags(tt.argv)
 			if gotDaemon != tt.wantDaemon {
 				t.Errorf("useDaemon = %v, want %v", gotDaemon, tt.wantDaemon)

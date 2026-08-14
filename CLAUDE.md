@@ -27,6 +27,7 @@
 | 文档 | 语言 | 作用 |
 |---|---|---|
 | [docs/CLI.md](docs/CLI.md) | 🇬🇧 | **命令行工具完整使用手册**（英文），含中文版 [docs/CLI_zh.md](docs/CLI_zh.md) |
+| [docs/BUILD.md](docs/BUILD.md) | 🇨🇳 | **构建手册** — Go 主程序（plain/-full/纯Go）、scrcpy-server.jar、OCR 引擎变体的构建命令、产物与依赖；CGO 降级机制、build tag 语义、环境准备 |
 | [docs/DEV.md](docs/DEV.md) | 🇨🇳 | **开发笔记** — LocalSocket 4字节读取限制（Android 14）的排查与修复过程、H.264 截图解码架构设计（astiav CGO + ffmpeg CLI 双路径）、交叉编译踩坑记录（仅中文，内部开发用） |
 | [docs/BENCHMARK.md](docs/BENCHMARK.md) | 🇬🇧 | **Benchmark 历史记录**（英文），含中文版 [docs/BENCHMARK_zh.md](docs/BENCHMARK_zh.md) |
 | [docs/PHONEFAST.md](docs/PHONEFAST.md) | 🇬🇧 | **产品横向对比**（英文），含中文版 [docs/PHONEFAST_zh.md](docs/PHONEFAST_zh.md) |
@@ -103,6 +104,8 @@ bash scripts/build.sh
 产物落于 `dist/dev/`，编译错误或链接失败须阻断合并。
 
 > **说明**：Step 1 快速验证 5 平台纯 Go 语法/类型/导入无差异（跳过 CGO）。Step 2 验证当前平台完整 CGO 编译（含 astiav + FFmpeg 链接）。CI 中的完整 CGO 交叉编译（各平台原生 FFmpeg 链接）由 `bash scripts/build.sh --all` 执行。
+>
+> 各构建版本的命令、产物、build tag、CGO 降级机制等完整说明见 [docs/BUILD.md](docs/BUILD.md)。
 
 **Step 3 — 测试**（跑全仓库单测，含 CGO 包）：
 
@@ -110,7 +113,7 @@ bash scripts/build.sh
 bash scripts/test.sh
 ```
 
-> **为何用 wrapper 而非裸 `go test`**：裸 `go test ./...` 默认用系统 FFmpeg（macOS homebrew 8.0），该版本移除了 `AVFMT_FLAG_SHORTEST` 宏，而 go-astiav v0.35.0 仍引用它，导致 `pkg/avcodec` → `internal/session` → `internal/daemon` → `internal/mcp` → `cmd/phonefast` 链式构建失败。`test.sh` 自动设 `PKG_CONFIG_PATH` 指向 `build/cross-ffmpeg/` 自编译 FFmpeg 7.x（与 `build.sh` 同源），让测试环境与生产构建一致。自编译 FFmpeg 不存在时自动降级 `CGO_ENABLED=0`（跳过 avcodec CGO 测试）。支持参数转发：`bash scripts/test.sh ./pkg/h264/ -race`。
+> **为何用 wrapper 而非裸 `go test`**：裸 `go test ./...` 默认用系统 FFmpeg，其 ABI 可能与 `build.sh` 链接的版本不同。`test.sh` 自动设 `PKG_CONFIG_PATH` 指向 `build/cross-ffmpeg/` 自编译 FFmpeg 8.0（与 `build.sh` 同源），让测试环境与生产构建一致。自编译 FFmpeg 不存在时自动降级 `CGO_ENABLED=0`（跳过 avcodec CGO 测试）。支持参数转发：`bash scripts/test.sh ./pkg/h264/ -race`。
 
 ### 发布流
 

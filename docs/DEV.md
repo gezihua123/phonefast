@@ -117,6 +117,210 @@ internal/session/
 
 构建时通过 build tag 选择实现：默认 `CGO_ENABLED=1` 走 astiav 主路径；`CGO_ENABLED=0` 走 ffmpeg CLI 降级路径（需系统有 ffmpeg）。
 
+### 二进制体积分析与 FFmpeg 链路排查
+
+> 排查目标：量化 FFmpeg + 截图路径对二进制体积的贡献，寻找瘦身空间。
+
+#### 排查方法学
+
+**1. 对照构建法** —— 逐一关闭组件，量 diff：
+
+```bash
+# 基线: CGO=0, 无 FFmpeg, 无 ORT embed
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/pf-nocgo ./cmd/phonefast/
+
+# +FFmpeg: 开 CGO，自编译 FFmpeg 最小构建
+PKG_CONFIG_PATH=build/cross-ffmpeg/aarch64-darwin/lib/pkgconfig \
+CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /tmp/pf-cgo ./cmd/phonefast/
+
+# +ORT embed: 开 ocr_embed tag
+PKG_CONFIG_PATH=build/cross-ffmpeg/aarch64-darwin/lib/pkgconfig \
+CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -tags ocr_embed -o /tmp/pf-full ./cmd/phonefast/
+```
+
+**2. 段分析法** —— `size` + `otool -l` 看 text/data/bss 分布：
+
+```bash
+size /tmp/pf-nocgo /tmp/pf-cgo /tmp/pf-full
+#   text     data     bss      dec      hex
+#   7.2M     14.8M    33.8M    55.9M    3551267  (nocgo)
+#   7.3M     14.8M    33.8M    56.0M    3578959  (cgo,  +157KB)
+#   7.3M     53.3M    33.8M    94.5M    5a26fd1  (full, +38MB)
+```
+
+**3. 库级拆解法** —— `nm` 查每个 `.a` 文件的符号数：
+
+```bash
+for lib in libavcodec libavdevice libavfilter libavformat libswresample libswscale libavutil; do
+  nm build/cross-ffmpeg/aarch64-darwin/lib/${lib}.a | wc -l
+done
+```
+
+**4. 依赖链路追踪法** —— 从 Go import 反推到 C 库：
+
+```bash
+# 找 go-astiav 的 pkg-config 声明
+grep "#cgo" $(go env GOMODCACHE)/github.com/asticode/go-astiav@v0.40.0/astiav.go
+# → pkg-config: libavcodec libavdevice libavfilter libavformat libswresample libswscale libavutil
+
+# 看实际 .pc 文件的 Requires 级联
+cat build/cross-ffmpeg/aarch64-darwin/lib/pkgconfig/libavcodec.pc
+```
+
+#### FFmpeg 完整引入链路
+
+```
+go.mod
+  └─ github.com/asticode/go-astiav v0.40.0     ← Go→C 绑定库
+       │
+       │  astiav.go:
+       │    //#cgo pkg-config: libavcodec libavdevice libavfilter
+       │    //                  libavformat libswresample libswscale libavutil
+       │    import "C"
+       │
+       ▼  pkg-config (PKG_CONFIG_PATH → build/cross-ffmpeg/<target>/lib/pkgconfig)
+       │
+       │    .pc 文件链: libavcodec → Requires: libavutil
+       │               libswresample → Requires: libavutil
+       │               libavformat → Requires: libavcodec, libswresample
+       │               libavfilter → Requires: libavformat, libswscale
+       │               libavdevice → Requires: libavformat, libavfilter
+       │
+       ▼  静态链接 7 个 .a 文件 (共 4.8MB，自编译 --disable-everything)
+           │
+           ├── libavcodec.a     2.0M  ← 唯一核心依赖 (H.264 decode)
+           ├── libswscale.a     1.1M  ← 使用 (YUV→RGBA 颜色空间转换)
+           ├── libavutil.a      1.0M  ← 使用 (基础工具函数)
+           ├── libavformat.a    0.3M  ← 声明但未使用 (容器解复用)
+           ├── libavfilter.a    0.2M  ← 声明但未使用 (滤镜)
+           ├── libswresample.a  0.1M  ← 声明但未使用 (音频重采样)
+           └── libavdevice.a     9KB  ← 声明但未使用 (设备 I/O)
+```
+
+#### 排查结论：FFmpeg 截图路径对体积的影响
+
+| 组件 | 体积 | 结论 |
+|------|------|------|
+| FFmpeg `.a` 静态库（磁盘） | 4.8MB | 仅 libavcodec+libswscale+libavutil 被使用 |
+| FFmpeg 链接进二进制（实际） | **~157KB** | Go linker DCE 消除了所有未调用代码 |
+| go-astiav CGO trampoline | 115KB (text) + 42KB (data) | 仅生成实际调用的 C 函数桩 |
+| 总计（截图路径全链路） | **~157KB** | 已极致优化，无法再降 |
+
+**原因**：Go linker 的 dead code elimination 对待 CGO 静态库同样生效——只链接 Go 代码实际调用的 C 函数。既然 phonefast 仅需 H.264 IDR 解码（`FindDecoder→SendPacket→ReceiveFrame`）和 YUV→RGBA 转换（`sws_scale`），其余 FFmpeg API（音频处理、容器解复用、滤镜、设备 I/O）的代码不会进入最终二进制。`--disable-everything --enable-decoder=h264` 编译的 FFmpeg `.a` 本来就只有最小代码+空壳，未调用部分 DCE 掉后增量仅 157KB。
+
+> **注意**：go-astiav 声明的 7 个 pkg-config 包并不会导致全部链接。pkg-config 只提供编译/链接参数（-I/-L/-l），实际链接由 Go linker 按需决定。但由于 pkg-config 的级联 `Requires`，如果 `libavformat.pc` 的 `Requires: libavcodec libswresample`，而 libavformat 未实际使用，这些库的符号不会被解析，Linker 自动跳过。在 `--disable-everything` 最小构建下，未使用的库实质是空壳（只有 init/deinit 符号），即使碰巧被链接也只贡献几 KB。
+
+### OCR 变体构建系统（数据驱动变体表）
+
+> 用法（命令、产物、依赖）见 [docs/BUILD.md §1.1 / §3](BUILD.md)。本节记录脚本内部机制：变体如何定义、调用链如何流转、cgo1 为何不降级。
+
+phonefast 有四种 OCR 构建变体（plain / cgo1 / apple / full），区别在 build tag、CGO 开关、是否内嵌 ORT 库、是否仅 macOS。历史上变体逻辑分散在两套入口（主 `build.py` 只认 plain/-full，`ocr/scripts/build.sh` 另用 if-else 管五个变体），加新变体要改两处、易漏。现统一为**单张数据驱动变体表** `scripts/pfbuild/variants.py`，加变体只改一行。
+
+#### 变体表 `variants.py`
+
+```python
+@dataclass(frozen=True)
+class Variant:
+    name: str            # plain / cgo1 / apple / full
+    suffix: str          # 产物后缀: "" / "-cgo1" / "-apple" / "-full"
+    tags: list[str]      # go build -tags: [] / ["NO_OCR_MODELS"] / ["ocr_embed"]
+    cgo: str             # 期望 CGO_ENABLED: "1" / "0"
+    macos_only: bool     # True = 仅 macOS 有意义（apple 引擎需 darwin&&cgo）
+    platform_prefix: bool # True = 产物名带 {goos}-{goarch}（plain/full），False = 不带（cgo1/apple）
+
+VARIANTS = {
+    "plain":  Variant("plain",  "",       [],                cgo="1"),
+    "cgo1":   Variant("cgo1",   "-cgo1",  [],                cgo="1", macos_only=True,  platform_prefix=False),
+    "apple":  Variant("apple", "-apple", ["NO_OCR_MODELS"],  cgo="1", macos_only=True,  platform_prefix=False),
+    "full":   Variant("full",   "-full",  ["ocr_embed"],     cgo="1"),
+}
+```
+
+这是变体的**单一真相来源**。`builder.build_target` 全部从 `Variant` 字段读 `tags`/`cgo`/`suffix`/`macos_only`/`platform_prefix`，无 if-else 分支——这就是"保持拓展"的含义：加新变体只在 `VARIANTS` 加一行，`build_target` 不用改。
+
+#### 调用链
+
+```
+scripts/build.sh（薄封装）
+  └─ python3 scripts/build.py --variant <name> [--all|--macos|...]
+       │  argparse: --variant {plain,cgo1,apple,full}（默认 plain）
+       │            --full / --full-only = --variant full（旧别名，互斥）
+       │  variants.get(name) → Variant
+       ↓
+     builder.build_platforms(filter, variant, ...)
+       │  filter → 解析平台列表（native / all / macos=darwin / linux / windows）
+       ↓ 对每个 target:
+     builder.build_target(target, variant, ...)
+       │  ① macos_only 变体在非 darwin → log skip（不报错）
+       │  ② full 变体 + 非 embeddable（非 darwin/arm64）→ skip
+       │  ③ 产物名: platform_prefix ? phonefast-{goos}-{goarch}{suffix} : phonefast{suffix}
+       │  ④ tags = variant.tags（数据驱动，不再 if-else）
+       │  ⑤ force_cgo = (cgo=="1" && macos_only)  ← cgo1/apple 的关键
+       │  ⑥ ffmpeg.setup_cross_cgo(target, zig, force_cgo) → env（可能降级）
+       │  ⑦ env["CGO_ENABLED"] = env.get("CGO_ENABLED", variant.cgo)
+       │  ⑧ go build -trimpath [-tags ...] -ldflags ... -o <bin>
+       ↓
+     builder.make_archive(target, variant, ...)  （仅 --all/--macos/--linux/--windows）
+```
+
+`build_platforms` 签名从旧的 `build_full: str`（"full"/"full-only" 三态，内部 plain+full 双跑）改为单个 `variant: Variant`——**一次调用构建一个变体**。要多变体就多次运行 `build.py`（或 `for v in plain cgo1 apple full; do build.sh --variant $v; done`）。这是有意的设计：变体单一化让"单次调用一个变体"成为模型，消除 `all` 这类多变体特例。
+
+#### `force_cgo`：cgo1 为何不降级（关键机制）
+
+CGO 降级机制见 [BUILD.md §1.3](BUILD.md)：`ffmpeg.setup_cross_cgo` 在 FFmpeg 静态库缺失（或 zig 缺失交叉编译）时把 `CGO_ENABLED` 降到 0，降级后 H.264 走 ffmpeg CLI、**且 `darwin && cgo` build tag 失效 → Apple Vision 引擎静默丢失**。
+
+plain 变体保持这个降级行为（向后兼容：旧 `build.sh` 在无 FFmpeg 时自动纯 Go）。但对 cgo1/apple 变体，丢失 apple 引擎**正是该变体要解决的问题**——降级使变体名存实亡。因此 `build_target` 对 `macos_only` 变体传 `force_cgo=True`：
+
+```python
+# builder.py
+force_cgo = variant.cgo == "1" and variant.macos_only
+env.update(ffmpeg.setup_cross_cgo(target, root_dir, _ZIG, force_cgo=force_cgo))
+```
+
+```python
+# ffmpeg.py — force_cgo 分支
+if force_cgo:
+    # 不降级：保持 CGO=1，改用系统 FFmpeg（pkg-config libavcodec 等）
+    log.warn("  force_cgo=True: 保持 CGO_ENABLED=1（依赖系统 FFmpeg pkg-config）")
+    return env   # 不设 CGO_ENABLED=0
+# plain 分支：旧降级行为
+env["CGO_ENABLED"] = "0"
+```
+
+即 cgo1/apple 在 `build/cross-ffmpeg/` 缺失时**警告但不降级**，改用系统 FFmpeg（`brew install ffmpeg` 提供的 `libavcodec.62.dylib` 等）链接 astiav。用户显式 `CGO_ENABLED=0` 环境变量仍被尊重（`setup_cross_cgo` 开头 `if os.environ.get("CGO_ENABLED") == "0": return env`，且 `build_target` 的 `env.get(..., variant.cgo)` 落到用户值）。
+
+**验证**（2026-08-06，无 cross-ffmpeg 环境）：
+
+```
+plain:  降级 CGO=0 → phonefast-darwin-arm64 21.5M  astiav 符号 0   Vision 链接 0
+cgo1:   force_cgo  → phonefast-cgo1        21.4M  astiav 符号 72  Vision 链接 1（VNImageRequestHandler）
+```
+
+#### 产物命名取舍
+
+| 变体 | 产物名 | `platform_prefix` | 理由 |
+|---|---|:---:|---|
+| plain | `phonefast-<os>-<arch>` | True | `--all` 多平台归档需唯一名 |
+| full | `phonefast-<os>-<arch>-full` | True | 同上，且需 embeddable 检查 |
+| cgo1 | `phonefast-cgo1` | False | `macos_only` → `--all` 时非 darwin skip，单平台不冲突 |
+| apple | `phonefast-apple` | False | 同上 |
+
+命名不一致是刻意的：plain/full 带 `goos-goarch` 前缀以支持多平台归档（`phonefast-1.0.16-darwin-arm64.tar.gz` / `-linux-amd64.tar.gz` 不冲突）；cgo1/apple 因 `macos_only=True` 在 `--all` 时只产出 darwin 一个，不带前缀也不会冲突，且匹配原 `ocr/scripts/build.sh` 的 `phonefast-cgo1` 习惯。`platform_prefix` 字段把这个决策固化进变体表，`build_target` 和 `make_archive` 都按它拼名。
+
+#### `ocr/scripts/build.sh`：薄封装
+
+旧脚本用自己的 if-else 管变体（CGO/tag/产物名都硬编码）；现改为**1:1 转发**到 `build.py --variant <name>`，消除双轨逻辑：
+
+| 旧参数 | 新调用 | 行为差异 |
+|---|---|---|
+| `default` | `CGO_ENABLED=0 build.py --variant plain` | 保持旧默认：纯 Go 无 apple（plain 默认 CGO=1 含 apple，故 default 显式 CGO=0） |
+| `cgo1` | `build.py --variant cgo1` | 一致 |
+| `apple` | `build.py --variant apple` | 一致 |
+| `full` | `build.py --variant full` | 一致 |
+| ~~`all`~~ | （已删） | build.py 是单变体模型；批量编用 shell 循环 |
+
+旧脚本的 `default`→`CGO=0 plain` 映射是有意的：原 `ocr/scripts/build.sh default` 就是 `CGO_ENABLED=0`（无 apple）。映射后行为不变。若要 plain 含 apple，直接 `bash scripts/build.sh`（plain 默认 CGO=1）。
+
 ### 构建 server jar
 
 ```bash
@@ -570,25 +774,26 @@ ARM64 NEON 优化累积, rec 推理快近一倍:
 `lib_nolib.go`（`!ocr_embed`）RuntimeLib=nil → 运行时 `findSystemLib` 找 `/opt/homebrew/lib/`。
 仅 darwin/arm64 有 embed（其他平台 -full = plain, builder 跳过 + warn）。
 
-#### Python 统一构建工具（2026-07）
+#### 构建与下载工具（2026-07）
 
-build.sh + download-ocr-models.sh + build_local.sh + download-ocr-test-models.sh 全部迁移到 Python,
-shell 保留薄 wrapper（`exec python3 ...`）向后兼容 CI/文档引用:
+构建用 Python（`build.py` + `pfbuild/` 共享模块），OCR 资产下载用 bash（`ocr/scripts/download.sh`）。
+shell 保留薄 wrapper 向后兼容 CI/文档引用:
 
-| Python 脚本 | 职责 | 对应 shell wrapper |
+| 脚本 | 职责 | 对应 shell wrapper |
 |---|---|---|
-| `scripts/build.py` | 构建二进制（plain + -full, 全平台, FFmpeg 环境）| build.sh / build_local.sh |
-| `scripts/download_models.py` | 下载生产 OCR 模型 + ORT 库 | download-ocr-models.sh |
-| `scripts/download_test_models.py` | 下载测试模型变体（v3/v4）| download-ocr-test-models.sh |
+| `scripts/build.py` | 构建二进制（plain/cgo1/apple/full, 全平台, FFmpeg 环境）| build.sh / build_local.sh |
+| `ocr/scripts/download.sh` | 下载生产 OCR 模型 + ORT 库 -> `ocr/assets/`（bash）| download-ocr-models.sh |
+| `ocr/scripts/download_test_models.py` | 下载测试模型变体（v3/v4）-> `ocr/models/` | download-ocr-test-models.sh |
 
 共享模块 `scripts/pfbuild/`:
 - `platform.py` — 平台矩阵（`Target` dataclass, 单一 source of truth; 消除原 `os_arch_to_zig` + `os_arch_to_ffmpeg_target` + `resolve_target` 三处重复）
-- `assets.py` — 资产下载（HF 优先 + pip 回退; 系统优先 + GitHub release 回退; 流式解压仅取 lib 文件）
+- `assets.py` — scrcpy-server.jar 同步（sync_jar/sync_all；OCR 资产下载由 ocr/scripts/download.sh 承担）
 - `ffmpeg.py` — FFmpeg/zig/CGO 交叉编译环境
-- `builder.py` — 构建编排（plain/-full 双产物 + archive）
+- `builder.py` — 构建编排（变体产物 + archive）
+- `variants.py` — OCR 变体表（plain/cgo1/apple/full, 数据驱动）
 - `log.py` — 统一日志
 
-CI/workflows 调用 `bash scripts/download-ocr-models.sh` 仍工作（wrapper 透传）, 零改动。
+CI/workflows 调用 `bash scripts/download-ocr-models.sh` 仍工作（wrapper 转发到 ocr/scripts/download.sh）, 零改动。
 
 #### OCR 实现细节
 
@@ -674,7 +879,7 @@ tfgo 链接完整 TF C 库（非 TFLite API），brew `libtensorflow` 2.21.0 一
 - [x] OCR 引擎基类重构（common.Recognizer 接口 + detect.Detector 共享检测 + engine.BaseEngine 骨架; ncnn 解耦 Vision 硬依赖; ORT Runtime 进程单例; onnx/ncnn 真机+图片验证无回归）
 - [x] OCR 准确率对比套件（tests/ocr-benchmark/accuracy_test.go, onnx vs ncnn 同框文本一致性）
 - [x] ORT 1.27.1 升级（MLAS 优化, rec 快 2× vs 1.23.0）+ ocr_embed build tag 双产物（plain 24MB / -full 42MB 自包含）
-- [x] Python 统一构建工具（build.py + download_models.py + download_test_models.py + pfbuild/ 共享模块; shell 保留薄 wrapper）
+- [x] 构建工具统一（build.py + pfbuild/ 共享模块; OCR 资产下载用 bash ocr/scripts/download.sh; shell 保留薄 wrapper）
 - [x] MNN 引擎评估（C++ shim, 工具链通但 runSession 算子 COMPUTE_SIZE_ERROR → 代码已清理）
 - [x] TFLite 引擎评估（macOS C 库 + onnx2tf 工具链障碍 → 代码已清理）
 - [x] tfgo 引擎评估（运行时 brew libtensorflow 通, onnx2tf 转 PP-OCR rec 失败 → 代码已清理）

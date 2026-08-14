@@ -1,6 +1,6 @@
 # phonefast CLI Manual
 
-> Version: 1.0.11 | License: MIT | Platform: macOS / Linux / Windows
+> Version: 1.0.16 | License: MIT | Platform: macOS / Linux / Windows
 
 phonefast is a high-performance Android device control CLI tool, built with Go and the scrcpy protocol. Designed for high-frequency AI Agent interaction scenarios, it achieves sub-10ms per-command latency and supports a background daemon mode as well as MCP protocol integration.
 
@@ -783,7 +783,7 @@ phonefast daemon --status
 phonefast daemon --stop
 ```
 
-> Device selection is per-command via the top-level `-s`/`--serial` flag (see [Multi-Device Management](#multi-device-management)). The `daemon` subcommand no longer takes `--serial` (accepted for backward compat but ignored) or `--socket` (the unified daemon uses a single fixed socket).
+> Device selection is per-command via the top-level `-s`/`--serial` flag (see [Multi-Device Management](#multi-device-management)). The daemon uses a single fixed socket (`/tmp/phonefast-{uid}.sock`) shared by all devices.
 
 ### Auto-Management
 
