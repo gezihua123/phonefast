@@ -1099,8 +1099,8 @@ func TestDeepNestingStackSafety(t *testing.T) {
 			}
 
 			// All format functions use recursion — must not stack overflow
-			_ = ElementsToJSONL(elements)    // non-recursive, always safe
-			_ = ElementsToFlatRef(elements)  // non-recursive, always safe
+			_ = ElementsToJSONL(elements)   // non-recursive, always safe
+			_ = ElementsToFlatRef(elements) // non-recursive, always safe
 
 			// These use recursion via buildTree + write*Node
 			func() {
@@ -1343,7 +1343,7 @@ func TestBoundsEdgeCases(t *testing.T) {
 	elements := []protocol.UIFullElement{
 		{ID: 0, Parent: -1, Depth: 0, ClassName: "TextView", Bounds: [4]int{0, 0, 1080, 2400}},
 		{ID: 1, Parent: 0, Depth: 1, ClassName: "Button", Bounds: [4]int{100, 200, 300, 400}},
-		{ID: 2, Parent: 1, Depth: 2, ClassName: "View", Bounds: [4]int{0, 0, 1, 1}}, // 1px element
+		{ID: 2, Parent: 1, Depth: 2, ClassName: "View", Bounds: [4]int{0, 0, 1, 1}},  // 1px element
 		{ID: 3, Parent: 0, Depth: 1, ClassName: "Image", Bounds: [4]int{0, 0, 0, 0}}, // zero-area (should be filtered by server, but format must handle)
 	}
 
@@ -1789,12 +1789,12 @@ func TestCompactElementsRemovesEmptyLayoutContainers(t *testing.T) {
 	// Simulates real phone dump: FrameLayout → LinearLayout → ... with empty wrappers
 	elements := []protocol.UIFullElement{
 		{ID: 0, Parent: -1, Depth: 0, ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},
-		{ID: 1, Parent: 0, Depth: 1, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},                            // redundant: empty wrapper
-		{ID: 2, Parent: 1, Depth: 2, ResourceID: "content", ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},    // has resource-id, kept
-		{ID: 3, Parent: 2, Depth: 3, ClassName: "ViewGroup", Bounds: [4]int{0, 80, 1042, 2170}, Enabled: true},                             // redundant: empty ViewGroup
+		{ID: 1, Parent: 0, Depth: 1, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},                       // redundant: empty wrapper
+		{ID: 2, Parent: 1, Depth: 2, ResourceID: "content", ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true}, // has resource-id, kept
+		{ID: 3, Parent: 2, Depth: 3, ClassName: "ViewGroup", Bounds: [4]int{0, 80, 1042, 2170}, Enabled: true},                         // redundant: empty ViewGroup
 		{ID: 4, Parent: 3, Depth: 4, Text: "Samsung", ClassName: "TextView", Bounds: [4]int{0, 272, 200, 646}, Clickable: true, Enabled: true},
 		{ID: 5, Parent: 3, Depth: 4, Text: "Google", ClassName: "TextView", Bounds: [4]int{200, 272, 400, 646}, Clickable: true, Enabled: true},
-		{ID: 6, Parent: 2, Depth: 3, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 227}, Enabled: true},                            // redundant: empty wrapper
+		{ID: 6, Parent: 2, Depth: 3, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 227}, Enabled: true}, // redundant: empty wrapper
 		{ID: 7, Parent: 6, Depth: 4, ResourceID: "app_search_bar_bg", ClassName: "ImageView", Bounds: [4]int{0, 80, 1080, 227}, Enabled: true},
 	}
 
@@ -1846,9 +1846,9 @@ func TestCompactElementsDepthRecalculation(t *testing.T) {
 	// Deep hierarchy with redundant wrappers every other level
 	elements := []protocol.UIFullElement{
 		{ID: 0, Parent: -1, Depth: 0, ResourceID: "root", ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},
-		{ID: 1, Parent: 0, Depth: 1, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},                   // redundant
+		{ID: 1, Parent: 0, Depth: 1, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true}, // redundant
 		{ID: 2, Parent: 1, Depth: 2, ResourceID: "level2", ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},
-		{ID: 3, Parent: 2, Depth: 3, ClassName: "ViewGroup", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},                      // redundant
+		{ID: 3, Parent: 2, Depth: 3, ClassName: "ViewGroup", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true}, // redundant
 		{ID: 4, Parent: 3, Depth: 4, Text: "Deep", ClassName: "TextView", Bounds: [4]int{10, 10, 100, 50}, Enabled: true},
 	}
 	result := CompactElements(elements)
@@ -1922,9 +1922,9 @@ func TestElementsToFlatRefWithCompact(t *testing.T) {
 	// Test full integration: filter + format
 	elements := []protocol.UIFullElement{
 		{ID: 0, Parent: -1, Depth: 0, ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},
-		{ID: 1, Parent: 0, Depth: 1, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},                            // redundant
-		{ID: 2, Parent: 1, Depth: 2, ResourceID: "content", ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},    // kept
-		{ID: 3, Parent: 2, Depth: 3, ClassName: "ViewGroup", Bounds: [4]int{0, 80, 1042, 2170}, Enabled: true},                             // redundant
+		{ID: 1, Parent: 0, Depth: 1, ClassName: "LinearLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true},                       // redundant
+		{ID: 2, Parent: 1, Depth: 2, ResourceID: "content", ClassName: "FrameLayout", Bounds: [4]int{0, 0, 1080, 2400}, Enabled: true}, // kept
+		{ID: 3, Parent: 2, Depth: 3, ClassName: "ViewGroup", Bounds: [4]int{0, 80, 1042, 2170}, Enabled: true},                         // redundant
 		{ID: 4, Parent: 3, Depth: 4, Text: "Samsung", ContentDesc: "Samsung folder", ClassName: "TextView", Bounds: [4]int{0, 272, 200, 646}, Clickable: true, Enabled: true},
 		{ID: 5, Parent: 3, Depth: 4, Text: "Google", ClassName: "TextView", Bounds: [4]int{200, 272, 400, 646}, Clickable: true, Enabled: true},
 	}

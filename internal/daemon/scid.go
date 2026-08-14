@@ -5,27 +5,21 @@ import (
 	"sync"
 
 	phonelog "github.com/gezihua123/phonefast/internal/log"
+	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
-// scrcpy's video port is derived from scid via 27183 + abs(scid*31) % 100.
-// The same formula lives in internal/session/hashScid. Both must stay in sync:
-//   - daemon/scid.go: scidPort(scid) — full port computation
-//   - session/session.go: hashScid(scid) — returns h % 100 (caller adds 27183)
+// scidPort returns the scrcpy video/control TCP port for a scid. The formula
+// is owned by pkg/protocol (protocol.ScidPort) — the single source shared by
+// this allocator and session.Connect, so the allocator's collision-freedom
+// reasoning can never drift from the port a session actually forwards.
+//
 // Because the hash collides
 // (e.g. scid 0 and scid 100 both map to port 27183), two actors must not pick
 // scids whose hashes collide, or their ADB forwards will fight over the same
 // local port. The allocator hands out scids guaranteed to map to distinct
 // ports within this daemon process.
-//
-// scid → port mapping is intentionally mirrored here (not imported) so the
-// daemon package has no dependency cycle and the rule stays in one visible
-// place. If session changes its hash, update both.
 func scidPort(scid int) int {
-	h := scid * 31
-	if h < 0 {
-		h = -h
-	}
-	return 27183 + h%100
+	return protocol.ScidPort(scid)
 }
 
 // defaultScid is the scrcpy default, used for the first device so a single

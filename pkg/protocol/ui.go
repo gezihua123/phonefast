@@ -21,21 +21,27 @@ const UIFullRequest = "full"
 // Kept in sync with UISocketHandler.ABSOLUTE_MAX_ELEMENTS.
 const DefMaxElements = 2000
 
+// DefClientMaxElements is the client-facing default for the max_elements
+// parameter across ALL surfaces (CLI, MCP tools, raw RPC). The daemon
+// applies it when a caller omits the param; the CLI/MCP layers pass it as
+// their default. One constant so the three surfaces can't drift.
+const DefClientMaxElements = 100
+
 // UIElement represents a single UI element on screen.
 // Compatible with phone-mcp UIElement format.
 type UIElement struct {
-	Index       int     `json:"index"`
-	Text        string  `json:"text"`
-	ContentDesc string  `json:"content_desc"`
-	ResourceID  string  `json:"resource_id"`
-	ClassName   string  `json:"class_name"`
-	Bounds      [4]int  `json:"bounds"` // [left, top, right, bottom]
-	Center      [2]int  `json:"center"`
-	Clickable   bool    `json:"clickable"`
-	Enabled     bool    `json:"enabled"`
-	Focused     bool    `json:"focused,omitempty"`
-	Selected    bool    `json:"selected,omitempty"`
-	Visible     *bool   `json:"visible,omitempty"` // nil or true = visible, false = off-screen
+	Index       int    `json:"index"`
+	Text        string `json:"text"`
+	ContentDesc string `json:"content_desc"`
+	ResourceID  string `json:"resource_id"`
+	ClassName   string `json:"class_name"`
+	Bounds      [4]int `json:"bounds"` // [left, top, right, bottom]
+	Center      [2]int `json:"center"`
+	Clickable   bool   `json:"clickable"`
+	Enabled     bool   `json:"enabled"`
+	Focused     bool   `json:"focused,omitempty"`
+	Selected    bool   `json:"selected,omitempty"`
+	Visible     *bool  `json:"visible,omitempty"` // nil or true = visible, false = off-screen
 }
 
 // IsVisible returns true if the element is visible (default when field is absent).
@@ -52,20 +58,20 @@ type UIDumpResponse struct {
 // UIFullElement represents a single UI element with hierarchy metadata.
 // Includes parent ID and depth for building tree-based formats.
 type UIFullElement struct {
-	ID          int     `json:"id"`
-	Parent      int     `json:"parent"`
-	Depth       int     `json:"depth"`
-	Text        string  `json:"text"`
-	ContentDesc string  `json:"content_desc"`
-	ResourceID  string  `json:"resource_id"`
-	ClassName   string  `json:"class_name"`
-	Bounds      [4]int  `json:"bounds"` // [left, top, right, bottom]
-	Center      [2]int  `json:"center"`
-	Clickable   bool    `json:"clickable"`
-	Enabled     bool    `json:"enabled"`
-	Focused     bool    `json:"focused,omitempty"`
-	Selected    bool    `json:"selected,omitempty"`
-	Visible     *bool   `json:"visible,omitempty"` // nil or true = visible, false = off-screen
+	ID          int    `json:"id"`
+	Parent      int    `json:"parent"`
+	Depth       int    `json:"depth"`
+	Text        string `json:"text"`
+	ContentDesc string `json:"content_desc"`
+	ResourceID  string `json:"resource_id"`
+	ClassName   string `json:"class_name"`
+	Bounds      [4]int `json:"bounds"` // [left, top, right, bottom]
+	Center      [2]int `json:"center"`
+	Clickable   bool   `json:"clickable"`
+	Enabled     bool   `json:"enabled"`
+	Focused     bool   `json:"focused,omitempty"`
+	Selected    bool   `json:"selected,omitempty"`
+	Visible     *bool  `json:"visible,omitempty"` // nil or true = visible, false = off-screen
 }
 
 // IsVisible returns true if the element is visible (default when field is absent).

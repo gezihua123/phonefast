@@ -16,7 +16,7 @@
 //
 // Detection reuses the macOS Vision ANE path from internal/ocr/common (same as
 // the onnx engine). Only recognition is swapped to NCNN. NCNN does not batch, so
-// recognition runs one box at a time at a fixed input width (common.RecMaxWidth);
+// recognition runs one box at a time at a fixed input width (320, the v6 rec
 // still ~22% faster end-to-end than onnx on Apple Silicon — see docs/DEV.md.
 package ncnn
 
@@ -28,41 +28,54 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/gezihua123/phonefast/ocr/common"
-	"github.com/gezihua123/phonefast/ocr/detect"
 	"github.com/gezihua123/phonefast/ocr"
 	pkgocr "github.com/gezihua123/phonefast/ocr"
+	"github.com/gezihua123/phonefast/ocr/common"
+	"github.com/gezihua123/phonefast/ocr/detect"
 )
 
-// recNClass is the PP-OCR v3 recognition output class count (CTC blank + 6624 chars).
-const recNClass = 6625
+// recNClass is the PP-OCRv6 recognition output class count (18708 dict chars
+// in the embedded ppocr_keys.txt + 1 CTC blank at index 0 + 1 ASCII space at
+// index 18709 = 18710). Matches the v6 rec ncnn model's final Gemm (8=18710)
+// and the v6 dict used by common.NewCTCDecoder.
+const recNClass = 18710
+
+// ncnnRecMaxWidth is the maximum recognition input width fed to the v6 rec
+// ncnn model. The model (converted via pnnx with inputshape=[1,3,48,320] and
+// inputshape2=[1,3,48,640]) has a dynamic Input blob, so NCNN accepts any
+// width up to this cap. Each crop is resized to H=48 keeping aspect ratio
+// (capped at ncnnRecMaxWidth) and right-padded with zeros to its own width —
+// matching PaddleOCR's per-crop natural-width rec input (PaddleOCR caps at
+// 3200; we cap at 640, the largest width pnnx specialized the model to).
+// Capping at 640 instead of feeding the old fixed 320 avoids horizontally
+// compressing wide text lines, which garbled long rec lines.
+const ncnnRecMaxWidth = 640
 
 // NCNN C API function bindings (resolved at runtime via purego.Dlsym).
 // Each is a Go function variable bound to the corresponding ncnn C symbol.
 var (
+	ncnnNetCreate    func() uintptr                    // ncnn_net_t ncnn_net_create()
+	ncnnNetDestroy   func(net uintptr)                 // void ncnn_net_destroy(ncnn_net_t)
+	ncnnNetSetOpt    func(net, opt uintptr)            // void ncnn_net_set_option(ncnn_net_t, ncnn_option_t)
+	ncnnNetLoadParam func(net uintptr, path *byte) int // int ncnn_net_load_param(ncnn_net_t, const char*)
+	ncnnNetLoadModel func(net uintptr, path *byte) int // int ncnn_net_load_model(ncnn_net_t, const char*)
 
-	ncnnNetCreate   func() uintptr                                          // ncnn_net_t ncnn_net_create()
-	ncnnNetDestroy  func(net uintptr)                                       // void ncnn_net_destroy(ncnn_net_t)
-	ncnnNetSetOpt   func(net, opt uintptr)                                  // void ncnn_net_set_option(ncnn_net_t, ncnn_option_t)
-	ncnnNetLoadParam func(net uintptr, path *byte) int                      // int ncnn_net_load_param(ncnn_net_t, const char*)
-	ncnnNetLoadModel func(net uintptr, path *byte) int                      // int ncnn_net_load_model(ncnn_net_t, const char*)
-
-	ncnnOptCreate     func() uintptr                       // ncnn_option_t ncnn_option_create()
-	ncnnOptDestroy    func(opt uintptr)                    // void ncnn_option_destroy(ncnn_option_t)
-	ncnnOptSetThreads func(opt uintptr, n int32)           // void ncnn_option_set_num_threads(ncnn_option_t, int)
-	ncnnOptSetFP16    func(opt uintptr, enable int32)      // void ncnn_option_set_use_fp16_arithmetic(ncnn_option_t, int)
+	ncnnOptCreate     func() uintptr                  // ncnn_option_t ncnn_option_create()
+	ncnnOptDestroy    func(opt uintptr)               // void ncnn_option_destroy(ncnn_option_t)
+	ncnnOptSetThreads func(opt uintptr, n int32)      // void ncnn_option_set_num_threads(ncnn_option_t, int)
+	ncnnOptSetFP16    func(opt uintptr, enable int32) // void ncnn_option_set_use_fp16_arithmetic(ncnn_option_t, int)
 
 	ncnnMatCreateExt3D func(w, h, c int32, data unsafe.Pointer, alc uintptr) uintptr // ncnn_mat_t ncnn_mat_create_external_3d(...)
-	ncnnMatDestroy     func(mat uintptr)                                               // void ncnn_mat_destroy(ncnn_mat_t)
-	ncnnMatGetW        func(mat uintptr) int32                                         // int ncnn_mat_get_w(ncnn_mat_t)
-	ncnnMatGetH        func(mat uintptr) int32                                         // int ncnn_mat_get_h(ncnn_mat_t)
-	ncnnMatGetData     func(mat uintptr) unsafe.Pointer                                // void* ncnn_mat_get_data(ncnn_mat_t)
+	ncnnMatDestroy     func(mat uintptr)                                             // void ncnn_mat_destroy(ncnn_mat_t)
+	ncnnMatGetW        func(mat uintptr) int32                                       // int ncnn_mat_get_w(ncnn_mat_t)
+	ncnnMatGetH        func(mat uintptr) int32                                       // int ncnn_mat_get_h(ncnn_mat_t)
+	ncnnMatGetData     func(mat uintptr) unsafe.Pointer                              // void* ncnn_mat_get_data(ncnn_mat_t)
 
-	ncnnExtractorCreate  func(net uintptr) uintptr                                     // ncnn_extractor_t ncnn_extractor_create(ncnn_net_t)
-	ncnnExtractorDestroy func(ex uintptr)                                              // void ncnn_extractor_destroy(ncnn_extractor_t)
-	ncnnExtractorSetOpt  func(ex, opt uintptr)                                         // void ncnn_extractor_set_option(ncnn_extractor_t, ncnn_option_t)
-	ncnnExtractorInput   func(ex uintptr, name *byte, mat uintptr) int                 // int ncnn_extractor_input(ncnn_extractor_t, const char*, ncnn_mat_t)
-	ncnnExtractorExtract func(ex uintptr, name *byte, mat *uintptr) int                // int ncnn_extractor_extract(ncnn_extractor_t, const char*, ncnn_mat_t*)
+	ncnnExtractorCreate  func(net uintptr) uintptr                      // ncnn_extractor_t ncnn_extractor_create(ncnn_net_t)
+	ncnnExtractorDestroy func(ex uintptr)                               // void ncnn_extractor_destroy(ncnn_extractor_t)
+	ncnnExtractorSetOpt  func(ex, opt uintptr)                          // void ncnn_extractor_set_option(ncnn_extractor_t, ncnn_option_t)
+	ncnnExtractorInput   func(ex uintptr, name *byte, mat uintptr) int  // int ncnn_extractor_input(ncnn_extractor_t, const char*, ncnn_mat_t)
+	ncnnExtractorExtract func(ex uintptr, name *byte, mat *uintptr) int // int ncnn_extractor_extract(ncnn_extractor_t, const char*, ncnn_mat_t*)
 )
 
 // libLoaded is the runtime-resolved ncnn library handle + readiness flag.
@@ -159,9 +172,9 @@ type NcnnRecognizer struct {
 	net     uintptr // ncnn_net_t
 	opt     uintptr // ncnn_option_t
 	ctc     *common.CTCDecoder
-	scratch []float32 // reused input buffer (RecMaxWidth*3*RecHeight floats)
-	cIn     *byte     // cached "in0" blob name (NUL-terminated)
-	cOut    *byte     // cached "out0" blob name
+	scratch []float32 // reused input buffer (up to ncnnRecMaxWidth*3*RecHeight floats)
+	cIn     *byte     // cached "input" blob name (NUL-terminated)
+	cOut    *byte     // cached "output" blob name
 }
 
 // NewEngine loads the NCNN library (runtime dlopen) and the recognition model
@@ -192,7 +205,7 @@ func NewEngine(useVision bool) (pkgocr.Engine, error) {
 	net := ncnnNetCreate()
 	opt := ncnnOptCreate()
 	ncnnOptSetThreads(opt, 8)
-		ncnnOptSetFP16(opt, 0) // FP32 for accuracy (FP16 phantom tails on fixed-width 320 model)
+	ncnnOptSetFP16(opt, 0) // FP32 for accuracy (FP16 phantom tails on fixed-width 320 model)
 	ncnnNetSetOpt(net, opt)
 
 	cParam := append([]byte(paramPath), 0)
@@ -210,8 +223,11 @@ func NewEngine(useVision bool) (pkgocr.Engine, error) {
 		return nil, fmt.Errorf("%w: ncnn load model failed (%d)", pkgocr.ErrNotAvailable, ret)
 	}
 
-	in := append([]byte("in0"), 0)
-	out := append([]byte("out0"), 0)
+	// Blob names match the PP-OCRv6 medium rec ncnn model's .param: the input
+	// blob is "input" and the final Softmax output blob is "output" (the
+	// qefro/pp-OCRv5-6-ncnn conversion renames pnnx's in0/out0 to input/output).
+	in := append([]byte("input"), 0)
+	out := append([]byte("output"), 0)
 	r := &NcnnRecognizer{
 		net:     net,
 		opt:     opt,
@@ -223,21 +239,23 @@ func NewEngine(useVision bool) (pkgocr.Engine, error) {
 	return &ocr.BaseEngine{Det: det, Rec: r}, nil
 }
 
-// RecognizeBoxes runs NCNN rec on each crop at its natural width (no
-// zero-padding to 320). The pnnx-converted model supports dynamic input
-// width: [1,3,48,W] for any W.
+// RecognizeBoxes runs NCNN rec on each crop at the crop's natural width (H=48
+// keeping aspect ratio, capped at ncnnRecMaxWidth=640), right-padded with
+// zeros to that width. The v6 rec ncnn model has a dynamic Input blob, so each
+// box feeds a [3,48,w] tensor of its own w — no horizontal compression of wide
+// lines. The scratch buffer is grown to the largest per-crop width seen and
+// reused across boxes.
 func (r *NcnnRecognizer) RecognizeBoxes(crops []image.Image) ([]common.BoxText, error) {
 	out := make([]common.BoxText, len(crops))
 	for i, crop := range crops {
-		rw := common.RecResizeWidth(crop, common.RecMaxWidth)
-		// Grow scratch to fit this crop's CHW tensor
-		n := 3 * common.RecHeight * rw
+		w := common.RecResizeWidth(crop, ncnnRecMaxWidth)
+		n := 3 * common.RecHeight * w
 		if cap(r.scratch) < n {
 			r.scratch = make([]float32, n)
 		}
 		r.scratch = r.scratch[:n]
-		common.RecPreprocessFixedInto(crop, rw, r.scratch)
-		text, conf := r.recognizeBox(rw)
+		common.RecPreprocessFixedInto(crop, w, r.scratch)
+		text, conf := r.recognizeBox(w)
 		out[i] = common.BoxText{Text: text, Confidence: conf}
 	}
 	return out, nil
@@ -269,8 +287,9 @@ func (r *NcnnRecognizer) recognizeBox(width int) (string, float32) {
 	}
 	defer ncnnMatDestroy(outMat)
 
-	// Softmax output is always 2-D for this model: [T, 6625] (w=6625, h=T)
-	// where T = ceil(width/8). Read flat data; T follows from the element count.
+	// Softmax output is 2-D: [T, recNClass] (w=recNClass=18710, h=T) where
+	// T = width/8 (the rec backbone downsamples W by 8×). Read flat data; T
+	// follows from the element count (e.g. W=320 → T=40, W=640 → T=80).
 	w := int(ncnnMatGetW(outMat))
 	h := int(ncnnMatGetH(outMat))
 	total := w * h
@@ -280,8 +299,10 @@ func (r *NcnnRecognizer) recognizeBox(width int) (string, float32) {
 	T := total / recNClass
 
 	outData := unsafe.Slice((*float32)(ncnnMatGetData(outMat)), total)
-	// CTC decode reads from outData directly (NCNN-owned, freed by MatDestroy
-	// above after return).
+	// Greedy CTC decoding — faithful to PaddleOCR's CTCLabelDecode and
+	// consistent with the ONNX v6 path (DecodeFlat): argmax per timestep →
+	// drop blank[0] → merge consecutive dups → mean of max-probs. (Beam search
+	// is available via DecodeBeamFlat but PaddleOCR ships greedy.)
 	return r.ctc.DecodeFlat(outData, 0, T, recNClass)
 }
 

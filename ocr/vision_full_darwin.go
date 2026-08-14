@@ -21,7 +21,6 @@ import "C"
 import (
 	"os"
 	"unsafe"
-
 )
 
 // VisionFullOCRAvailable reports whether VNRecognizeTextRequest is available.

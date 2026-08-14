@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	ocrsvc "github.com/gezihua123/phonefast/ocr"
 	_ "github.com/gezihua123/phonefast/ocr/onnx"      // register ONNX backend
 	_ "github.com/gezihua123/phonefast/ocr/tesseract" // register Tesseract backend
-	ocrsvc "github.com/gezihua123/phonefast/ocr"
 )
 
 // engineUnderTest is one benchmark target.

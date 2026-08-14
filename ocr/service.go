@@ -12,7 +12,6 @@ package ocr
 
 import (
 	"sync"
-
 )
 
 // Config holds OCR service settings.
@@ -37,7 +36,7 @@ type Config struct {
 type Service struct {
 	mu      sync.Mutex
 	eng     Engine // lazily initialized, nil until first use
-	initErr error      // cached init error — don't retry if failed once
+	initErr error  // cached init error — don't retry if failed once
 	cfg     Config
 }
 

@@ -157,6 +157,41 @@ func TestReadFrameTruncatedData(t *testing.T) {
 	}
 }
 
+func TestLatestKeyframePTS(t *testing.T) {
+	d := NewDecoder()
+	if got := d.LatestKeyframePTS(); got != 0 {
+		t.Fatalf("LatestKeyframePTS by default = %d, want 0", got)
+	}
+
+	// First keyframe at PTS 100.
+	idr := []byte{0x65}
+	f1 := append(makeFrameHeader(100, false, true, uint32(len(idr))), idr...)
+	if _, err := d.ReadFrame(bytes.NewReader(f1)); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.LatestKeyframePTS(); got != 100 {
+		t.Fatalf("LatestKeyframePTS after first kf = %d, want 100", got)
+	}
+
+	// P-frames (no keyframe flag) must not move the PTS.
+	pf := append(makeFrameHeader(200, false, false, 1), 0x61)
+	if _, err := d.ReadFrame(bytes.NewReader(pf)); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.LatestKeyframePTS(); got != 100 {
+		t.Fatalf("P-frame moved PTS to %d, want 100", got)
+	}
+
+	// Second keyframe at PTS 300 (fresh after RESET_VIDEO) advances it.
+	f2 := append(makeFrameHeader(300, false, true, uint32(len(idr))), idr...)
+	if _, err := d.ReadFrame(bytes.NewReader(f2)); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.LatestKeyframePTS(); got != 300 {
+		t.Fatalf("LatestKeyframePTS after second kf = %d, want 300", got)
+	}
+}
+
 func TestReadFramePTSUnmaskedFromFlags(t *testing.T) {
 	// PTS shares the high uint64 with flags; verify masking keeps low bits.
 	d := NewDecoder()

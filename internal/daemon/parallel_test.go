@@ -6,22 +6,20 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/gezihua123/phonefast/internal/session"
 )
 
 // --- Test helpers ---
 
-// fakeConnect counts invocations and returns a session with the given serial.
+// fakeConnect counts invocations and returns a fake device with the given serial.
 // delay simulates the ~2.5s scrcpy handshake so concurrent callers actually
 // overlap; use a small value (e.g. 5ms) to keep tests fast.
-func fakeConnect(serial string, delay time.Duration, calls *int32) func(string, int) (*session.Session, error) {
-	return func(s string, scid int) (*session.Session, error) {
+func fakeConnect(serial string, delay time.Duration, calls *int32) func(string, int) (Device, error) {
+	return func(s string, scid int) (Device, error) {
 		atomic.AddInt32(calls, 1)
 		if delay > 0 {
 			time.Sleep(delay)
 		}
-		return &session.Session{Serial: serial}, nil
+		return newFakeDevice(serial), nil
 	}
 }
 
@@ -32,10 +30,8 @@ func fakeConnect(serial string, delay time.Duration, calls *int32) func(string, 
 // mutex serializes them; losers find the winner via the re-check).
 func TestParallelSameDeviceSerialized(t *testing.T) {
 	var calls int32
-	restore := withFakeConnect(fakeConnect("dev-A", 10*time.Millisecond, &calls))
-	defer restore()
-
 	d := New(Config{})
+	d.connectFn = fakeConnect("dev-A", 10*time.Millisecond, &calls)
 	d.ctx, d.cancel = testCtx(t)
 
 	const N = 8
@@ -82,14 +78,12 @@ func TestParallelDifferentDevicesConnectInParallel(t *testing.T) {
 	var calls int32
 	// Each connect takes 20ms. If serialized, 4 devices = 80ms. If parallel,
 	// wall clock should be ~20ms + scheduling overhead.
-	restore := withFakeConnect(func(s string, scid int) (*session.Session, error) {
+	d := New(Config{})
+	d.connectFn = func(s string, scid int) (Device, error) {
 		atomic.AddInt32(&calls, 1)
 		time.Sleep(20 * time.Millisecond)
-		return &session.Session{Serial: s}, nil
-	})
-	defer restore()
-
-	d := New(Config{})
+		return newFakeDevice(s), nil
+	}
 	d.ctx, d.cancel = testCtx(t)
 
 	const N = 4
@@ -129,18 +123,16 @@ func TestParallelDifferentDevicesConnectInParallel(t *testing.T) {
 func TestParallelDifferentCallerSerialsSameDevice(t *testing.T) {
 	var calls int32
 	// Both "" and "dev-X" resolve to "dev-X".
-	restore := withFakeConnect(func(s string, scid int) (*session.Session, error) {
+	d := New(Config{})
+	d.connectFn = func(s string, scid int) (Device, error) {
 		atomic.AddInt32(&calls, 1)
 		time.Sleep(5 * time.Millisecond)
 		resolved := s
 		if resolved == "" {
 			resolved = "dev-X" // auto-detect
 		}
-		return &session.Session{Serial: resolved}, nil
-	})
-	defer restore()
-
-	d := New(Config{})
+		return newFakeDevice(resolved), nil
+	}
 	d.ctx, d.cancel = testCtx(t)
 
 	var wg sync.WaitGroup

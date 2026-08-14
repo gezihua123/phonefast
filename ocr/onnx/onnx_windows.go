@@ -18,8 +18,9 @@ import (
 // is disabled and callers fall back to accessibility-only or LLM-vision approaches.
 //
 // To enable Windows OCR in the future:
-//   Option A: PR upstream to replace purego.Dlopen with a platform-aware loader
-//   Option B: Use yalue/onnxruntime_go (CGO) for Windows only while keeping purego on Unix
+//
+//	Option A: PR upstream to replace purego.Dlopen with a platform-aware loader
+//	Option B: Use yalue/onnxruntime_go (CGO) for Windows only while keeping purego on Unix
 func NewEngine(_ bool) (pkgocr.Engine, error) {
 	return nil, fmt.Errorf("%w: ONNX OCR not supported on Windows (purego.Dlopen missing, see docs/DEV.md#待办)", pkgocr.ErrNotAvailable)
 }

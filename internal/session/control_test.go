@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,17 +16,17 @@ import (
 
 // newMockSession creates a Session with a net.Pipe()-backed controlConn.
 // The caller gets the reader end to verify what the Session writes.
-// TapDelay defaults to 50ms (same as production Connect()).
+// TapDelay defaults to defaultTapDelay (same as production Connect()).
 func newMockSession() (s *Session, reader net.Conn) {
 	client, server := net.Pipe()
 	s = &Session{
-		Serial:      "test-device",
+		serial:      "test-device",
 		Scid:        1,
-		DeviceW:     1080,
-		DeviceH:     2400,
-		NativeW:     1080,
-		NativeH:     2400,
-		TapDelay:    10 * time.Millisecond,
+		deviceW:     1080,
+		deviceH:     2400,
+		nativeW:     1080,
+		nativeH:     2400,
+		TapDelay:    defaultTapDelay,
 		controlConn: client,
 	}
 	return s, server
@@ -190,10 +191,10 @@ func TestTapCustomDelay(t *testing.T) {
 }
 
 // TestTapZeroDelayFallsBack verifies that TapDelay=0 falls back to
-// the 50ms default, preventing accidentally-zero tap durations.
+// the defaultTapDelay default, preventing accidentally-zero tap durations.
 func TestTapZeroDelayFallsBack(t *testing.T) {
 	s, reader := newMockSession()
-	s.TapDelay = 0 // zero → should use 50ms default
+	s.TapDelay = 0 // zero → should use defaultTapDelay default
 
 	done := make(chan error, 1)
 	go func() {
@@ -254,7 +255,7 @@ func TestTapAtMultipleCoordinates(t *testing.T) {
 // TestTapNilControlConn ensures Tap returns error when control socket is nil.
 func TestTapNilControlConn(t *testing.T) {
 	s := &Session{
-		Serial:      "test-device",
+		serial:      "test-device",
 		TapDelay:    10 * time.Millisecond,
 		controlConn: nil,
 	}
@@ -338,7 +339,7 @@ func TestPressKeySendsCorrectSequence(t *testing.T) {
 // TestPressKeyNilControlConn ensures PressKey returns error when control socket is nil.
 func TestPressKeyNilControlConn(t *testing.T) {
 	s := &Session{
-		Serial:      "test-device",
+		serial:      "test-device",
 		controlConn: nil,
 	}
 	err := s.PressKey(protocol.KeycodeEnter)
@@ -409,10 +410,10 @@ func TestPressKeyVariousKeycodes(t *testing.T) {
 func TestScaleToDevice(t *testing.T) {
 	// Typical phone: native 1080×2400, scrcpy video 488×1080
 	s := &Session{
-		DeviceW: 488,
-		DeviceH: 1080,
-		NativeW: 1080,
-		NativeH: 2400,
+		deviceW: 488,
+		deviceH: 1080,
+		nativeW: 1080,
+		nativeH: 2400,
 	}
 
 	tests := []struct {
@@ -441,10 +442,10 @@ func TestScaleToDevice(t *testing.T) {
 // video resolution match.
 func TestScaleToDeviceNoOpWhenEqual(t *testing.T) {
 	s := &Session{
-		DeviceW: 1080,
-		DeviceH: 2400,
-		NativeW: 1080,
-		NativeH: 2400,
+		deviceW: 1080,
+		deviceH: 2400,
+		nativeW: 1080,
+		nativeH: 2400,
 	}
 
 	sx, sy := s.ScaleToDevice(540, 1200)
@@ -457,10 +458,10 @@ func TestScaleToDeviceNoOpWhenEqual(t *testing.T) {
 // NativeW/H == DeviceW/H means no scaling needed (same resolution space).
 func TestScaleToDevicePassthroughWhenSameResolution(t *testing.T) {
 	s := &Session{
-		DeviceW: 1080,
-		DeviceH: 2400,
-		NativeW: 1080,
-		NativeH: 2400,
+		deviceW: 1080,
+		deviceH: 2400,
+		nativeW: 1080,
+		nativeH: 2400,
 	}
 
 	sx, sy := s.ScaleToDevice(541, 559)
@@ -560,4 +561,230 @@ func TestRequestKeyframeNilConnNoPanic(t *testing.T) {
 	s := &Session{} // nil controlConn
 	// Must not panic and must not dereference a nil conn.
 	s.requestKeyframe()
+}
+
+// --- Swipe error tests ---
+
+// TestSwipeNilControlConn ensures Swipe returns error when control socket is nil.
+func TestSwipeNilControlConn(t *testing.T) {
+	s := &Session{serial: "test-device"}
+	err := s.Swipe(0, 0, 100, 100, 100)
+	if err == nil {
+		t.Error("expected error for nil controlConn, got nil")
+	}
+}
+
+// TestSwipeMidGestureWriteError verifies Swipe surfaces a write failure on an
+// intermediate ACTION_MOVE event instead of silently swallowing it (a dead
+// control connection must fail the gesture, not report success).
+func TestSwipeMidGestureWriteError(t *testing.T) {
+	s, reader := newMockSession()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Swipe(100, 500, 900, 1500, 100)
+	}()
+
+	// DOWN succeeds, then the peer dies mid-gesture.
+	readTouchMsg(t, reader)
+	reader.Close()
+
+	if err := <-done; err == nil {
+		t.Error("Swipe() returned nil despite a mid-gesture write failure")
+	}
+}
+
+// --- Back tests ---
+
+// TestBackSendsDownUpSequence verifies Back emits ACTION_DOWN (0) then
+// ACTION_UP (1) of TypeBackOrScreenOn — Android triggers back on UP.
+func TestBackSendsDownUpSequence(t *testing.T) {
+	s, reader := newMockSession()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Back()
+	}()
+
+	buf := make([]byte, 2)
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		t.Fatalf("read back down: %v", err)
+	}
+	if buf[0] != protocol.TypeBackOrScreenOn || buf[1] != 0 {
+		t.Errorf("first back msg = %v, want type=%d action=0", buf, protocol.TypeBackOrScreenOn)
+	}
+
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		t.Fatalf("read back up: %v", err)
+	}
+	if buf[0] != protocol.TypeBackOrScreenOn || buf[1] != 1 {
+		t.Errorf("second back msg = %v, want type=%d action=1", buf, protocol.TypeBackOrScreenOn)
+	}
+
+	if err := <-done; err != nil {
+		t.Errorf("Back() returned error: %v", err)
+	}
+}
+
+// TestBackNilControlConn ensures Back returns error when control socket is nil.
+func TestBackNilControlConn(t *testing.T) {
+	s := &Session{serial: "test-device"}
+	if err := s.Back(); err == nil {
+		t.Error("expected error for nil controlConn, got nil")
+	}
+}
+
+// --- Home tests ---
+
+// TestHomeDelegatesToPressKey verifies Home sends the HOME keycode
+// down/up pair through PressKey.
+func TestHomeDelegatesToPressKey(t *testing.T) {
+	s, reader := newMockSession()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Home()
+	}()
+
+	action1, keycode1 := readKeyMsg(t, reader)
+	if action1 != protocol.KeyEventActionDown || keycode1 != protocol.KeycodeHome {
+		t.Errorf("first msg = (%d, %d), want (DOWN, HOME)", action1, keycode1)
+	}
+	action2, keycode2 := readKeyMsg(t, reader)
+	if action2 != protocol.KeyEventActionUp || keycode2 != protocol.KeycodeHome {
+		t.Errorf("second msg = (%d, %d), want (UP, HOME)", action2, keycode2)
+	}
+
+	if err := <-done; err != nil {
+		t.Errorf("Home() returned error: %v", err)
+	}
+}
+
+// TestHomeNilControlConn ensures Home returns error when control socket is nil.
+func TestHomeNilControlConn(t *testing.T) {
+	s := &Session{serial: "test-device"}
+	if err := s.Home(); err == nil {
+		t.Error("expected error for nil controlConn, got nil")
+	}
+}
+
+// --- LaunchApp tests ---
+
+// TestLaunchAppWritesStartApp verifies LaunchApp emits a start-app message
+// with the package name.
+func TestLaunchAppWritesStartApp(t *testing.T) {
+	s, reader := newMockSession()
+	pkg := "com.example.app"
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.LaunchApp(pkg)
+	}()
+
+	buf := make([]byte, 1)
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		t.Fatalf("read type: %v", err)
+	}
+	if buf[0] != protocol.TypeStartApp {
+		t.Fatalf("message type = %d, want %d (start_app)", buf[0], protocol.TypeStartApp)
+	}
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		t.Fatalf("read name length: %v", err)
+	}
+	name := make([]byte, int(buf[0]))
+	if _, err := io.ReadFull(reader, name); err != nil {
+		t.Fatalf("read name: %v", err)
+	}
+	if string(name) != pkg {
+		t.Errorf("start-app name = %q, want %q", string(name), pkg)
+	}
+
+	if err := <-done; err != nil {
+		t.Errorf("LaunchApp() returned error: %v", err)
+	}
+}
+
+// TestLaunchAppNilControlConn ensures LaunchApp returns error when control
+// socket is nil.
+func TestLaunchAppNilControlConn(t *testing.T) {
+	s := &Session{serial: "test-device"}
+	if err := s.LaunchApp("com.example.app"); err == nil {
+		t.Error("expected error for nil controlConn, got nil")
+	}
+}
+
+// --- pfimeGate tests (TypeText state machine) ---
+
+// TestPfimeGateActivatesOnce verifies the state machine's short-circuit: the
+// first ensure runs activation, subsequent calls skip it (the performance
+// contract that avoids an ADB round-trip per TypeText call).
+func TestPfimeGateActivatesOnce(t *testing.T) {
+	var g pfimeGate
+	calls := 0
+	activate := func() error {
+		calls++
+		return nil
+	}
+	if err := g.ensure(activate); err != nil {
+		t.Fatalf("first ensure: %v", err)
+	}
+	if err := g.ensure(activate); err != nil {
+		t.Fatalf("second ensure: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("activate called %d times, want 1 (state machine must short-circuit)", calls)
+	}
+	if !g.active {
+		t.Error("gate not active after successful activation")
+	}
+}
+
+// TestPfimeGateFailurePropagatesAndRetries verifies a failed activation is
+// wrapped with the "pfime set:" prefix, leaves the gate inactive, and a
+// later attempt re-runs activation.
+func TestPfimeGateFailurePropagatesAndRetries(t *testing.T) {
+	var g pfimeGate
+	sentinel := fmt.Errorf("adb boom")
+	err := g.ensure(func() error { return sentinel })
+	if err == nil {
+		t.Fatal("ensure returned nil for failed activation")
+	}
+	if !strings.Contains(err.Error(), "pfime set:") {
+		t.Errorf("ensure error = %v, want 'pfime set:' prefix", err)
+	}
+	if g.active {
+		t.Error("gate marked active after failed activation")
+	}
+
+	calls := 0
+	if err := g.ensure(func() error {
+		calls++
+		return nil
+	}); err != nil {
+		t.Fatalf("ensure after failure: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("activate called %d times after failure, want 1", calls)
+	}
+}
+
+// TestPfimeGateReset verifies reset (used when the original IME is restored
+// on session close) makes the next ensure re-run activation.
+func TestPfimeGateReset(t *testing.T) {
+	var g pfimeGate
+	calls := 0
+	activate := func() error {
+		calls++
+		return nil
+	}
+	if err := g.ensure(activate); err != nil {
+		t.Fatal(err)
+	}
+	g.reset()
+	if err := g.ensure(activate); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Errorf("activate called %d times after reset, want 2", calls)
+	}
 }

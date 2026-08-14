@@ -68,12 +68,13 @@ def build_target(
     log.info(f"构建 {target.goos}/{target.goarch}{variant.suffix} ({variant.name}) ...")
     dist_dir.mkdir(parents=True, exist_ok=True)
 
-    # CGO cross-compile env. cgo1/apple variants (macos_only) must NOT downgrade
-    # to CGO=0 on missing FFmpeg — that would lose the apple engine, the whole
-    # point of the variant. force_cgo makes setup_cross_cgo warn-not-downgrade.
+    # CGO cross-compile env. Variants with force_cgo=True (full, cgo1, apple)
+    # must NOT downgrade to CGO=0 on missing FFmpeg — that would lose the
+    # apple engine or the embedded ORT lib, the whole point of the variant.
+    # force_cgo makes setup_cross_cgo warn-not-downgrade.
     # An explicit CGO_ENABLED=0 from the user/env is still honored (setup_cross_cgo
     # returns early, and env.get falls through to variant.cgo only if unset).
-    force_cgo = variant.cgo == "1" and variant.macos_only
+    force_cgo = variant.cgo == "1" and (variant.macos_only or variant.force_cgo)
     env = dict(os.environ)
     env.update(ffmpeg.setup_cross_cgo(target, root_dir, _ZIG, force_cgo=force_cgo))
 

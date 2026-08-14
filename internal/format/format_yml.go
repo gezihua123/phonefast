@@ -13,13 +13,13 @@ import (
 //
 // Example output:
 //
-//	- id: 0
-//	  class: FrameLayout
-//	  bounds: [0,0][1080,2194]
-//	  children:
-//	    - id: 1
-//	      text: Settings
-//	      clickable: true
+//   - id: 0
+//     class: FrameLayout
+//     bounds: [0,0][1080,2194]
+//     children:
+//   - id: 1
+//     text: Settings
+//     clickable: true
 type ymlFormatter struct{}
 
 func init() {

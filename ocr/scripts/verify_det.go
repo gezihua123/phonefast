@@ -23,7 +23,7 @@ func main() {
 	img, _, _ := image.Decode(f)
 
 	// Build det tensor (same as Detector.Detect does)
-	tensor, rw, rh, shape := common.DetPreprocess(img, 1024)
+	tensor, rw, rh, shape := common.DetPreprocess(img, 960)
 	fmt.Printf("Det tensor: shape=%v resize=%dx%d len=%d\n", shape, rw, rh, len(tensor))
 
 	det, _ := detect.NewDetector(false)

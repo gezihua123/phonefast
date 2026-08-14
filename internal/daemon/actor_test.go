@@ -8,26 +8,18 @@ import (
 	"time"
 
 	"github.com/gezihua123/phonefast/internal/session"
+	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
-// withFakeConnect swaps connectDeviceFn for fn and restores it on return.
-// Tests must never hit real ADB, so the fake either errors or returns a
-// zero-value *session.Session (dead: nil control conn) that has no
-// background goroutines and whose Close() is never invoked by these tests.
-func withFakeConnect(fn func(serial string, scid int) (*session.Session, error)) func() {
-	prev := connectDeviceFn
-	connectDeviceFn = fn
-	return func() { connectDeviceFn = prev }
-}
-
-// newTestActor builds a bare actor with tiny cooldowns for fast tests.
-// session starts nil so reconnect's Close() is a no-op and shutdown never
-// hits ADB.
+// newTestActor builds an actor without a live device: session starts nil so
+// reconnect's Close() is a no-op and shutdown never touches ADB. Tests set
+// a.connectFn to substitute the connect implementation.
 func newTestActor() *DeviceActor {
 	return &DeviceActor{
 		serial:            "test-device",
 		scid:              0x3f,
 		reqCh:             make(chan actorRequest),
+		dispatch:          NewDispatcher(nil),
 		reconnectCooldown: 5 * time.Millisecond,
 		restartBackoff:    2 * time.Millisecond,
 	}
@@ -37,13 +29,11 @@ func newTestActor() *DeviceActor {
 
 func TestTryReconnectThrottles(t *testing.T) {
 	calls := 0
-	restore := withFakeConnect(func(string, int) (*session.Session, error) {
+	a := newTestActor()
+	a.connectFn = func(string, int) (Device, error) {
 		calls++
 		return nil, errors.New("device down")
-	})
-	defer restore()
-
-	a := newTestActor()
+	}
 
 	if a.tryReconnect() {
 		t.Fatal("tryReconnect reported success on failing connect")
@@ -58,13 +48,11 @@ func TestTryReconnectThrottles(t *testing.T) {
 
 func TestTryReconnectExpiresAfterCooldown(t *testing.T) {
 	calls := 0
-	restore := withFakeConnect(func(string, int) (*session.Session, error) {
+	a := newTestActor()
+	a.connectFn = func(string, int) (Device, error) {
 		calls++
 		return nil, errors.New("device down")
-	})
-	defer restore()
-
-	a := newTestActor()
+	}
 
 	a.tryReconnect() // calls == 1
 	// Wait past the tiny cooldown so the next attempt is allowed.
@@ -76,16 +64,14 @@ func TestTryReconnectExpiresAfterCooldown(t *testing.T) {
 }
 
 func TestTryReconnectSuccessReturnsTrue(t *testing.T) {
-	restore := withFakeConnect(func(string, int) (*session.Session, error) {
-		return &session.Session{}, nil // dead-but-non-nil fake
-	})
-	defer restore()
-
 	a := newTestActor()
+	a.connectFn = func(string, int) (Device, error) {
+		return &session.Session{}, nil // dead-but-non-nil fake
+	}
 	if !a.tryReconnect() {
 		t.Fatal("tryReconnect returned false on successful connect")
 	}
-	if a.session == nil {
+	if a.device == nil {
 		t.Fatal("session not set after successful reconnect")
 	}
 }
@@ -94,13 +80,11 @@ func TestTryReconnectSuccessReturnsTrue(t *testing.T) {
 
 func TestHandleRequestDeadSessionTriggersReconnect(t *testing.T) {
 	calls := 0
-	restore := withFakeConnect(func(string, int) (*session.Session, error) {
+	a := newTestActor()
+	a.connectFn = func(string, int) (Device, error) {
 		calls++
 		return nil, errors.New("device down")
-	})
-	defer restore()
-
-	a := newTestActor() // session nil → tap returns ErrNoDevice, session is "dead"
+	} // session nil → tap returns ErrNoDevice, session is "dead"
 
 	replyCh := make(chan *Response, 1)
 	a.handleRequest(actorRequest{req: &Request{Method: "tap", ID: 1, Params: []byte(`{"x":1,"y":2}`)}, replyCh: replyCh})
@@ -116,13 +100,11 @@ func TestHandleRequestDeadSessionTriggersReconnect(t *testing.T) {
 
 func TestHandleRequestThrottlesRepeatedReconnect(t *testing.T) {
 	calls := 0
-	restore := withFakeConnect(func(string, int) (*session.Session, error) {
+	a := newTestActor()
+	a.connectFn = func(string, int) (Device, error) {
 		calls++
 		return nil, errors.New("device down")
-	})
-	defer restore()
-
-	a := newTestActor()
+	}
 
 	// Two rapid taps on a nil session: only the first may reconnect.
 	for i := 0; i < 2; i++ {
@@ -139,7 +121,7 @@ func TestHandleRequestStatusReplyFlow(t *testing.T) {
 	// A zero session is "dead" but status() returns a valid (non-error)
 	// response without touching the control socket, so no reconnect fires.
 	a := newTestActor()
-	a.session = &session.Session{}
+	a.device = &session.Session{}
 
 	replyCh := make(chan *Response, 1)
 	a.handleRequest(actorRequest{req: &Request{Method: "status", ID: 1}, replyCh: replyCh})
@@ -215,5 +197,68 @@ func TestRunRestartsAfterPanic(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("actor did not recover: no reply to post-panic request")
+	}
+}
+
+// TestHealthCheckReconnectsDeadDevice covers the 10s-ticker path: a nil/dead
+// device triggers exactly one reconnect (cooldown throttles the immediate
+// second attempt); a healthy device triggers none.
+func TestHealthCheckReconnectsDeadDevice(t *testing.T) {
+	calls := 0
+	a := newTestActor()
+	a.connectFn = func(string, int) (Device, error) {
+		calls++
+		return newFakeDevice("dev"), nil
+	}
+
+	// nil device → reconnect fires.
+	a.healthCheck()
+	if calls != 1 {
+		t.Fatalf("reconnect calls = %d, want 1", calls)
+	}
+	// The reconnected fake is still "dead" (zero session), but the cooldown
+	// throttles a second attempt made right away.
+	a.healthCheck()
+	if calls != 1 {
+		t.Fatalf("reconnect calls = %d after throttled second check, want 1", calls)
+	}
+
+	// A healthy device triggers no reconnect.
+	healthy := newFakeDevice("dev")
+	healthy.isAliveFn = func() bool { return true }
+	healthyA := newTestActor()
+	healthyA.device = healthy
+	before := calls
+	healthyA.healthCheck()
+	if calls != before {
+		t.Fatalf("healthy device triggered reconnect (calls %d → %d)", before, calls)
+	}
+}
+
+// TestHandleRequestRetryAfterReconnectSuccess covers the successful
+// reconnect-retry path: a nil device fails the first dispatch, reconnect
+// supplies a live fake, and the retried dispatch succeeds.
+func TestHandleRequestRetryAfterReconnectSuccess(t *testing.T) {
+	a := newTestActor()
+	a.device = nil
+	connectCalls := 0
+	a.connectFn = func(string, int) (Device, error) {
+		connectCalls++
+		d := newFakeDevice("dev")
+		d.tapFn = func(x, y int) error { return nil }
+		return d, nil
+	}
+
+	replyCh := make(chan *Response, 1)
+	a.handleRequest(actorRequest{
+		req:     &Request{Method: protocol.MethodTap, ID: 1, Params: []byte(`{"x":1,"y":2}`)},
+		replyCh: replyCh,
+	})
+	resp := <-replyCh
+	if resp.Error != nil {
+		t.Fatalf("retried tap returned error: %v", resp.Error.Message)
+	}
+	if connectCalls != 1 {
+		t.Fatalf("connect calls = %d, want 1", connectCalls)
 	}
 }

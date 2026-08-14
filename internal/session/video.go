@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gezihua123/phonefast/pkg/avcodec"
 	phonelog "github.com/gezihua123/phonefast/internal/log"
+	"github.com/gezihua123/phonefast/pkg/avcodec"
 )
 
 // Screenshot captures the current screen by grabbing the latest keyframe
@@ -27,30 +27,52 @@ func (s *Session) Screenshot() ([]byte, int, int, error) {
 // available, falling back to an ffmpeg CLI subprocess. The CGO path is 2-4×
 // faster because it avoids process-spawn overhead (~100-200ms per call).
 func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int, string, error) {
+	if s.screenshotFormatFn != nil { // test seam — see Session fields
+		return s.screenshotFormatFn(format)
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		return nil, 0, 0, "", fmt.Errorf("session closed")
 	}
-	devW, devH := s.DeviceW, s.DeviceH
+	devW, devH := s.deviceW, s.deviceH
 	s.mu.Unlock()
 
 	t0 := time.Now()
 
-	keyframe := s.decoder.LatestKeyframe()
-	if keyframe == nil {
+	// Force a fresh keyframe on every call. The screen state between IDRs
+	// lives in P-frames, which never update latestKeyframe — without the
+	// reset, screenshot keeps returning the last keyframe even after the
+	// screen changed (the observed stale-screenshot bug: identical md5 for
+	// Home vs Settings). RESET_VIDEO makes the encoder emit a new IDR
+	// immediately; PTS monotonicity tells us when it has arrived.
+	//
+	// When the control connection is dead, no reset can ever produce a fresh
+	// keyframe — skip the 3s wait entirely and serve the cached frame (with a
+	// warning) instead of stalling every call.
+	if s.IsControlAvailable() {
+		beforePTS := s.decoder.LatestKeyframePTS()
 		s.requestKeyframe()
+
 		deadline := time.Now().Add(3 * time.Second)
 		for time.Now().Before(deadline) {
-			time.Sleep(50 * time.Millisecond)
-			keyframe = s.decoder.LatestKeyframe()
-			if keyframe != nil {
+			if s.decoder.LatestKeyframePTS() > beforePTS {
 				break
 			}
+			time.Sleep(10 * time.Millisecond)
 		}
-		if keyframe == nil {
-			return nil, 0, 0, "", fmt.Errorf("no keyframe available after 3s")
+		// Degrade gracefully instead of failing: if the reset never produced
+		// a fresh keyframe (control socket died mid-wait), return the last
+		// frame we have and warn — a stale image beats a failed call.
+		if s.decoder.LatestKeyframePTS() <= beforePTS {
+			phonelog.Default().Write("screenshot: WARN no fresh keyframe after reset (PTS %d), using possibly stale frame", beforePTS)
 		}
+	} else {
+		phonelog.Default().Write("screenshot: control socket unavailable, serving cached keyframe")
+	}
+	keyframe := s.decoder.LatestKeyframe()
+	if keyframe == nil {
+		return nil, 0, 0, "", fmt.Errorf("no keyframe available after 3s")
 	}
 
 	imgData, w, h, mime, err := s.decodeKeyframe(keyframe, devW, devH, format)
@@ -65,24 +87,20 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 
 // requestKeyframe sends a RESET_VIDEO message to trigger a new keyframe.
 func (s *Session) requestKeyframe() {
-	// Take the control conn under lock like every other control write.
-	// The Write error is intentionally ignored: a failed keyframe request
-	// just means Screenshot falls back to its 3s timeout.
+	// Take the control conn under lock like every other control write. A
+	// failed write marks the control connection broken so IsControlAvailable()
+	// flips false (the actor then reconnects) and ScreenshotFormat skips its
+	// keyframe wait instead of burning the full 3s on every call.
 	conn := s.lockControlConn()
 	if conn == nil {
 		return
 	}
-	conn.Write([]byte{17})
+	if _, err := conn.Write([]byte{17}); err != nil {
+		s.markControlBroken(err)
+	}
 }
 
 // WaitStable waits until the video stream stabilizes (no significant frame changes).
-func (s *Session) WaitStable(timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	_ = deadline
-	stableDuration := 500 * time.Millisecond
-	time.Sleep(stableDuration)
-	return nil
-}
 
 // keyframeToPNG converts a raw H.264 AnnexB keyframe to a PNG image.
 // Kept for backward compatibility — prefers CGO, falls back to ffmpeg CLI.

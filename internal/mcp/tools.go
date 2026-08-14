@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -13,6 +12,10 @@ import (
 )
 
 // ── Tool registration ──
+//
+// Tool NAMES (mcp.NewTool("...")) are the MCP protocol surface and must stay
+// equal to the corresponding protocol.Method* constant; the RPC method passed
+// to s.rpcCall / simpleAction / simpleMessageAction below uses the constant.
 
 func (s *Server) registerTools() {
 	// list_devices
@@ -35,15 +38,15 @@ func (s *Server) registerTools() {
 	s.mcpServer.AddTool(
 		mcp.NewTool("get_ui_elements",
 			mcp.WithDescription("Get interactive UI elements from the current screen."),
-				mcp.WithNumber("max_elements",
-					mcp.Description("Max number of elements to show (default: 100, -1 for all)."),
-				),
-				mcp.WithString("format",
-					mcp.Description("Output format: 'flat' (default), 'jsonl', 'simplexml', 'flatref', 'yml'."),
-				),
-				mcp.WithBoolean("summary",
-					mcp.Description("If true, filter out layout containers (flat format only)."),
-				),
+			mcp.WithNumber("max_elements",
+				mcp.Description("Max number of elements to show (default: 100, -1 for all)."),
+			),
+			mcp.WithString("format",
+				mcp.Description("Output format: 'flat' (default), 'jsonl', 'simplexml', 'flatref', 'yml'."),
+			),
+			mcp.WithBoolean("summary",
+				mcp.Description("If true, filter out layout containers (flat format only)."),
+			),
 		),
 		s.handleGetUIElements,
 	)
@@ -210,7 +213,7 @@ func (s *Server) handleListDevices(ctx context.Context, req mcp.CallToolRequest)
 	// ADB-visible devices. The daemon reports every device, not just the
 	// bound one (see handleListDevices in rpc.go).
 	var list []map[string]any
-	if err := s.rpcCall("list_devices", nil, &list); err != nil {
+	if err := s.rpcCall(protocol.MethodListDevices, nil, &list); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	data, _ := json.Marshal(list)
@@ -223,7 +226,7 @@ func (s *Server) handleScreenshot(ctx context.Context, req mcp.CallToolRequest) 
 		ImageData string `json:"image_data"`
 		MimeType  string `json:"mime_type"`
 	}
-	if err := s.rpcCall("screenshot", nil, &resp); err != nil {
+	if err := s.rpcCall(protocol.MethodScreenshot, nil, &resp); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	caption := resp.Text
@@ -239,7 +242,7 @@ func (s *Server) handleScreenshot(ctx context.Context, req mcp.CallToolRequest) 
 
 func (s *Server) handleGetUIElements(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	params := map[string]any{
-		"max_elements": getMaxElements(req, 100),
+		"max_elements": getMaxElements(req, protocol.DefClientMaxElements),
 		"summary":      getSummary(req),
 		"format":       getFormat(req),
 	}
@@ -247,7 +250,7 @@ func (s *Server) handleGetUIElements(ctx context.Context, req mcp.CallToolReques
 		Formatted string `json:"formatted"`
 		Count     int    `json:"count"`
 	}
-	if err := s.rpcCall("get_ui_elements", params, &resp); err != nil {
+	if err := s.rpcCall(protocol.MethodGetUIElements, params, &resp); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	if resp.Formatted == "" {
@@ -263,7 +266,7 @@ func (s *Server) handleTap(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	if !xOk || !yOk {
 		return mcp.NewToolResultError("missing required parameters: x and y"), nil
 	}
-	return s.simpleMessageAction("tap",
+	return s.simpleMessageAction(protocol.MethodTap,
 		map[string]any{"x": int(xVal), "y": int(yVal)},
 		fmt.Sprintf("Tapped at (%d, %d)", int(xVal), int(yVal)))
 }
@@ -278,7 +281,7 @@ func (s *Server) handleTapElement(ctx context.Context, req mcp.CallToolRequest) 
 	} else {
 		return mcp.NewToolResultError("specify index or text"), nil
 	}
-	return s.simpleMessageAction("tap_element", params, "Tapped element")
+	return s.simpleMessageAction(protocol.MethodTapElement, params, "Tapped element")
 }
 
 func (s *Server) handleSwipe(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -297,7 +300,7 @@ func (s *Server) handleSwipe(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	if d, ok := args["duration_ms"].(float64); ok {
 		params["duration_ms"] = int(d)
 	}
-	return s.simpleMessageAction("swipe", params,
+	return s.simpleMessageAction(protocol.MethodSwipe, params,
 		fmt.Sprintf("Swiped from (%d, %d) to (%d, %d)", int(sx), int(sy), int(ex), int(ey)))
 }
 
@@ -306,15 +309,15 @@ func (s *Server) handleTypeText(ctx context.Context, req mcp.CallToolRequest) (*
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	return s.simpleMessageAction("type_text", map[string]any{"text": text}, fmt.Sprintf("Typed: %s", text))
+	return s.simpleMessageAction(protocol.MethodTypeText, map[string]any{"text": text}, fmt.Sprintf("Typed: %s", text))
 }
 
 func (s *Server) handleBack(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return s.simpleAction("back", "Back pressed")
+	return s.simpleAction(protocol.MethodBack, "Back pressed")
 }
 
 func (s *Server) handleHome(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return s.simpleAction("home", "Home pressed")
+	return s.simpleAction(protocol.MethodHome, "Home pressed")
 }
 
 func (s *Server) handlePressKey(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -335,8 +338,8 @@ func (s *Server) handlePressKey(ctx context.Context, req mcp.CallToolRequest) (*
 			return mcp.NewToolResultError("key must be a string"), nil
 		}
 		// Resolve the keycode locally so an unknown key name is rejected
-		// before round-tripping to the daemon.
-		kc := protocol.KeycodeFromName(strings.ToLower(strings.TrimSpace(keyName)))
+		// before round-tripping to the daemon (normalization is internal).
+		kc := protocol.KeycodeFromName(keyName)
 		if kc == 0 {
 			return mcp.NewToolResultError(fmt.Sprintf("unknown key name: %q", keyName)), nil
 		}
@@ -345,7 +348,7 @@ func (s *Server) handlePressKey(ctx context.Context, req mcp.CallToolRequest) (*
 	default:
 		return mcp.NewToolResultError("keycode or key is required"), nil
 	}
-	return s.simpleMessageAction("press_key", params, fmt.Sprintf("Key %s pressed", label))
+	return s.simpleMessageAction(protocol.MethodPressKey, params, fmt.Sprintf("Key %s pressed", label))
 }
 
 func (s *Server) handleLaunchApp(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -357,26 +360,25 @@ func (s *Server) handleLaunchApp(ctx context.Context, req mcp.CallToolRequest) (
 	if appName == "" {
 		return mcp.NewToolResultError("app or package is required"), nil
 	}
-	return s.simpleMessageAction("launch_app", map[string]any{"package": appName}, fmt.Sprintf("Launched: %s", appName))
+	return s.simpleMessageAction(protocol.MethodLaunchApp, map[string]any{"package": appName}, fmt.Sprintf("Launched: %s", appName))
 }
 
 func (s *Server) handleWait(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	duration := 1000
+	var duration int
 	args := req.GetArguments()
 	if d, ok := args["duration_ms"].(float64); ok {
 		duration = int(d)
 	}
-	// Local sleep — no device round-trip. Routing through the daemon would run
-	// time.Sleep on the device actor's single-threaded event loop, blocking
-	// every other request to that device (and the 10s health ticker) for the
-	// full duration. wait has no device-side effect, so sleep here instead.
-	time.Sleep(time.Duration(duration) * time.Millisecond)
-	return mcp.NewToolResultText(fmt.Sprintf("Waited %dms", duration)), nil
+	// Local sleep via the shared policy helper (default + cap + message) — no
+	// device round-trip. Routing through the daemon would run the sleep on the
+	// device actor's single-threaded event loop, blocking every other request
+	// to that device (and the 10s health ticker) for the full duration.
+	return mcp.NewToolResultText(protocol.SleepWait(duration)), nil
 }
 
 func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	params := map[string]any{
-		"max_elements": getMaxElements(req, 100),
+		"max_elements": getMaxElements(req, protocol.DefClientMaxElements),
 		"summary":      getSummary(req),
 		"format":       getFormat(req),
 	}
@@ -388,7 +390,7 @@ func (s *Server) handleObserve(ctx context.Context, req mcp.CallToolRequest) (*m
 		Width     int    `json:"width"`
 		Height    int    `json:"height"`
 	}
-	if err := s.rpcCall("observe", params, &resp); err != nil {
+	if err := s.rpcCall(protocol.MethodObserve, params, &resp); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	// Caption is a short summary; resp.Text holds the full element list and is
@@ -423,7 +425,7 @@ func (s *Server) handleOcr(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		Width  int       `json:"image_width"`
 		Height int       `json:"image_height"`
 	}
-	if err := s.rpcCall("ocr", nil, &resp); err != nil {
+	if err := s.rpcCall(protocol.MethodOCR, nil, &resp); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	if resp.Count == 0 {

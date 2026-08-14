@@ -176,6 +176,12 @@ phonefast [--foreground|--daemon] [--serial <SERIAL> | -s <SERIAL>] <command> [a
 | Use case | Batch operations, script automation, AI Agent high-frequency loops | Occasional one-off operations |
 | Self-management | Auto-start, auto-restart, automatic reconnection on disconnect | Stateless |
 
+**Both modes produce identical output** — direct mode dispatches through the same
+handlers as the daemon (in-process), so `screenshot` returns JPEG in both modes, `ui`
+honors `--format` (hierarchical formats) in both, and `run` result structures match.
+`--foreground` never creates a daemon process; only the `daemon`/`serve` commands
+manage or require one.
+
 ### Multi-Device Management
 
 A single daemon process serves all connected devices; each request is routed to the target device via its `device` field. Use `-s` (or `--serial`) to select a device — the flag is per-command, not per-daemon:
@@ -622,13 +628,9 @@ phonefast status
 }
 ```
 
-**Output (Direct mode):**
-```
-daemon running (pid 60977)
-  device:    13709314CF044927 (488x1080)
-  control:   true
-  ui:        true
-```
+**Output:** identical JSON in both modes — `status` is a read-only probe of the
+daemon process (never auto-starts one); `--foreground status` prints the same
+JSON. If no daemon is running it prints `daemon not running`.
 
 ---
 
@@ -789,9 +791,10 @@ phonefast daemon --stop
 
 The daemon features comprehensive self-management:
 
-1. **Auto-start** — When any command is issued and the daemon is not running, it automatically starts in the background
+1. **Auto-start** — When any command is issued and the daemon is not running, it automatically starts in the background. If the daemon fails to start, one-shot commands degrade to direct mode (a one-shot session, ~2.5s per call) instead of failing — the warning points at `/tmp/phonefast-{uid}.log` for the startup error; run `phonefast daemon --foreground` to diagnose. Set `PHONEFAST_NO_DAEMON_FALLBACK=1` to opt out of degradation and fail hard instead (useful for agents/CI that prefer a clear error over ~250× slower calls).
 2. **Auto-recovery** — If the daemon process exists but is unresponsive, it is automatically killed and restarted
-3. **Duplicate prevention** — Multiple calls to `phonefast daemon` will not start duplicate instances (exits with a message if already running)
+3. **Mid-RPC self-heal** — If the daemon crashes *during* a command, the CLI auto-restarts it and retries the request once (the same recovery the MCP server uses). `connect`/`disconnect`/`serve` have no direct-mode fallback, so a failed auto-start fails fast for them rather than degrading.
+4. **Duplicate prevention** — Multiple calls to `phonefast daemon` will not start duplicate instances (exits with a message if already running)
 
 ### Startup Sequence
 
@@ -802,7 +805,7 @@ When the CLI detects that the daemon is not running, it automatically performs t
 ④ Wait for Unix Socket readiness → ⑤ Execute command
 ```
 
-The daemon starts empty (no device connection); the target device connects on the first request that uses it. Startup timeout is approximately 8 seconds.
+The daemon starts empty (no device connection); the target device connects on the first request that uses it. Startup timeout is approximately 8 seconds. If startup fails, a one-shot command falls back to direct mode (~2.5s) with a warning instead of exiting; `connect`/`disconnect`/`serve` instead fail fast, since they have no direct-mode fallback.
 
 ### File Paths
 

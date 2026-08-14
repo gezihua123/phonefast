@@ -16,12 +16,13 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"sort"
 
+	"github.com/gezihua123/phonefast/ocr"
+	pkgocr "github.com/gezihua123/phonefast/ocr"
 	ocrassets "github.com/gezihua123/phonefast/ocr/assets"
 	"github.com/gezihua123/phonefast/ocr/common"
 	"github.com/gezihua123/phonefast/ocr/detect"
-	"github.com/gezihua123/phonefast/ocr"
-	pkgocr "github.com/gezihua123/phonefast/ocr"
 	"github.com/shota3506/onnxruntime-purego/onnxruntime"
 )
 
@@ -94,39 +95,72 @@ func NewEngine(useVision bool) (pkgocr.Engine, error) {
 	return &ocr.BaseEngine{Det: det, Rec: r}, nil
 }
 
-// RecognizeBoxes batches all crops into one rec inference call and returns one
-// BoxText per crop (empty Text allowed; BaseEngine filters).
+// recMaxBatch is PaddleOCR's recognition batch size: PP-OCRv6_medium_rec's TRT
+// dynamic shapes declare batch 1→8, and the pipeline batches ≤8. Chunking to
+// ≤8 bounds the rec output [B,T,nClass] memory (worst case 8×T×18710 floats).
+const recMaxBatch = 8
+
+// RecognizeBoxes runs recognition in ≤8-wide chunks (PaddleOCR's rec batch
+// size). Crops are sorted by width first — matching PaddleOCR's pipeline
+// (pipeline.py:465-470 sorts by aspect ratio before rec) so similar-width crops
+// share a batch and minimize padding. Results are returned in the original crop
+// order (empty Text allowed; BaseEngine filters).
 func (r *OnnxRecognizer) RecognizeBoxes(crops []image.Image) ([]common.BoxText, error) {
-	if len(crops) == 0 {
+	n := len(crops)
+	if n == 0 {
 		return nil, nil
 	}
-	tensorData, batchW := common.RecBatchPreprocessInto(crops, r.recBuf)
-	r.recBuf = tensorData // keep the (possibly grown) backing array for reuse
-	shape := []int64{int64(len(crops)), 3, common.RecHeight, int64(batchW)}
 
-	logits, outShape, err := r.runInference(r.recSess, tensorData, shape)
-	if err != nil {
-		return nil, fmt.Errorf("rec batch inference: %w", err)
+	// Sort by width (stable → deterministic chunk membership) and keep the
+	// permutation to restore original order after decoding.
+	order := make([]int, n)
+	widths := make([]int, n)
+	for i, c := range crops {
+		order[i] = i
+		widths[i] = c.Bounds().Dx()
 	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return widths[order[i]] < widths[order[j]]
+	})
 
-	var B, T, nClass int
-	if len(outShape) == 3 {
-		B = int(outShape[0])
-		T = int(outShape[1])
-		nClass = int(outShape[2])
-	} else {
-		return nil, fmt.Errorf("unexpected rec output shape: %v", outShape)
-	}
-	if B != len(crops) {
-		return nil, fmt.Errorf("batch size mismatch: expected %d, got %d", len(crops), B)
-	}
+	out := make([]common.BoxText, n)
+	for start := 0; start < n; start += recMaxBatch {
+		end := start + recMaxBatch
+		if end > n {
+			end = n
+		}
+		chunk := make([]image.Image, end-start)
+		for k := start; k < end; k++ {
+			chunk[k-start] = crops[order[k]]
+		}
 
-	out := make([]common.BoxText, B)
-	for b := 0; b < B; b++ {
-		// Decode each batch item directly from flat logits [B*T*nClass] via
-		// stride math — no per-box [][]float32 allocation.
-		text, conf := r.ctc.DecodeFlat(logits, b, T, nClass)
-		out[b] = common.BoxText{Text: text, Confidence: conf}
+		tensorData, batchW := common.RecBatchPreprocessChunkInto(chunk, r.recBuf)
+		r.recBuf = tensorData // keep the (possibly grown) backing array for reuse
+		shape := []int64{int64(len(chunk)), 3, common.RecHeight, int64(batchW)}
+
+		logits, outShape, err := r.runInference(r.recSess, tensorData, shape)
+		if err != nil {
+			return nil, fmt.Errorf("rec batch inference: %w", err)
+		}
+
+		var T, nClass int
+		if len(outShape) == 3 {
+			// outShape = [B, T, nClass]
+			T = int(outShape[1])
+			nClass = int(outShape[2])
+		} else {
+			return nil, fmt.Errorf("unexpected rec output shape: %v", outShape)
+		}
+
+		for b := 0; b < len(chunk); b++ {
+			// Greedy CTC decoding — faithful to PaddleOCR's CTCLabelDecode
+			// (processors.py:293-314): argmax per timestep → drop blank[0] →
+			// merge consecutive dups → mean of per-position max probs.
+			// DecodeFlat implements exactly that. (Beam search is available via
+			// DecodeBeamFlat but PaddleOCR ships greedy; we match the source.)
+			text, conf := r.ctc.DecodeFlat(logits, b, T, nClass)
+			out[order[start+b]] = common.BoxText{Text: text, Confidence: conf}
+		}
 	}
 	return out, nil
 }

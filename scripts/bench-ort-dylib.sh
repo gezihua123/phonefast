@@ -21,7 +21,7 @@ export CGO_CFLAGS="-I$FF_PREFIX/include"
 export CGO_LDFLAGS="-L$FF_PREFIX/lib"
 export CGO_ENABLED=1 GOOS=darwin GOARCH=arm64
 
-ASSET="$ROOT/assets/ocr/libonnxruntime-darwin-arm64.dylib"
+ASSET="$ROOT/ocr/assets/libonnxruntime-darwin-arm64.dylib"
 BREW="/tmp/ort-brew.dylib"
 RELEASE="/tmp/ort-release.dylib"
 

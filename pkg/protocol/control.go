@@ -7,50 +7,51 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 )
 
 // Control message types (from scrcpy ControlMessage.java).
 const (
-	TypeInjectKeycode       = 0
-	TypeInjectText          = 1
-	TypeInjectTouchEvent    = 2
-	TypeInjectScrollEvent   = 3
-	TypeBackOrScreenOn      = 4
-	TypeExpandNotification  = 5
-	TypeExpandSettings      = 6
-	TypeCollapsePanels      = 7
-	TypeGetClipboard        = 8
-	TypeSetClipboard        = 9
-	TypeSetDisplayPower     = 10
-	TypeRotateDevice        = 11
-	TypeUhidCreate          = 12
-	TypeUhidInput           = 13
-	TypeUhidDestroy         = 14
-	TypeOpenHardKeyboard    = 15
-	TypeStartApp            = 16
-	TypeResetVideo          = 17
+	TypeInjectKeycode      = 0
+	TypeInjectText         = 1
+	TypeInjectTouchEvent   = 2
+	TypeInjectScrollEvent  = 3
+	TypeBackOrScreenOn     = 4
+	TypeExpandNotification = 5
+	TypeExpandSettings     = 6
+	TypeCollapsePanels     = 7
+	TypeGetClipboard       = 8
+	TypeSetClipboard       = 9
+	TypeSetDisplayPower    = 10
+	TypeRotateDevice       = 11
+	TypeUhidCreate         = 12
+	TypeUhidInput          = 13
+	TypeUhidDestroy        = 14
+	TypeOpenHardKeyboard   = 15
+	TypeStartApp           = 16
+	TypeResetVideo         = 17
 )
 
 // Touch action constants.
 const (
-	ActionDown     = 0
-	ActionUp       = 1
-	ActionMove     = 2
-	ActionCancel   = 3
-	ActionOutside  = 4
-	ActionPointerDown = 5
-	ActionPointerUp   = 6
-	ActionHoverMove   = 7
-	ActionScroll      = 8
-	ActionHoverEnter  = 9
-	ActionHoverExit   = 10
+	ActionDown          = 0
+	ActionUp            = 1
+	ActionMove          = 2
+	ActionCancel        = 3
+	ActionOutside       = 4
+	ActionPointerDown   = 5
+	ActionPointerUp     = 6
+	ActionHoverMove     = 7
+	ActionScroll        = 8
+	ActionHoverEnter    = 9
+	ActionHoverExit     = 10
 	ActionButtonPress   = 11
 	ActionButtonRelease = 12
 )
 
 // Position represents a 2D position (matches scrcpy Position).
 type Position struct {
-	X, Y       int32
+	X, Y             int32
 	ScreenW, ScreenH uint16
 }
 
@@ -58,9 +59,9 @@ type Position struct {
 type ControlMessage struct {
 	Type int
 	// for inject_keycode
-	Action   int
-	Keycode  int
-	Repeat   int
+	Action    int
+	Keycode   int
+	Repeat    int
 	MetaState int
 	// for inject_text
 	Text string
@@ -258,6 +259,7 @@ const (
 	KeycodePower      = 26
 	KeycodeMenu       = 82
 	KeycodeSearch     = 84
+	KeycodeEscape     = 111 // hides the soft keyboard on most IMEs
 
 	KeyEventActionDown = 0
 	KeyEventActionUp   = 1
@@ -265,34 +267,39 @@ const (
 
 // KeycodeFromName maps common key names to Android keycodes.
 func KeycodeFromName(name string) int {
+	// Normalization lives here, not at every call site: key names are
+	// case-insensitive and tolerate surrounding whitespace. Numeric strings
+	// benefit too (" 4 " resolves to 4).
+	name = strings.ToLower(strings.TrimSpace(name))
+
 	keyMap := map[string]int{
-		"enter":        KeycodeEnter,
-		"tab":          KeycodeTab,
-		"delete":       KeycodeDelete,
-		"backspace":    KeycodeDelete,
-		"space":        KeycodeSpace,
-		"volume_up":    KeycodeVolumeUp,
-		"volume_down":  KeycodeVolumeDown,
-		"power":        KeycodePower,
-		"menu":         KeycodeMenu,
-		"search":       KeycodeSearch,
-		"back":         KeycodeBack,
-		"home":         KeycodeHome,
-		"escape":       111,
-		"esc":          111,
-		"volume_mute":  164,
-		"camera":       27,
+		"enter":            KeycodeEnter,
+		"tab":              KeycodeTab,
+		"delete":           KeycodeDelete,
+		"backspace":        KeycodeDelete,
+		"space":            KeycodeSpace,
+		"volume_up":        KeycodeVolumeUp,
+		"volume_down":      KeycodeVolumeDown,
+		"power":            KeycodePower,
+		"menu":             KeycodeMenu,
+		"search":           KeycodeSearch,
+		"back":             KeycodeBack,
+		"home":             KeycodeHome,
+		"escape":           KeycodeEscape,
+		"esc":              KeycodeEscape,
+		"volume_mute":      164,
+		"camera":           27,
 		"media_play_pause": 85,
-		"media_stop":   86,
-		"media_next":   87,
-		"media_previous": 88,
-		"dpad_up":      19,
-		"dpad_down":    20,
-		"dpad_left":    21,
-		"dpad_right":   22,
-		"dpad_center":  23,
-		"page_up":      92,
-		"page_down":    93,
+		"media_stop":       86,
+		"media_next":       87,
+		"media_previous":   88,
+		"dpad_up":          19,
+		"dpad_down":        20,
+		"dpad_left":        21,
+		"dpad_right":       22,
+		"dpad_center":      23,
+		"page_up":          92,
+		"page_down":        93,
 	}
 
 	if k, ok := keyMap[name]; ok {

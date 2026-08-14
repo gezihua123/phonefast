@@ -2,6 +2,5 @@
 
 package ocr
 
-
-func VisionFullOCRAvailable() bool                          { return false }
+func VisionFullOCRAvailable() bool                              { return false }
 func VisionFullOCR(imgData []byte, imgW, imgH int) []TextResult { return nil }

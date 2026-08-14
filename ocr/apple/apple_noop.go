@@ -9,6 +9,6 @@ import (
 )
 
 // NewEngine returns ErrNotAvailable on non-macOS or non-CGO builds.
-func NewEngine() (pkgocr.Engine, error) {
+func NewEngine(useVision bool) (pkgocr.Engine, error) {
 	return nil, fmt.Errorf("%w: Apple Vision OCR requires macOS with CGO", pkgocr.ErrNotAvailable)
 }

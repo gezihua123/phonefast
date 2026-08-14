@@ -1,0 +1,5 @@
+# NCNN rec model — downloaded by `bash scripts/setup-ncnn.sh --model` from
+# HuggingFace (qefro/pp-OCRv5-6-ncnn). Not embedded, not committed: ~38MB .bin,
+# reproducible via the setup script. PHONEFAST_NCNN_PARAM/BIN env vars point here.
+rec.ncnn.param
+rec.ncnn.bin

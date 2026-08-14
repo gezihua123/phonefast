@@ -1,23 +1,12 @@
 #!/usr/bin/env bash
 # clean.sh — 清理构建产物与运行时残留
 # Usage:
-#   bash scripts/clean.sh              # 默认 (light): 所有可重新下载/构建的产物
-#   bash scripts/clean.sh --light      # 同上
+#   bash scripts/clean.sh              # 默认 (light) 清理
+#   bash scripts/clean.sh --light      # 安全: 构建产物 + 缓存 + 运行时
 #   bash scripts/clean.sh --deep       # + Go modcache + IDE 目录
 #   bash scripts/clean.sh --purge      # + git clean -Xdf (所有 git-ignored 文件)
-#   bash scripts/clean.sh --runtime    # 追加: 停止 daemon + 清理 /tmp 运行文件 (pid/sock/log/截图)
 #   bash scripts/clean.sh -n           # dry-run, 只预览不删除
 #   bash scripts/clean.sh -f           # 跳过交互确认
-#
-# 清理原则：凡是可以重新下载、重新编译、自动生成的文件，默认全部删除。
-#   - 构建产物 → build.sh / build-server.sh 重建
-#   - FFmpeg 库 → download-ffmpeg.sh 重下载编译
-#   - OCR 模型/运行时 → ocr/scripts/download.sh 重下载
-#   - Go 缓存 → go 自动重建
-#   - Gradle 缓存 → Gradle 自动下载
-#
-# Daemon 停止 + /tmp 运行期文件 (pid/sock/log/截图) 需显式 --runtime，
-# 不在 --light/--deep/--purge 中默认执行，避免误停正在运行的服务。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,7 +15,6 @@ TMPDIR="$(cd /tmp 2>/dev/null && pwd -P)"
 cd "$ROOT"
 
 LEVEL="light"
-RUNTIME=false
 DRY=false
 FORCE=false
 TOTAL_FREED=0  # KB
@@ -38,10 +26,9 @@ clean.sh — 清理 phonefast 构建产物与运行时残留
 Usage:  bash scripts/clean.sh [OPTIONS]
 
 Levels:
-  --light     默认。所有可重新下载/构建的产物 + 缓存 + 测试产物
-  --deep      追加: Go modcache、IDE 目录 (.idea, .vscode)、ocr/vendor
+  --light     默认。安全: 构建产物、缓存、运行时文件
+  --deep      追加: Go modcache、IDE 目录 (.idea, .vscode)
   --purge     追加: git clean -Xdf (所有 git-ignored 文件)
-  --runtime   追加: 停止 daemon + 清理 /tmp 运行期文件 (pid/sock/log/截图)
 
 Options:
   -n, --dry    预览模式，只显示将要删除的内容
@@ -57,7 +44,6 @@ for arg in "$@"; do
         --light) LEVEL="light" ;;
         --deep)  LEVEL="deep" ;;
         --purge) LEVEL="purge" ;;
-        --runtime) RUNTIME=true ;;
         -n|--dry) DRY=true ;;
         -f|--force) FORCE=true ;;
         -h|--help) usage ;;
@@ -105,6 +91,7 @@ _rmpath() {
 
 # _rmglob — 删除匹配 glob 的文件（支持任意 base 目录）
 # Usage: _rmglob "label" "/base/dir" "*.pattern"
+#          _rmglob "label" "."          "path/to/glob*"
 _rmglob() {
     local desc="$1" base="$2" pat="$3"
     local count=0
@@ -138,8 +125,7 @@ _findrm() {
     _rmglob "$desc" "$ROOT" "*/$name"
 }
 
-# ── 1. 停止 daemon (仅 --runtime) ─────────────────────────────────────────────
-if $RUNTIME; then
+# ── 1. 停止 daemon ────────────────────────────────────────────────────────────
 echo ""
 echo "=== Daemon ==="
 
@@ -170,17 +156,19 @@ if ! $DRY; then
         kill "$p" 2>/dev/null && echo "ok" || echo "skip"
     done
 fi
-fi  # RUNTIME
 
-# ── 2. 构建产物 (build.sh 可重建) ────────────────────────────────────────────
+# ── 2. 构建产物 ───────────────────────────────────────────────────────────────
 echo ""
-echo "=== Build artifacts (rebuildable) ==="
+echo "=== Build artifacts ==="
 
 _rmpath "$ROOT/dist"          "dist/"
-_rmpath "$ROOT/build"         "build/ (FFmpeg libs → download-ffmpeg.sh 可重下载)"
+_rmpath "$ROOT/build"         "build/ (FFmpeg libs + source)"
 _rmpath "$ROOT/.build-tmp"    ".build-tmp/"
+_rmpath "$ROOT/android/build" "android/build/"
+_rmpath "$ROOT/android/.gradle" "android/.gradle/"
+_rmpath "$ROOT/ocr/dist"      "ocr/dist/"
 
-# 散落二进制 & 归档包（仅项目根一层）
+# 散落二进制 & 归档包（仅项目根一层，用 bash glob，不递归）
 shopt -s nullglob
 for f in "$ROOT"/phonefast "$ROOT"/phonefast.exe "$ROOT"/phonefast-* \
          "$ROOT"/*.tar.gz "$ROOT"/*.zip; do
@@ -188,40 +176,17 @@ for f in "$ROOT"/phonefast "$ROOT"/phonefast.exe "$ROOT"/phonefast-* \
 done
 shopt -u nullglob
 
-# ── 3. Android JAR (build-server.sh 可重建) ──────────────────────────────────
-echo ""
-echo "=== Android JAR (rebuildable: scripts/build-server.sh) ==="
-
-_rmpath "$ROOT/android/scrcpy-server.jar"
-_rmpath "$ROOT/android/scrcpy-server.version"
-_rmpath "$ROOT/android/build"        "android/build/ (Gradle build cache)"
-_rmpath "$ROOT/android/.gradle"      "android/.gradle/ (Gradle dependency cache)"
+# 构建生成的 assets（源在 android/）
 _rmpath "$ROOT/assets/scrcpy-server.jar"
 _rmpath "$ROOT/assets/scrcpy-server.version"
 
-# ── 4. OCR 模型与运行时 (ocr/scripts/download.sh 可重下载) ──────────────────
-echo ""
-echo "=== OCR models & runtime (re-downloadable: ocr/scripts/download.sh) ==="
-
-# ONNX Runtime 动态库 (*.dylib / *.so / *.dll)
-_rmglob "ORT lib" "$ROOT/ocr/assets" "$ROOT/ocr/assets/libonnxruntime-*"
-
-# PP-OCR 模型文件
-_rmpath "$ROOT/ocr/assets/ppocr-det.onnx"
-_rmpath "$ROOT/ocr/assets/ppocr-rec.onnx"
-
-# OCR 模块构建产物
-_rmpath "$ROOT/ocr/dist"      "ocr/dist/"
-
-# 旧 OCR 模型位置（已迁至 ocr/assets/）
-_rmpath "$ROOT/tests/ocr-models"
-
-# ── 5. 测试产物 ───────────────────────────────────────────────────────────────
+# ── 3. 测试产物 ───────────────────────────────────────────────────────────────
 echo ""
 echo "=== Test artifacts ==="
 
 _rmpath "$ROOT/test_runs"
 _rmpath "$ROOT/capture_output"
+_rmpath "$ROOT/tests/ocr-models"     # 旧 OCR 测试模型（已迁至 ocr/ 模块）
 
 _findrm "*.test"     "*.test binaries"
 _findrm "*.prof"     "*.prof files"
@@ -230,7 +195,7 @@ _findrm "__pycache__" "__pycache__"
 _findrm "*.pyc"      "*.pyc files"
 _findrm "*.egg-info" "*.egg-info"
 
-# ── 6. Go 缓存 ────────────────────────────────────────────────────────────────
+# ── 4. Go 缓存 ────────────────────────────────────────────────────────────────
 echo ""
 echo "=== Go cache ==="
 
@@ -247,8 +212,17 @@ _go_clean() {
 _go_clean "$ROOT"     "root module"
 _go_clean "$ROOT/ocr" "ocr module"
 
-# ── 7. 运行时残留 (/tmp, 仅 --runtime) ─────────────────────────────────────────
-if $RUNTIME; then
+if [[ "$LEVEL" == "deep" || "$LEVEL" == "purge" ]]; then
+    if $DRY; then
+        echo "  would run: go clean -modcache (root + ocr)"
+    else
+        go clean -modcache 2>/dev/null || true
+        (cd "$ROOT/ocr" && go clean -modcache 2>/dev/null) || true
+        echo "  modcache cleaned"
+    fi
+fi
+
+# ── 5. 运行时残留 (/tmp) ──────────────────────────────────────────────────────
 echo ""
 echo "=== Runtime files ==="
 
@@ -286,9 +260,7 @@ for f in "$ROOT"/screenshot_*.jpg "$ROOT"/screenshot_*.png; do
 done
 shopt -u nullglob
 
-fi  # RUNTIME
-
-# ── 8. 编辑器/操作系统垃圾 ────────────────────────────────────────────────────
+# ── 6. 编辑器/操作系统垃圾 ────────────────────────────────────────────────────
 echo ""
 echo "=== OS/Editor cruft ==="
 
@@ -301,29 +273,16 @@ _findrm "*~"      "backup files"
 _findrm "Thumbs.db"
 _findrm "ehthumbs.db"
 
-# ── 9. Deep: modcache + IDE ───────────────────────────────────────────────────
+# ── 7. Deep: IDE 目录 ─────────────────────────────────────────────────────────
 if [[ "$LEVEL" == "deep" || "$LEVEL" == "purge" ]]; then
     echo ""
-    echo "=== Deep clean ==="
-
-    # Go modcache (go mod download 可恢复)
-    if $DRY; then
-        echo "  would run: go clean -modcache"
-    else
-        go clean -modcache 2>/dev/null || true
-        (cd "$ROOT/ocr" && go clean -modcache 2>/dev/null) || true
-        echo "  go clean -modcache: ok"
-    fi
-
-    # OCR vendor (go mod vendor 可恢复)
-    _rmpath "$ROOT/ocr/vendor"
-
-    # IDE 配置目录
+    echo "=== IDE config (deep) ==="
     _rmpath "$ROOT/.idea"
     _rmpath "$ROOT/.vscode"
+    _rmpath "$ROOT/ocr/vendor"
 fi
 
-# ── 10. Purge: git clean ──────────────────────────────────────────────────────
+# ── 8. Purge: git clean ───────────────────────────────────────────────────────
 if [[ "$LEVEL" == "purge" ]]; then
     echo ""
     echo "=== git clean -X (purge) ==="

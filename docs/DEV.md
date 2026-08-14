@@ -4,10 +4,55 @@
 
 ## 目录
 
+- [daemon 架构（2026-08 重构后）](#daemon-架构2026-08-重构后)
 - [LocalSocket 4字节读取限制（Android 14）](#localsocket-4字节读取限制android-14)
 - [构建与发布](#构建与发布)
 - [OCR 识别方案调研与选型](#ocr-识别方案调研与选型)
 - [基于 agent-device 的 token 优化](#agent-device-优点调研)
+
+---
+
+## daemon 架构（2026-08 重构后）
+
+Cross-model 交叉审核确认的 10 条架构问题（Device 接口缺失、dispatchDirect 双分派漂移、生命周期监督倒置、god package、全局可变状态等）重构后的目标架构：
+
+### 分层与依赖方向
+
+```
+cmd/phonefast (cmdEnv struct，无包级可变全局)
+   │  daemonCall(WithEnsurer) / withSession + Dispatcher.DispatchResult
+   ▼
+internal/daemon（文件级拆分，单包）
+   ├─ Supervisor   生命周期监督（自启/停止/自愈），EnsureRunning 并发去重（mutex+done channel）
+   ├─ Dispatcher{ocr}  Dispatch 为方法，持有 OCR 服务（无 ocrSvc 全局）
+   ├─ Device 接口  22 方法，handler/actor 依赖接口而非 *session.Session（可无真机单测）
+   ├─ Client       WithEnsurer 选项（无 globalEnsurer 三件套）
+   └─ 文件: rpc.go(wire 类型)/dispatch.go/handlers.go/params.go/device.go/server.go/
+          supervisor*.go/actor.go/client.go/pidfile.go/scid.go
+internal/session
+   ├─ Serial()/DeviceWidth() 等访问器（字段改名，满足 Device 接口）
+   └─ ObserveFull()  截图+GetUIFull 并发收归 session 内部（超时仍 join，无 use-after-return）
+pkg/protocol/methods.go  ← 17 个 action 常量（唯一词汇表）
+pkg/avcodec/convert.go   ← PNGToJPEG + 池化 buffer
+```
+
+### 关键决策
+
+1. **direct 模式输出统一到 daemon 格式**：CLI 的 `--foreground` 路径经 `cmdEnv.call()` 走
+   in-process `Dispatcher.DispatchResult`，与 daemon RPC 是同一套 handler——两模式输出
+   byte 级一致（screenshot 均 JPEG、ui 均支持 --format 分层、run 结果结构对齐）。第二套
+   action 分派 `dispatchDirect` 已删除，action 词汇只在 `pkg/protocol/methods.go` 定义一次。
+2. **不变量：`--foreground` 永不创建 daemon 进程**（`TestForegroundNeverTouchesDaemon`
+   哨兵测试，Supervisor 的 Spawn 测试钩子一触即败）。例外：`daemon`/`serve` 命令本身
+   的职责就是管理/依赖 daemon。
+3. **不做子包拆分**：任何子包（handlers/actor/server）都需要父包的
+   Request/Response/Device/ScidAllocator/Client/pidfile/Supervisor，父包又需要子包服务
+   请求——立即形成 import 环；~2400 行的文件级拆分即可达到凝聚力目标（见 device.go 注释）。
+4. **并发去重**：`Supervisor.EnsureRunning` 用 mutex + done channel 替代原 50ms 忙轮询；
+   所有 client 共享同一 Supervisor 实例，中途崩溃自愈的并发重启天然去重。
+5. **保持不变的语义**：自启 8s socket 等待 + 失败降级 direct；connect/disconnect/serve
+   fail-fast；`Daemon.Start` 的 acquireLock→listen→writePID 顺序；`wait` 本地 sleep；
+   `status` 只读探测。
 
 ---
 
@@ -774,26 +819,25 @@ ARM64 NEON 优化累积, rec 推理快近一倍:
 `lib_nolib.go`（`!ocr_embed`）RuntimeLib=nil → 运行时 `findSystemLib` 找 `/opt/homebrew/lib/`。
 仅 darwin/arm64 有 embed（其他平台 -full = plain, builder 跳过 + warn）。
 
-#### 构建与下载工具（2026-07）
+#### Python 统一构建工具（2026-07）
 
-构建用 Python（`build.py` + `pfbuild/` 共享模块），OCR 资产下载用 bash（`ocr/scripts/download.sh`）。
-shell 保留薄 wrapper 向后兼容 CI/文档引用:
+build.sh + download-ocr-models.sh + build_local.sh + download-ocr-test-models.sh 全部迁移到 Python,
+shell 保留薄 wrapper（`exec python3 ...`）向后兼容 CI/文档引用:
 
-| 脚本 | 职责 | 对应 shell wrapper |
+| Python 脚本 | 职责 | 对应 shell wrapper |
 |---|---|---|
-| `scripts/build.py` | 构建二进制（plain/cgo1/apple/full, 全平台, FFmpeg 环境）| build.sh / build_local.sh |
-| `ocr/scripts/download.sh` | 下载生产 OCR 模型 + ORT 库 -> `ocr/assets/`（bash）| download-ocr-models.sh |
-| `ocr/scripts/download_test_models.py` | 下载测试模型变体（v3/v4）-> `ocr/models/` | download-ocr-test-models.sh |
+| `scripts/build.py` | 构建二进制（plain + -full, 全平台, FFmpeg 环境）| build.sh / build_local.sh |
+| `scripts/download_models.py` | 下载生产 OCR 模型 + ORT 库 | download-ocr-models.sh |
+| `scripts/download_test_models.py` | 下载测试模型变体（v3/v4）| download-ocr-test-models.sh |
 
 共享模块 `scripts/pfbuild/`:
 - `platform.py` — 平台矩阵（`Target` dataclass, 单一 source of truth; 消除原 `os_arch_to_zig` + `os_arch_to_ffmpeg_target` + `resolve_target` 三处重复）
-- `assets.py` — scrcpy-server.jar 同步（sync_jar/sync_all；OCR 资产下载由 ocr/scripts/download.sh 承担）
+- `assets.py` — 资产下载（HF 优先 + pip 回退; 系统优先 + GitHub release 回退; 流式解压仅取 lib 文件）
 - `ffmpeg.py` — FFmpeg/zig/CGO 交叉编译环境
-- `builder.py` — 构建编排（变体产物 + archive）
-- `variants.py` — OCR 变体表（plain/cgo1/apple/full, 数据驱动）
+- `builder.py` — 构建编排（plain/-full 双产物 + archive）
 - `log.py` — 统一日志
 
-CI/workflows 调用 `bash scripts/download-ocr-models.sh` 仍工作（wrapper 转发到 ocr/scripts/download.sh）, 零改动。
+CI/workflows 调用 `bash scripts/download-ocr-models.sh` 仍工作（wrapper 透传）, 零改动。
 
 #### OCR 实现细节
 
@@ -879,7 +923,7 @@ tfgo 链接完整 TF C 库（非 TFLite API），brew `libtensorflow` 2.21.0 一
 - [x] OCR 引擎基类重构（common.Recognizer 接口 + detect.Detector 共享检测 + engine.BaseEngine 骨架; ncnn 解耦 Vision 硬依赖; ORT Runtime 进程单例; onnx/ncnn 真机+图片验证无回归）
 - [x] OCR 准确率对比套件（tests/ocr-benchmark/accuracy_test.go, onnx vs ncnn 同框文本一致性）
 - [x] ORT 1.27.1 升级（MLAS 优化, rec 快 2× vs 1.23.0）+ ocr_embed build tag 双产物（plain 24MB / -full 42MB 自包含）
-- [x] 构建工具统一（build.py + pfbuild/ 共享模块; OCR 资产下载用 bash ocr/scripts/download.sh; shell 保留薄 wrapper）
+- [x] Python 统一构建工具（build.py + download_models.py + download_test_models.py + pfbuild/ 共享模块; shell 保留薄 wrapper）
 - [x] MNN 引擎评估（C++ shim, 工具链通但 runSession 算子 COMPUTE_SIZE_ERROR → 代码已清理）
 - [x] TFLite 引擎评估（macOS C 库 + onnx2tf 工具链障碍 → 代码已清理）
 - [x] tfgo 引擎评估（运行时 brew libtensorflow 通, onnx2tf 转 PP-OCR rec 失败 → 代码已清理）

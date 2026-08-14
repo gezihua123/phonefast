@@ -3,7 +3,8 @@
 //
 // Usage:
 //
-//	# Default: daemon mode (fast, auto-starts daemon — <10ms per call)
+//	# Default: daemon mode (fast, auto-starts daemon — <10ms per call;
+//	#   falls back to direct mode if the daemon can't start)
 //	phonefast tap 540 960
 //	phonefast back
 //	phonefast screenshot /tmp/s.png
@@ -30,22 +31,20 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
 	"github.com/gezihua123/phonefast/internal/daemon"
-	"github.com/gezihua123/phonefast/internal/format"
+	phonelog "github.com/gezihua123/phonefast/internal/log"
 	"github.com/gezihua123/phonefast/internal/mcp"
-	pkgocr "github.com/gezihua123/phonefast/ocr"
 	"github.com/gezihua123/phonefast/internal/session"
+	pkgocr "github.com/gezihua123/phonefast/ocr"
 	// Register OCR backends into the engine registry via init().
+	_ "github.com/gezihua123/phonefast/ocr/apple"
 	_ "github.com/gezihua123/phonefast/ocr/onnx"
 	_ "github.com/gezihua123/phonefast/ocr/tesseract"
-	_ "github.com/gezihua123/phonefast/ocr/apple"
 	// _ "github.com/gezihua123/phonefast/ocr/ncnn" // opt-in via -tags ncnn
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
@@ -65,22 +64,50 @@ var Version = "dev"
 var BuildTime = "unknown"
 var GitCommit = "unknown"
 
-// useDaemon controls whether commands are routed through the background daemon.
-// Default is true — daemon mode for sub-10ms latency. Use --foreground to
-// bypass the daemon and connect directly (one-shot scrcpy session, ~2.5s).
-var useDaemon = true
+// cmdEnv carries the per-invocation CLI state: routing mode, target serial,
+// binary name, and the shared daemon supervisor/dispatcher. It replaced the
+// former package-level globals (e.useDaemon/e.serial/e.binName) so command
+// handlers no longer read mutable process state — everything flows through
+// the explicit receiver.
+type cmdEnv struct {
+	// e.useDaemon routes commands through the background daemon. Default true —
+	// daemon mode for sub-10ms latency. --foreground bypasses the daemon and
+	// connects directly (one-shot scrcpy session, ~2.5s).
+	useDaemon bool
 
-// daemonSerial is the device serial to bind the daemon session to.
-// Set from --serial flag or auto-detected (first connected device).
-var daemonSerial string
+	// serial is the device serial to bind the session to. Set from --serial
+	// flag or auto-detected (first connected device).
+	serial string
 
-// binName holds the dynamic binary name derived from os.Args[0].
-var binName string
+	// e.binName is the dynamic binary name derived from os.Args[0].
+	binName string
+
+	// supervisor owns daemon lifecycle (auto-start/stop/self-heal). Never
+	// touched by direct-mode (--foreground) paths — invariant: --foreground
+	// must not create a daemon process (guarded by TestForegroundNeverTouchesDaemon).
+	supervisor *daemon.Supervisor
+
+	// dispatcher serves the CLI's direct mode (OCR nil — daemon-only).
+	dispatcher *daemon.Dispatcher
+}
 
 func main() {
-	binName = filepath.Base(os.Args[0])
+	// e carries the whole per-invocation state; command handlers are methods
+	// on it. The supervisor is constructed but inert until a daemon-mode path
+	// calls EnsureRunning — direct mode (--foreground) never touches it.
+	e := &cmdEnv{
+		binName:    filepath.Base(os.Args[0]),
+		supervisor: daemon.NewSupervisor(daemon.SupervisorConfig{ChildArgs: []string{"daemon_worker"}}),
+		// Lazy OCR service: NewService only stores config — the engine and
+		// models load on the first Recognize call. Direct-mode OCR therefore
+		// costs nothing unless actually used.
+		dispatcher: daemon.NewDispatcher(pkgocr.NewService(pkgocr.Config{
+			Engine:    os.Getenv("PHONEFAST_OCR_ENGINE"),
+			UseVision: os.Getenv("PHONEFAST_OCR_VISION") != "false",
+		})),
+	}
 	if len(os.Args) < 2 {
-		printUsage()
+		e.printUsage()
 		os.Exit(1)
 	}
 
@@ -92,95 +119,116 @@ func main() {
 
 	// --help / -h: print usage and exit (before any other parsing).
 	if os.Args[1] == "--help" || os.Args[1] == "-h" {
-		printUsage()
+		e.printUsage()
 		return
 	}
 
 	// Parse mode flags (before the subcommand). Default is daemon mode.
 	// --foreground / --direct bypass the daemon; --daemon is kept for backward compat.
 	mode, serial, subStart := parseModeFlags(os.Args[1:])
-	useDaemon = mode
+	e.useDaemon = mode
 	if serial != "" {
-		daemonSerial = serial
+		e.serial = serial
 	}
 	startIdx := 1 + subStart
 
 	if startIdx >= len(os.Args) {
-		printUsage()
+		e.printUsage()
 		os.Exit(1)
 	}
 
 	cmd := os.Args[startIdx]
 	args := os.Args[startIdx+1:]
 
-	// Auto-start daemon if needed (before dispatching the command)
-	if useDaemon && cmd != "daemon" && cmd != "serve" && cmd != "devices" && cmd != "daemon_worker" && cmd != "help" && cmd != "status" {
-		// Resolve serial if not explicitly set
-		if daemonSerial == "" {
-			daemonSerial = resolveSerial()
-		}
-		ensureDaemon()
-	} else if !useDaemon && daemonSerial == "" && cmd != "daemon" && cmd != "serve" && cmd != "devices" {
-		// Even for non-daemon commands, resolve serial once for consistency
-		daemonSerial = resolveSerial()
+	// Reject unknown commands before touching the daemon — a typo shouldn't
+	// spawn (or wait up to 8s on) a daemon only to die with "Unknown command".
+	if !knownCommand(cmd) {
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
+		e.printUsage()
+		os.Exit(1)
 	}
+
+	// Auto-start the daemon if needed (before dispatching the command).
+	excluded, required := daemonStartMode(cmd)
+	if e.useDaemon && !excluded {
+		// Resolve serial if not explicitly set
+		if e.serial == "" {
+			e.serial = resolveSerial()
+		}
+		if required {
+			// connect/disconnect have no direct-mode fallback — a missing
+			// daemon is fatal for them, so fail fast instead of degrading to
+			// a (nonexistent) direct path.
+			e.ensureDaemonOrExit()
+		} else {
+			e.ensureDaemon()
+		}
+	} else if !e.useDaemon && e.serial == "" && cmd != "daemon" && cmd != "serve" && cmd != "devices" {
+		// Even for non-daemon commands, resolve serial once for consistency
+		e.serial = resolveSerial()
+	}
+
+	// Mid-RPC self-heal is wired per-Client: daemonCall installs
+	// e.supervisor.EnsureRunning as the ensurer on every client it builds.
+	// Direct mode (--foreground, or after a fallback) never builds a client,
+	// so it never touches the daemon.
 
 	switch cmd {
 	// ── Daemon management ──
 	case "daemon":
-		daemonCmd(args)
+		e.daemonCmd(args)
 
 	// ── CLI commands ──
 	case "tap":
-		tapCmd(args)
+		e.tapCmd(args)
 	case "tap_element":
-		tapElementCmd(args)
+		e.tapElementCmd(args)
 	case "swipe":
-		swipeCmd(args)
+		e.swipeCmd(args)
 	case "type", "text":
-		typeCmd(args)
+		e.typeCmd(args)
 	case "back":
-		backCmd()
+		e.backCmd()
 	case "home":
-		homeCmd()
+		e.homeCmd()
 	case "key", "press_key":
-		keyCmd(args)
+		e.keyCmd(args)
 	case "launch":
-		launchCmd(args)
+		e.launchCmd(args)
 	case "screenshot":
-		screenshotCmd(args)
+		e.screenshotCmd(args)
 	case "ui":
-		uiCmd(args)
+		e.uiCmd(args)
 	case "observe":
-		observeCmd(args)
+		e.observeCmd(args)
 	case "ocr":
-		ocrCmd(args)
+		e.ocrCmd(args)
 	case "wait":
-		waitCmd(args)
+		e.waitCmd(args)
 	case "status":
-		statusCmd()
+		e.statusCmd()
 
 	// ── Server / legacy commands ──
 	case "serve":
-		serveCmd(args)
+		e.serveCmd(args)
 	case "run":
-		runCmd(args)
+		e.runCmd(args)
 	case "devices":
 		devicesCmd()
 	case "help":
-		printUsage()
+		e.printUsage()
 	case "connect":
-		connectCmd(args)
+		e.connectCmd(args)
 	case "disconnect":
-		disconnectCmd(args)
+		e.disconnectCmd(args)
 
 	// Internal daemon child process (not shown in usage)
 	case "daemon_worker":
-		daemonRunCmd(args)
+		e.daemonRunCmd(args)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
-		printUsage()
+		e.printUsage()
 		os.Exit(1)
 	}
 }
@@ -189,23 +237,23 @@ func main() {
 
 // parseModeFlags parses the leading mode flags (before the subcommand) from
 // the arg list. It returns:
-//   - useDaemon: false if --foreground/--direct present (default true)
+//   - mode: false if --foreground/--direct present (default true)
 //   - serial: value following --serial, if present ("" otherwise)
 //   - consumed: number of leading args consumed (flags + their values)
 //
 // Parsing stops at the first non-flag token (the subcommand) or an unknown
 // flag. --serial with no value is a fatal error (exits the process), matching
 // the previous inline behavior.
-func parseModeFlags(argv []string) (useDaemon bool, serial string, consumed int) {
-	useDaemon = true // default
+func parseModeFlags(argv []string) (mode bool, serial string, consumed int) {
+	mode = true // default
 	i := 0
 	for i < len(argv) && (strings.HasPrefix(argv[i], "--") || argv[i] == "-s") {
 		switch argv[i] {
 		case "--foreground", "--direct":
-			useDaemon = false
+			mode = false
 			i++
 		case "--daemon":
-			useDaemon = true
+			mode = true
 			i++
 		case "--serial", "-s":
 			if i+1 >= len(argv) {
@@ -216,10 +264,10 @@ func parseModeFlags(argv []string) (useDaemon bool, serial string, consumed int)
 			i += 2
 		default:
 			// Unknown flag — stop parsing (it belongs to the subcommand).
-			return useDaemon, serial, i
+			return mode, serial, i
 		}
 	}
-	return useDaemon, serial, i
+	return mode, serial, i
 }
 
 // resolveSerial returns the device serial to use, auto-detecting the first
@@ -233,102 +281,96 @@ func resolveSerial() string {
 	return devices[0].Serial
 }
 
+// knownCommand reports whether cmd is a dispatchable subcommand. Mirrors the
+// dispatch switch in main(); checked before daemon auto-start so a typo fails
+// fast instead of spawning a daemon first.
+func knownCommand(cmd string) bool {
+	switch cmd {
+	case "daemon", "daemon_worker", "serve", "run", "devices", "help",
+		"connect", "disconnect",
+		"tap", "tap_element", "swipe", "type", "text", "back", "home",
+		"key", "press_key", "launch", "screenshot", "ui", "observe", "ocr",
+		"wait", "status":
+		return true
+	}
+	return false
+}
+
+// daemonStartMode decides how a command participates in daemon auto-start:
+//   - excluded=true → skip the auto-start block entirely. The command either
+//     IS the daemon (daemon/daemon_worker), manages it (serve, which does its
+//     own start), is pure ADB (devices), or never touches the daemon
+//     (help/status/wait).
+//   - required=true → the command has NO direct-mode fallback, so a failed
+//     auto-start must fail fast instead of degrading (connect/disconnect are
+//     daemon-management RPCs with no withSession equivalent).
+//
+// Everything else (tap/swipe/screenshot/...) degrades to direct mode on failure.
+func daemonStartMode(cmd string) (excluded, required bool) {
+	switch cmd {
+	case "daemon", "daemon_worker", "serve", "devices", "help", "status", "wait":
+		return true, false
+	case "connect", "disconnect":
+		return false, true
+	}
+	return false, false
+}
+
 // ── Daemon auto-start ──
 
 // ensureDaemon starts the unified daemon if it isn't already running and
-// healthy. CLI entry points use this — on failure it prints and exits(1),
-// which is correct for a one-shot command. Long-lived callers (the MCP
-// server) must use ensureDaemonE instead, so a failed restart doesn't tear
-// down the whole server process.
-func ensureDaemon() {
-	if err := ensureDaemonE(); err != nil {
+// healthy. One-shot CLI commands with a direct-mode fallback use this — on
+// failure it degrades to direct mode (fallbackToDirect) instead of killing the
+// process, so the command still completes via its withSession branch (~2.5s).
+// Commands without a fallback (connect/disconnect) use ensureDaemonOrExit;
+// long-lived callers (the MCP server) start the daemon themselves so a failed
+// restart surfaces to the tool call rather than flipping process state.
+// ensureDaemon starts the unified daemon if it isn't already running and
+// healthy (via the in-package Supervisor). One-shot CLI commands with a
+// direct-mode fallback use this — on failure it degrades to direct mode
+// (fallbackToDirect) instead of killing the process, so the command still
+// completes via its direct implementation (~2.5s). Commands without a
+// fallback (connect/disconnect) use ensureDaemonOrExit; long-lived callers
+// (the MCP server) install EnsureRunning as the per-client ensurer so a
+// failed restart surfaces to the individual tool call.
+func (e *cmdEnv) ensureDaemon() {
+	if err := e.supervisor.EnsureRunning(); err != nil {
+		e.fallbackToDirect(err)
+	}
+}
+
+// ensureDaemonOrExit starts the daemon and exits(1) on failure. Used by
+// commands that have no direct-mode fallback (connect/disconnect, and serve
+// via its own call) — for them a missing daemon is fatal, not a slower path.
+func (e *cmdEnv) ensureDaemonOrExit() {
+	if err := e.supervisor.EnsureRunning(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// ensureDaemonE is the non-exiting core of ensureDaemon. It starts the unified
-// daemon if needed and waits for its socket to appear, returning an error on
-// failure. Used by the MCP server's daemon-recovery callback so a failed
-// restart surfaces to the individual tool call instead of killing the process.
-func ensureDaemonE() error {
-	// Unified daemon: one process, one socket, all devices.
-	pidFile := daemon.PidFileName()
-	socketPath := daemon.SocketName()
-
-	// Check if daemon is already running and healthy
-	if pid, _ := daemon.ReadPID(pidFile); pid > 0 && daemon.IsProcessAlive(pid) {
-		client := daemon.NewClient("")
-		_, err := client.Ping()
-		if err == nil {
-			return nil // daemon is running and responding
-		}
-		fmt.Fprintf(os.Stderr, "Daemon unresponsive, restarting...\n")
-		stopDaemonForce(pidFile, pid)
+// fallbackToDirect handles a daemon auto-start failure for a one-shot CLI
+// command: flip to direct mode so the command dispatches through its direct
+// implementation instead of dying. Every daemon-mode command already has a
+// direct path, so the fallback is free — the only cost is ~2.5s per-call
+// latency.
+//
+// PHONEFAST_NO_DAEMON_FALLBACK=1 opts out of silent degradation: agents/CI
+// that would rather fail than silently run at ~250× the latency (10ms→2.5s
+// per call) set this to get a hard error instead of a slow success.
+func (e *cmdEnv) fallbackToDirect(err error) {
+	if os.Getenv("PHONEFAST_NO_DAEMON_FALLBACK") == "1" {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
-
-	// Clean up stale files
-	daemon.RemovePID(pidFile)
-	os.Remove(socketPath)
-
-	fmt.Fprintf(os.Stderr, "Starting daemon...\n")
-
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("cannot find executable: %w", err)
-	}
-
-	// Daemon starts empty — no device connection needed at startup.
-	// Device actors are created lazily on first request.
-	childArgs := []string{"daemon_worker"}
-	devNull, err := daemonDevNull()
-	if err != nil {
-		return fmt.Errorf("cannot open null device: %w", err)
-	}
-
-	child := exec.Command(exe, childArgs...)
-	child.Dir = filepath.Dir(exe)
-	child.SysProcAttr = daemonSysProcAttr()
-	child.Stdin = devNull
-	child.Stdout = devNull
-	child.Stderr = devNull
-
-	if err := child.Start(); err != nil {
-		return fmt.Errorf("failed to start daemon: %w", err)
-	}
-	devNull.Close()
-
-	// Wait for daemon socket to appear (daemon starts without device, so
-	// the socket appears quickly).
-	const waitIter = 40
-	for i := 0; i < waitIter; i++ {
-		time.Sleep(200 * time.Millisecond)
-		if _, err := os.Stat(socketPath); err == nil {
-			return nil
-		}
-		if !daemon.IsProcessAlive(child.Process.Pid) {
-			break
-		}
-	}
-	return fmt.Errorf("daemon failed to start (check device connection)")
-}
-
-// stopDaemonForce forcefully kills a daemon process and cleans up.
-func stopDaemonForce(pidFile string, pid int) {
-	daemonKill(pid)
-	timeSleep(500)
-	if !daemon.IsProcessAlive(pid) {
-		daemon.RemovePID(pidFile)
-		os.Remove(daemon.SocketName())
-		return
-	}
-	daemon.RemovePID(pidFile)
-	os.Remove(daemon.SocketName())
+	fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	fmt.Fprintf(os.Stderr, "Falling back to direct mode (~2.5s for this call). Fix the daemon by running `%s daemon --foreground`\n", e.binName)
+	e.useDaemon = false
 }
 
 // ── Daemon subcommand ──
 
-func daemonCmd(args []string) {
+func (e *cmdEnv) daemonCmd(args []string) {
 	// ── Subcommand dispatch (before flag parsing) ──
 	// connect/disconnect are device-level management commands dispatched via RPC
 	// to the running daemon. They must come before the "already running" check
@@ -336,10 +378,10 @@ func daemonCmd(args []string) {
 	if len(args) > 0 {
 		switch args[0] {
 		case "connect":
-			connectCmd(args[1:])
+			e.connectCmd(args[1:])
 			return
 		case "disconnect":
-			disconnectCmd(args[1:])
+			e.disconnectCmd(args[1:])
 			return
 		}
 	}
@@ -382,12 +424,19 @@ func daemonCmd(args []string) {
 	pidFile := daemon.PidFileName()
 
 	if doStop {
-		stopDaemon()
+		msg, err := e.supervisor.Stop()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if msg != "" {
+			fmt.Println(msg)
+		}
 		return
 	}
 
 	if doStatus {
-		showDaemonStatus()
+		e.statusCmd()
 		return
 	}
 
@@ -413,44 +462,21 @@ func daemonCmd(args []string) {
 		return
 	}
 
-	exe, err := os.Executable()
+	pid, err := e.supervisor.Spawn([]string{
+		fmt.Sprintf("PHONEFAST_OCR_VISION=%v", ocrVision),
+		fmt.Sprintf("PHONEFAST_OCR_ENGINE=%s", ocrEngine),
+	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot find executable: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	childArgs := []string{"daemon_worker"}
-
-	childEnv := os.Environ()
-	childEnv = append(childEnv, fmt.Sprintf("PHONEFAST_OCR_VISION=%v", ocrVision))
-	childEnv = append(childEnv, fmt.Sprintf("PHONEFAST_OCR_ENGINE=%s", ocrEngine))
-
-	devNull, err := daemonDevNull()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: cannot open null device: %v\n", err)
-		os.Exit(1)
-	}
-
-	child := exec.Command(exe, childArgs...)
-	child.Dir = filepath.Dir(exe)
-	child.SysProcAttr = daemonSysProcAttr()
-	child.Stdin = devNull
-	child.Stdout = devNull
-	child.Stderr = devNull
-	child.Env = childEnv
-
-	if err := child.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to daemonize: %v\n", err)
-		os.Exit(1)
-	}
-	devNull.Close()
-
-	fmt.Printf("daemon started (pid %d)\n", child.Process.Pid)
+	fmt.Printf("daemon started (pid %d)\n", pid)
 }
 
 // daemonRunCmd handles the hidden internal subcommand daemon_worker.
 // This is the child process spawned by "phonefast daemon" — not shown in usage.
-func daemonRunCmd(args []string) {
+func (e *cmdEnv) daemonRunCmd(args []string) {
 	runDaemon()
 }
 
@@ -462,88 +488,26 @@ func runDaemon() {
 
 	ctx := context.Background()
 	if err := d.Start(ctx); err != nil {
+		// When spawned by the Supervisor (or `daemon` in background) stderr goes
+		// to /dev/null, so a startup failure would be invisible. Write it to
+		// the shared log file — the one the Supervisor's error points at — and
+		// flush before exiting.
+		phonelog.Default().Write("daemon start failed: %v", err)
+		phonelog.CloseDefault()
 		fmt.Fprintf(os.Stderr, "daemon error: %v\n", err)
 		os.Exit(1)
-	}
-}
-
-func stopDaemon() {
-	pidFile := daemon.PidFileName()
-	pid, err := daemon.ReadPID(pidFile)
-	if err != nil || pid == 0 {
-		fmt.Fprintln(os.Stderr, "daemon not running (no PID file)")
-		os.Exit(1)
-	}
-
-	if !daemon.IsProcessAlive(pid) {
-		fmt.Fprintln(os.Stderr, "daemon not running (stale PID file)")
-		daemon.RemovePID(pidFile)
-		os.Remove(daemon.SocketName())
-		return
-	}
-
-	daemonKill(pid)
-
-	for i := 0; i < 50; i++ {
-		timeSleep(100)
-		if !daemon.IsProcessAlive(pid) {
-			fmt.Println("daemon stopped")
-			return
-		}
-	}
-
-	fmt.Fprintln(os.Stderr, "daemon not responding, force killing...")
-	daemonKill(pid)
-	timeSleep(500)
-	daemon.RemovePID(pidFile)
-	os.Remove(daemon.SocketName())
-	fmt.Println("daemon killed")
-}
-
-func showDaemonStatus() {
-	pidFile := daemon.PidFileName()
-	pid, _ := daemon.ReadPID(pidFile)
-
-	if pid > 0 && daemon.IsProcessAlive(pid) {
-		// Query daemon-level status (no device param): the unified daemon
-		// reports connected=true if any managed device is up, plus a
-		// connected_devices list. This also avoids forcing a 2.5s device
-		// connect merely to display status.
-		client := daemon.NewClient("")
-		status, err := client.Ping()
-		if err != nil {
-			fmt.Printf("daemon running (pid %d) but not responding: %v\n", pid, err)
-			os.Exit(1)
-		}
-		fmt.Printf("daemon running (pid %d)\n", pid)
-		if connected, ok := status["connected"].(bool); ok && connected {
-			// Show the first connected device's serial + resolution, matching
-			// the old single-device display. connected_devices is a list of
-			// {serial,width,height}; decode defensively.
-			if devs, ok := status["connected_devices"].([]any); ok && len(devs) > 0 {
-				if first, ok := devs[0].(map[string]any); ok {
-					fmt.Printf("  device:    %v (%vx%v)\n",
-						first["serial"], first["width"], first["height"])
-				} else {
-					fmt.Println("  device:    connected")
-				}
-			} else {
-				fmt.Println("  device:    connected")
-			}
-			fmt.Printf("  devices:  %v\n", status["devices"])
-		} else {
-			fmt.Println("  device:    not connected")
-		}
-	} else {
-		fmt.Println("daemon not running")
 	}
 }
 
 // ── CLI command dispatcher ──
 
 // daemonCall sends a JSON-RPC request to the device-specific daemon and returns the raw result.
-func daemonCall(method string, params map[string]any) json.RawMessage {
-	client := daemon.NewClient(daemonSerial)
+func (e *cmdEnv) daemonCall(method string, params map[string]any) json.RawMessage {
+	// WithEnsurer wires mid-RPC self-heal: if the daemon crashes, Client.Call
+	// invokes Supervisor.EnsureRunning (restart deduplicated across concurrent
+	// callers) and retries once. Only built in daemon mode — direct mode never
+	// constructs a client.
+	client := daemon.NewClient(e.serial, daemon.WithEnsurer(e.supervisor.EnsureRunning))
 	result, err := client.Call(method, params)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -552,15 +516,34 @@ func daemonCall(method string, params map[string]any) json.RawMessage {
 	return result
 }
 
+// call runs method with identical results in both modes: daemon mode via
+// RPC, direct mode via the in-process Dispatcher against a one-shot session.
+// consume receives the identical JSON-RPC result either way, so user-visible
+// output is byte-for-byte the same in both modes.
+func (e *cmdEnv) call(method string, params map[string]any, consume func(json.RawMessage)) {
+	if e.useDaemon {
+		consume(e.daemonCall(method, params))
+		return
+	}
+	e.withSession(func(dev daemon.Device) error {
+		result, err := e.dispatcher.DispatchResult(dev, method, params)
+		if err != nil {
+			return err
+		}
+		consume(result)
+		return nil
+	})
+}
+
 // withSession connects to the resolved device, calls fn, and disconnects.
 // Used for direct mode (no daemon).
-func withSession(fn func(sess *session.Session) error) {
-	if daemonSerial == "" {
+func (e *cmdEnv) withSession(fn func(dev daemon.Device) error) {
+	if e.serial == "" {
 		fmt.Fprintln(os.Stderr, "Error: no devices connected")
 		os.Exit(1)
 	}
 
-	serial := daemonSerial
+	serial := e.serial
 	sess, err := session.Connect(serial, defaultScid)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to device: %v\n", err)
@@ -576,270 +559,153 @@ func withSession(fn func(sess *session.Session) error) {
 
 // ── CLI commands ──
 
-func tapCmd(args []string) {
-	if len(args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] tap <x> <y>\n", binName)
+// atoiOrExit parses s as an int (tolerating a single trailing "," or ";") and
+// returns it, printing the given usage line and exiting on failure. Non-numeric
+// input is reported instead of silently becoming 0 — e.g. "tap abc def" now
+// errors rather than tapping at (0,0).
+func atoiOrExit(usage, s string) int {
+	v, err := strconv.Atoi(strings.TrimRight(s, ",;"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Usage: %s\n", usage)
+		fmt.Fprintf(os.Stderr, "  invalid value %q: %v\n", s, err)
 		os.Exit(1)
 	}
-	x, _ := strconv.Atoi(strings.TrimRight(args[0], ",;"))
-	y, _ := strconv.Atoi(strings.TrimRight(args[1], ",;"))
-
-	if useDaemon {
-		result := daemonCall("tap", map[string]any{"x": x, "y": y})
-		printMessage(result)
-	} else {
-		withSession(func(sess *session.Session) error {
-			sx, sy := sess.ScaleToDevice(x, y)
-			return sess.Tap(sx, sy)
-		})
-		fmt.Printf("Tapped at (%d, %d)\n", x, y)
-	}
+	return v
 }
 
-func tapElementCmd(args []string) {
+func (e *cmdEnv) tapCmd(args []string) {
+	usage := fmt.Sprintf("%s [--foreground] tap <x> <y>", e.binName)
+	if len(args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: %s\n", usage)
+		os.Exit(1)
+	}
+	x := atoiOrExit(usage, args[0])
+	y := atoiOrExit(usage, args[1])
+
+	// Both modes funnel through the same handler (daemon RPC or in-process
+	// Dispatcher) — output is identical.
+	e.call(protocol.MethodTap, map[string]any{"x": x, "y": y}, printMessage)
+}
+
+func (e *cmdEnv) tapElementCmd(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] tap_element <index|text>\n", binName)
+		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] tap_element <index|text>\n", e.binName)
 		fmt.Fprintln(os.Stderr, "  Example: tap_element 5")
 		fmt.Fprintln(os.Stderr, "           tap_element \"Settings\"")
 		os.Exit(1)
 	}
 
-	// Determine whether the arg is an index (integer) or text
-	idx, err := strconv.Atoi(args[0])
-	if err == nil {
-		// Numeric index
-		if useDaemon {
-			result := daemonCall("tap_element", map[string]any{"index": idx})
-			printMessage(result)
-		} else {
-			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUISummary(0)
-				if err != nil {
-					elements, err = sess.GetUIElementsFallbackADB(0)
-					if err != nil {
-						return fmt.Errorf("get ui elements: %v", err)
-					}
-				}
-				for _, el := range elements {
-					if el.Index == idx {
-						sx, sy := sess.ScaleToDevice(el.Center[0], el.Center[1])
-						if err := sess.Tap(sx, sy); err != nil {
-							return err
-						}
-						fmt.Printf("Tapped element [%d] at (%d, %d)\n", idx, el.Center[0], el.Center[1])
-						return nil
-					}
-				}
-				return fmt.Errorf("element with index %d not found", idx)
-			})
-		}
+	// Numeric arg → index search; anything else → text search. Both modes
+	// share the daemon handler (its search logic is the single source).
+	if idx, err := strconv.Atoi(args[0]); err == nil {
+		e.call(protocol.MethodTapElement, map[string]any{"index": idx}, printMessage)
 	} else {
-		// Text search
-		text := args[0]
-		if useDaemon {
-			result := daemonCall("tap_element", map[string]any{"text": text})
-			printMessage(result)
-		} else {
-			withSession(func(sess *session.Session) error {
-				elements, err := sess.GetUISummary(0)
-				if err != nil {
-					elements, err = sess.GetUIElementsFallbackADB(0)
-					if err != nil {
-						return fmt.Errorf("get ui elements: %v", err)
-					}
-				}
-				textLower := strings.ToLower(text)
-				for _, el := range elements {
-					if strings.Contains(strings.ToLower(el.Text), textLower) ||
-						strings.Contains(strings.ToLower(el.ContentDesc), textLower) {
-						sx, sy := sess.ScaleToDevice(el.Center[0], el.Center[1])
-						if err := sess.Tap(sx, sy); err != nil {
-							return err
-						}
-						fmt.Printf("Tapped '%s' at (%d, %d)\n", text, el.Center[0], el.Center[1])
-						return nil
-					}
-				}
-				return fmt.Errorf("element with text '%s' not found", text)
-			})
-		}
+		e.call(protocol.MethodTapElement, map[string]any{"text": args[0]}, printMessage)
 	}
 }
 
-func swipeCmd(args []string) {
+func (e *cmdEnv) swipeCmd(args []string) {
+	usage := fmt.Sprintf("%s [--foreground] swipe <x1> <y1> <x2> <y2> [duration_ms]", e.binName)
 	if len(args) < 4 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] swipe <x1> <y1> <x2> <y2> [duration_ms]\n", binName)
+		fmt.Fprintf(os.Stderr, "Usage: %s\n", usage)
 		os.Exit(1)
 	}
-	x1, _ := strconv.Atoi(args[0])
-	y1, _ := strconv.Atoi(args[1])
-	x2, _ := strconv.Atoi(args[2])
-	y2, _ := strconv.Atoi(args[3])
+	x1 := atoiOrExit(usage, args[0])
+	y1 := atoiOrExit(usage, args[1])
+	x2 := atoiOrExit(usage, args[2])
+	y2 := atoiOrExit(usage, args[3])
 	dur := 500
 	if len(args) >= 5 {
-		dur, _ = strconv.Atoi(args[4])
+		d, err := strconv.Atoi(args[4])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Usage: %s\n", usage)
+			fmt.Fprintf(os.Stderr, "  invalid duration %q: %v\n", args[4], err)
+			os.Exit(1)
+		}
+		dur = d
 	}
 
-	if useDaemon {
-		result := daemonCall("swipe", map[string]any{
-			"start_x": x1, "start_y": y1,
-			"end_x": x2, "end_y": y2,
-			"duration_ms": dur,
-		})
-		printMessage(result)
-	} else {
-		withSession(func(sess *session.Session) error {
-			sx1, sy1 := sess.ScaleToDevice(x1, y1)
-			sx2, sy2 := sess.ScaleToDevice(x2, y2)
-			return sess.Swipe(sx1, sy1, sx2, sy2, dur)
-		})
-		fmt.Printf("Swiped from (%d, %d) to (%d, %d)\n", x1, y1, x2, y2)
-	}
+	e.call(protocol.MethodSwipe, map[string]any{
+		"start_x": x1, "start_y": y1,
+		"end_x": x2, "end_y": y2,
+		"duration_ms": dur,
+	}, printMessage)
 }
 
-func typeCmd(args []string) {
+func (e *cmdEnv) typeCmd(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] type <text>\n", binName)
+		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] type <text>\n", e.binName)
 		os.Exit(1)
 	}
 	text := strings.Join(args, " ")
 
-	if useDaemon {
-		result := daemonCall("type_text", map[string]any{"text": text})
-		printMessage(result)
-	} else {
-		withSession(func(sess *session.Session) error {
-			return sess.TypeText(text)
-		})
-		fmt.Printf("Typed: %s\n", text)
-	}
+	e.call(protocol.MethodTypeText, map[string]any{"text": text}, printMessage)
 }
 
-func backCmd() {
-	if useDaemon {
-		result := daemonCall("back", nil)
-		printMessage(result)
-	} else {
-		withSession(func(sess *session.Session) error {
-			return sess.Back()
-		})
-		fmt.Println("Back pressed")
-	}
+func (e *cmdEnv) backCmd() {
+	e.call(protocol.MethodBack, nil, printMessage)
 }
 
-func homeCmd() {
-	if useDaemon {
-		result := daemonCall("home", nil)
-		printMessage(result)
-	} else {
-		withSession(func(sess *session.Session) error {
-			return sess.Home()
-		})
-		fmt.Println("Home pressed")
-	}
+func (e *cmdEnv) homeCmd() {
+	e.call(protocol.MethodHome, nil, printMessage)
 }
 
-func keyCmd(args []string) {
+func (e *cmdEnv) keyCmd(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] key <keyname|keycode>\n", binName)
+		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] key <keyname|keycode>\n", e.binName)
 		fmt.Fprintln(os.Stderr, "  Examples: BACK, HOME, ENTER, TAB, 4, 3")
 		os.Exit(1)
 	}
 
-	// Try as numeric keycode first
+	// Numeric → keycode; otherwise resolve the name in the handler (single
+	// source of truth: protocol.KeycodeFromName).
 	if kc, err := strconv.Atoi(args[0]); err == nil {
-		if useDaemon {
-			result := daemonCall("press_key", map[string]any{"keycode": kc})
-			printMessage(result)
-		} else {
-			withSession(func(sess *session.Session) error {
-				return sess.PressKey(kc)
-			})
-			fmt.Printf("Key %d pressed\n", kc)
-		}
+		e.call(protocol.MethodPressKey, map[string]any{"keycode": kc}, printMessage)
 		return
 	}
-
-	if useDaemon {
-		result := daemonCall("press_key", map[string]any{"key": strings.ToLower(args[0])})
-		printMessage(result)
-	} else {
-		kc := keycodeFromName(strings.ToLower(args[0]))
-		if kc == 0 {
-			fmt.Fprintf(os.Stderr, "Error: unknown key name: %q\n", args[0])
-			os.Exit(1)
-		}
-		withSession(func(sess *session.Session) error {
-			return sess.PressKey(int(kc))
-		})
-		fmt.Printf("Key '%s' pressed\n", args[0])
-	}
+	e.call(protocol.MethodPressKey, map[string]any{"key": args[0]}, printMessage)
 }
 
-func keycodeFromName(name string) uint32 {
-	return uint32(protocol.KeycodeFromName(name))
-}
-
-func launchCmd(args []string) {
+func (e *cmdEnv) launchCmd(args []string) {
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] launch <package>\n", binName)
+		fmt.Fprintf(os.Stderr, "Usage: %s [--foreground] launch <package>\n", e.binName)
 		fmt.Fprintln(os.Stderr, "  Example: com.android.settings")
 		os.Exit(1)
 	}
 
-	if useDaemon {
-		result := daemonCall("launch_app", map[string]any{"package": args[0]})
-		printMessage(result)
-	} else {
-		withSession(func(sess *session.Session) error {
-			return sess.LaunchApp(args[0])
-		})
-		fmt.Printf("Launched: %s\n", args[0])
-	}
+	e.call(protocol.MethodLaunchApp, map[string]any{"package": args[0]}, printMessage)
 }
 
-func screenshotCmd(args []string) {
-	if useDaemon {
-		result := daemonCall("screenshot", nil)
-		var resp struct {
-			Text      string `json:"text"`
-			ImageData string `json:"image_data"`
-			MimeType  string `json:"mime_type"`
-		}
+func (e *cmdEnv) screenshotCmd(args []string) {
+	// Single path for both modes: direct mode now returns JPEG exactly like
+	// daemon mode (the drift is gone — one handler, one output shape).
+	var resp struct {
+		Text      string `json:"text"`
+		ImageData string `json:"image_data"`
+		MimeType  string `json:"mime_type"`
+	}
+	e.call(protocol.MethodScreenshot, nil, func(result json.RawMessage) {
 		if err := json.Unmarshal(result, &resp); err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
 			os.Exit(1)
 		}
 		writeScreenshot(args, resp.ImageData, resp.MimeType)
-	} else {
-		withSession(func(sess *session.Session) error {
-			pngData, _, _, err := sess.Screenshot()
-			if err != nil {
-				return err
-			}
-			writeScreenshot(args, base64.StdEncoding.EncodeToString(pngData), "image/png")
-			return nil
-		})
-	}
+	})
 }
 
-// writeScreenshot writes decoded screenshot bytes to disk. The output path
-// comes from args[0] when given, otherwise a timestamped default is generated
-// whose extension matches the mime_type (JPEG→.jpg, PNG→.png) so the file is
-// always consistent with its actual encoded format.
 func writeScreenshot(args []string, b64, mimeType string) {
+	if len(args) == 0 {
+		// No path: print as data URI on stdout — the historical no-arg
+		// contract scripts/agents parse.
+		fmt.Printf("data:%s;base64,%s\n", mimeType, b64)
+		return
+	}
 	imgData, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error decoding screenshot: %v\n", err)
 		os.Exit(1)
 	}
-	ext := extFromMimeType(mimeType)
-	var outPath string
-	if len(args) > 0 {
-		outPath = args[0]
-	} else {
-		outPath = fmt.Sprintf("screenshot_%s.%s", time.Now().Format("20060102_150405"), ext)
-	}
+	outPath := args[0]
 	if err := os.WriteFile(outPath, imgData, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
 		os.Exit(1)
@@ -857,133 +723,50 @@ func extFromMimeType(mimeType string) string {
 	}
 }
 
-func uiCmd(args []string) {
-	maxShow, isSummary, formatType := parseUIShowArgs(args, 100)
-	if useDaemon {
-		result := daemonCall("get_ui_elements", map[string]any{
-			"max_elements": maxShow,
-			"summary":      isSummary,
-			"format":       formatType,
-		})
-		var resp struct {
-			Formatted string `json:"formatted"`
-		}
+func (e *cmdEnv) uiCmd(args []string) {
+	maxShow, isSummary, formatType := parseUIShowArgs(args, protocol.DefClientMaxElements)
+
+	// Single path: direct mode now honors --format (hierarchical formats) and
+	// prints the daemon's formatted output — same in both modes.
+	var resp struct {
+		Formatted string `json:"formatted"`
+	}
+	e.call(protocol.MethodGetUIElements, map[string]any{
+		"max_elements": maxShow,
+		"summary":      isSummary,
+		"format":       formatType,
+	}, func(result json.RawMessage) {
 		json.Unmarshal(result, &resp)
 		fmt.Println(resp.Formatted)
-	} else {
-		withSession(func(sess *session.Session) error {
-			collectMax := maxShow
-			if collectMax < 0 || collectMax > protocol.DefMaxElements { collectMax = 0 }
-			elements, err := sess.GetUISummary(collectMax)
-			if err != nil {
-				elements, err = sess.GetUIElementsFallbackADB(collectMax)
-				if err != nil {
-					return err
-				}
-			}
-			fmt.Println(format.ElementsForLLM(elements, maxShow, isSummary))
-			return nil
-		})
-	}
+	})
 }
 
-func observeCmd(args []string) {
-	maxShow, isSummary, formatType := parseUIShowArgs(args, 100)
-	if formatType == "" {
-		formatType = "flatref"
+func (e *cmdEnv) observeCmd(args []string) {
+	maxShow, isSummary, formatType := parseUIShowArgs(args, protocol.DefClientMaxElements)
+	// formatType is passed through raw: the daemon handler owns the
+	// default ("" → "flatref") — no duplicated default in the CLI layer.
+
+	// Single path: hierarchical formats (JPEG + GetUIFull, session-owned
+	// concurrency) are identical in both modes.
+	var resp struct {
+		Text string `json:"text"`
 	}
-	if useDaemon {
-		result := daemonCall("observe", map[string]any{
-			"max_elements": maxShow,
-			"summary":      isSummary,
-			"format":       formatType,
-		})
-		var resp struct {
-			Text      string `json:"text"`
-			ImageData string `json:"image_data"`
-			MimeType  string `json:"mime_type"`
-		}
+	e.call(protocol.MethodObserve, map[string]any{
+		"max_elements": maxShow,
+		"summary":      isSummary,
+		"format":       formatType,
+	}, func(result json.RawMessage) {
 		json.Unmarshal(result, &resp)
 		fmt.Println(resp.Text)
-	} else {
-		withSession(func(sess *session.Session) error {
-			collectMax := maxShow
-			if collectMax < 0 || collectMax > protocol.DefMaxElements {
-				collectMax = 0
-			}
-
-			// Hierarchical formats: screenshot + GetUIFull concurrently.
-			if f := format.ByName(formatType); f != nil {
-				type screenRes struct {
-					png []byte
-					err error
-				}
-				type uiRes struct {
-					elements []protocol.UIFullElement
-					err      error
-				}
-				scCh := make(chan screenRes, 1)
-				uiCh := make(chan uiRes, 1)
-
-				go func() {
-					png, _, _, e := sess.Screenshot()
-					scCh <- screenRes{png, e}
-				}()
-				go func() {
-					elems, e := sess.GetUIFull(collectMax)
-					uiCh <- uiRes{elems, e}
-				}()
-
-				var sc screenRes
-				select {
-				case sc = <-scCh:
-				case <-time.After(30 * time.Second):
-					return fmt.Errorf("screenshot timed out")
-				}
-
-				var ui uiRes
-				select {
-				case ui = <-uiCh:
-				case <-time.After(30 * time.Second):
-					return fmt.Errorf("get ui elements timed out")
-				}
-
-				if sc.err != nil {
-					return fmt.Errorf("screenshot: %w", sc.err)
-				}
-				if ui.err != nil {
-					return fmt.Errorf("ui: %w", ui.err)
-				}
-
-				// Summary mode: reduce max elements shown.
-				if isSummary && maxShow > 50 {
-					maxShow = 50
-				}
-				if maxShow > 0 && len(ui.elements) > maxShow {
-					ui.elements = ui.elements[:maxShow]
-				}
-
-				fmt.Printf("elements: %d (format=%s)\n", len(ui.elements), formatType)
-				fmt.Println(f.Format(ui.elements))
-				return nil
-			}
-
-			// Legacy flat format.
-			_, elements, err := sess.Observe(collectMax, isSummary)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("elements: %d\n", len(elements))
-			fmt.Println(format.ElementsForLLM(elements, maxShow, isSummary))
-			return nil
-		})
-	}
+	})
 }
 
-func ocrCmd(args []string) {
-	if useDaemon {
-		result := daemonCall("ocr", map[string]any{})
-		var resp pkgocr.Response
+func (e *cmdEnv) ocrCmd(args []string) {
+	// Both modes route through the same OCR handler. In direct mode the
+	// Dispatcher holds a lazily-created OCR service, so the engine (~90MB)
+	// loads only on the first OCR call — other commands pay nothing.
+	var resp pkgocr.Response
+	e.call(protocol.MethodOCR, map[string]any{}, func(result json.RawMessage) {
 		json.Unmarshal(result, &resp)
 		if resp.Count == 0 {
 			fmt.Println("No text recognized on screen.")
@@ -995,42 +778,34 @@ func ocrCmd(args []string) {
 			fmt.Printf("[%d] text=%q conf=%.2f center=(%.0f,%.0f)\n",
 				i, item.Text, item.Confidence, item.Center[0], item.Center[1])
 		}
-	} else {
-		withSession(func(sess *session.Session) error {
-			fmt.Fprintln(os.Stderr, "Error: OCR requires daemon mode (start with 'phonefast daemon')")
-			return nil
-		})
-	}
+	})
 }
 
-func waitCmd(args []string) {
-	ms := 1000
+func (e *cmdEnv) waitCmd(args []string) {
+	usage := fmt.Sprintf("%s [--foreground] wait <ms>", e.binName)
+	var ms int
 	if len(args) >= 1 {
-		ms, _ = strconv.Atoi(args[0])
+		ms = atoiOrExit(usage, args[0])
 	}
-	// Local sleep — never route through the daemon. The daemon's handleWait
-	// runs time.Sleep on the device actor's single-threaded loop, which would
-	// block every other request to that device (and the health ticker) for the
-	// full duration. wait has no device-side effect, so sleep in-process.
-	time.Sleep(time.Duration(ms) * time.Millisecond)
-	fmt.Printf("Waited %dms\n", ms)
+	// Local sleep via the shared policy helper — never route through the
+	// daemon. The daemon-side wait would sleep on the device actor's
+	// single-threaded loop, blocking every other request to that device (and
+	// the health ticker) for the full duration. wait has no device-side
+	// effect, so sleep in-process.
+	fmt.Println(protocol.SleepWait(ms))
 }
 
-func statusCmd() {
-	if !useDaemon {
-		showDaemonStatus()
-		return
-	}
-	// In daemon mode, check if the daemon is alive. If not, fall back to
-	// simple status without forcing a daemon start — status is a read-only
-	// probe, not an operation that needs a live session.
+func (e *cmdEnv) statusCmd() {
+	// Mode-agnostic: status is a read-only probe of the daemon process
+	// (never auto-starting one). Identical output in daemon mode and
+	// --foreground mode: the daemon's status as indented JSON.
 	pidFile := daemon.PidFileName()
 	pid, _ := daemon.ReadPID(pidFile)
 	if pid == 0 || !daemon.IsProcessAlive(pid) {
 		fmt.Println("daemon not running")
 		return
 	}
-	client := daemon.NewClient(daemonSerial)
+	client := daemon.NewClient(e.serial)
 	status, err := client.Ping()
 	if err != nil {
 		// Daemon process exists but socket not responding — report degraded.
@@ -1041,7 +816,7 @@ func statusCmd() {
 	fmt.Println(string(data))
 }
 
-func connectCmd(args []string) {
+func (e *cmdEnv) connectCmd(args []string) {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: phonefast connect <serial>")
 		fmt.Fprintln(os.Stderr, "       phonefast daemon connect <serial>")
@@ -1049,7 +824,7 @@ func connectCmd(args []string) {
 	}
 	serial := args[0]
 	client := daemon.NewClient(serial)
-	_, err := client.Call("connect", map[string]any{"device": serial})
+	_, err := client.Call(protocol.MethodConnect, map[string]any{"device": serial})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error connecting to %s: %v\n", serial, err)
 		os.Exit(1)
@@ -1057,7 +832,7 @@ func connectCmd(args []string) {
 	fmt.Printf("Connected to %s\n", serial)
 }
 
-func disconnectCmd(args []string) {
+func (e *cmdEnv) disconnectCmd(args []string) {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: phonefast disconnect <serial>")
 		fmt.Fprintln(os.Stderr, "       phonefast daemon disconnect <serial>")
@@ -1065,7 +840,7 @@ func disconnectCmd(args []string) {
 	}
 	serial := args[0]
 	client := daemon.NewClient(serial)
-	_, err := client.Call("disconnect", map[string]any{"device": serial})
+	_, err := client.Call(protocol.MethodDisconnect, map[string]any{"device": serial})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error disconnecting %s: %v\n", serial, err)
 		os.Exit(1)
@@ -1075,7 +850,7 @@ func disconnectCmd(args []string) {
 
 // ── MCP server command (unchanged) ──
 
-func serveCmd(args []string) {
+func (e *cmdEnv) serveCmd(args []string) {
 	cfg := mcp.MCPConfig{
 		Transport: "sse",
 		Host:      "0.0.0.0",
@@ -1084,7 +859,7 @@ func serveCmd(args []string) {
 	}
 	// Inherit the global -s/--serial (set before the subcommand, e.g.
 	// `phonefast -s DEV serve`); a flag after `serve` overrides it.
-	serial := daemonSerial
+	serial := e.serial
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -1126,25 +901,26 @@ func serveCmd(args []string) {
 
 	// Ensure the unified daemon is running — MCP no longer holds its own
 	// session; every tool call routes through the daemon via JSON-RPC.
-	ensureDaemon()
+	// The server has no direct-mode fallback, so a failed auto-start must fail
+	// fast here rather than start a server whose every tool call would error.
+	e.ensureDaemonOrExit()
 
 	fmt.Fprintf(os.Stderr, "[phonefast] MCP server (device=%s) starting on %s:%d%s/sse\n",
 		serial, cfg.Host, cfg.Port, cfg.Path)
 
-	server := mcp.New(serial)
 	// Wire daemon auto-recovery at the client layer: if the daemon crashes
 	// mid-session, daemon.Client.Call detects the unreachable socket, invokes
-	// this ensurer (deduplicated across concurrent callers), and retries — so
+	// the ensurer (restart deduplicated by the Supervisor), and retries — so
 	// a long-lived MCP server self-heals instead of permanently failing every
-	// tool call. The non-exiting variant ensures a failed restart surfaces to
-	// the tool call rather than killing the server process.
-	daemon.SetEnsurer(func() error {
-		if err := ensureDaemonE(); err != nil {
+	// tool call. A failed restart surfaces to the tool call rather than
+	// killing the server process.
+	server := mcp.New(serial, mcp.WithEnsurer(func() error {
+		if err := e.supervisor.EnsureRunning(); err != nil {
 			log.Printf("[phonefast] daemon restart failed: %v", err)
 			return err
 		}
 		return nil
-	})
+	}))
 	if err := server.Run(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
@@ -1177,17 +953,17 @@ func normalizeAction(rawJSON string, action *jsonAction) {
 	}
 }
 
-func runCmd(args []string) {
+func (e *cmdEnv) runCmd(args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "Error: run requires a JSON action argument")
-		fmt.Fprintf(os.Stderr, "Example: %s run '{\"action\":\"screenshot\"}'\n", binName)
+		fmt.Fprintf(os.Stderr, "Example: %s run '{\"action\":\"screenshot\"}'\n", e.binName)
 		os.Exit(1)
 	}
 
 	// Try to parse as JSON array first (batch mode)
 	raw := strings.TrimSpace(args[0])
 	if strings.HasPrefix(raw, "[") {
-		runBatch(raw)
+		e.runBatch(raw)
 		return
 	}
 
@@ -1197,222 +973,78 @@ func runCmd(args []string) {
 	}
 	normalizeAction(args[0], &action)
 
-	if useDaemon {
-		runDaemonAction(action)
-	} else {
-		// Direct mode — dispatch via session
-		withSession(func(sess *session.Session) error {
-			return dispatchDirect(sess, action)
-		})
-	}
+	e.runOneAction(action)
 }
 
-// runDaemonAction executes one action via the daemon RPC, with a special case
-// for "wait": it sleeps locally instead of routing through the daemon. The
-// daemon's handleWait runs time.Sleep on the device actor's single-threaded
-// loop, which would block every other request to that device (and the health
-// ticker) for the full duration. wait has no device-side effect, so sleep here.
-func runDaemonAction(action jsonAction) {
-	if action.Action == "wait" {
+// runOneAction executes one action with identical output in both modes.
+// Special case for "wait": it sleeps locally instead of routing through the
+// daemon — the daemon-side wait would block the device actor's single-threaded
+// loop (and the health ticker) for the full duration. wait has no device-side
+// effect, so sleep here.
+func (e *cmdEnv) runOneAction(action jsonAction) {
+	if action.Action == protocol.MethodWait {
 		ms, _ := getInt(action.Args, "duration_ms")
-		if ms == 0 {
-			ms = 1000
-		}
-		time.Sleep(time.Duration(ms) * time.Millisecond)
-		fmt.Printf("Waited %dms\n", ms)
+		fmt.Println(protocol.SleepWait(ms))
 		return
 	}
-	result := daemonCall(action.Action, action.Args)
 	var resp struct {
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(result, &resp); err == nil && resp.Message != "" {
-		fmt.Println(resp.Message)
-	} else {
-		fmt.Println(string(result))
+	print := func(result json.RawMessage) {
+		if err := json.Unmarshal(result, &resp); err == nil && resp.Message != "" {
+			fmt.Println(resp.Message)
+		} else {
+			fmt.Println(string(result))
+		}
 	}
+	e.call(action.Action, action.Args, print)
 }
 
-// runBatch executes a JSON array of actions sequentially.
-func runBatch(raw string) {
+// runBatch executes a JSON array of actions sequentially. Daemon mode sends
+// one RPC per action; direct mode opens ONE session and dispatches the whole
+// batch in-process (no reconnect per action).
+func (e *cmdEnv) runBatch(raw string) {
 	var rawItems []json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &rawItems); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: invalid JSON array: %v\n", err)
 		os.Exit(1)
 	}
 
-	if useDaemon {
+	if e.useDaemon {
 		for _, item := range rawItems {
 			var a jsonAction
 			json.Unmarshal(item, &a)
 			normalizeAction(string(item), &a)
-			runDaemonAction(a)
+			e.runOneAction(a)
 		}
-	} else {
-		withSession(func(sess *session.Session) error {
-			for _, item := range rawItems {
-				var a jsonAction
-				json.Unmarshal(item, &a)
-				normalizeAction(string(item), &a)
-				if err := dispatchDirect(sess, a); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
+		return
 	}
-}
 
-// dispatchDirect runs one action against an open session.
-func dispatchDirect(sess *session.Session, action jsonAction) error {
-	switch action.Action {
-	case "screenshot":
-		png, w, h, err := sess.Screenshot()
-		if err != nil {
-			return err
-		}
-		b64 := base64.StdEncoding.EncodeToString(png)
-		fmt.Printf(`{"base64":"%s","width":%d,"height":%d,"format":"png"}`+"\n", b64, w, h)
-	case "get_ui_elements":
-		elements, err := sess.GetUISummary(0)
-		if err != nil {
-			return err
-		}
-		data, _ := json.Marshal(elements)
-		fmt.Printf(`{"elements":%s}`+"\n", string(data))
-	case "observe":
-		png, w, h, err := sess.Screenshot()
-		if err != nil {
-			return err
-		}
-		elements, err := sess.GetUISummary(0)
-		if err != nil {
-			return err
-		}
-		b64 := base64.StdEncoding.EncodeToString(png)
-		fmt.Printf(`{"screenshot_base64":"%s","width":%d,"height":%d,"format":"png","element_count":%d}`+"\n", b64, w, h, len(elements))
-	case "tap":
-		x, _ := getInt(action.Args, "x")
-		y, _ := getInt(action.Args, "y")
-		if err := sess.Tap(x, y); err != nil {
-			return err
-		}
-		fmt.Printf("Tapped at (%d, %d)\n", x, y)
-	case "tap_element":
-		elements, err := sess.GetUISummary(0)
-		if err != nil {
-			elements, err = sess.GetUIElementsFallbackADB(0)
+	e.withSession(func(dev daemon.Device) error {
+		for _, item := range rawItems {
+			var a jsonAction
+			json.Unmarshal(item, &a)
+			normalizeAction(string(item), &a)
+			if a.Action == protocol.MethodWait {
+				ms, _ := getInt(a.Args, "duration_ms")
+				fmt.Println(protocol.SleepWait(ms))
+				continue
+			}
+			result, err := e.dispatcher.DispatchResult(dev, a.Action, a.Args)
 			if err != nil {
-				return fmt.Errorf("get ui elements: %v", err)
-			}
-		}
-		if len(elements) == 0 {
-			return fmt.Errorf("no UI elements found")
-		}
-		// Search by index
-		if idx, ok := getInt(action.Args, "index"); ok {
-			for _, el := range elements {
-				if el.Index == idx {
-					if err := sess.Tap(el.Center[0], el.Center[1]); err != nil {
-						return err
-					}
-					fmt.Printf("Tapped element [%d] at (%d, %d)\n", idx, el.Center[0], el.Center[1])
-					return nil
-				}
-			}
-			return fmt.Errorf("element with index %d not found", idx)
-		}
-		// Search by text
-		if text, ok := action.Args["text"].(string); ok && text != "" {
-			textLower := strings.ToLower(text)
-			for _, el := range elements {
-				if strings.Contains(strings.ToLower(el.Text), textLower) ||
-					strings.Contains(strings.ToLower(el.ContentDesc), textLower) {
-					if err := sess.Tap(el.Center[0], el.Center[1]); err != nil {
-						return err
-					}
-					fmt.Printf("Tapped '%s' at (%d, %d)\n", text, el.Center[0], el.Center[1])
-					return nil
-				}
-			}
-			return fmt.Errorf("element with text '%s' not found", text)
-		}
-		return fmt.Errorf("specify index=N or text=\"...\"")
-	case "back":
-		if err := sess.Back(); err != nil {
-			return err
-		}
-		fmt.Println("Back pressed")
-	case "home":
-		if err := sess.Home(); err != nil {
-			return err
-		}
-		fmt.Println("Home pressed")
-	case "type_text":
-		text, _ := action.Args["text"].(string)
-		if err := sess.TypeText(text); err != nil {
-			return err
-		}
-		fmt.Printf("Typed: %s\n", text)
-	case "swipe":
-		x1, _ := getInt(action.Args, "start_x")
-		y1, _ := getInt(action.Args, "start_y")
-		x2, _ := getInt(action.Args, "end_x")
-		y2, _ := getInt(action.Args, "end_y")
-		dur, _ := getInt(action.Args, "duration_ms")
-		if dur == 0 {
-			dur = 500
-		}
-		if err := sess.Swipe(x1, y1, x2, y2, dur); err != nil {
-			return err
-		}
-		fmt.Printf("Swiped from (%d, %d) to (%d, %d)\n", x1, y1, x2, y2)
-	case "launch_app":
-		pkg, _ := action.Args["package"].(string)
-		if pkg == "" {
-			pkg, _ = action.Args["app"].(string)
-		}
-		if err := sess.LaunchApp(pkg); err != nil {
-			return err
-		}
-		fmt.Printf("Launched: %s\n", pkg)
-	case "list_devices":
-		devices, err := adb.ListDevices()
-		if err != nil {
-			return err
-		}
-		data, _ := json.Marshal(devices)
-		fmt.Println(string(data))
-	case "wait":
-		ms, _ := getInt(action.Args, "duration_ms")
-		if ms == 0 {
-			ms = 1000
-		}
-		time.Sleep(time.Duration(ms) * time.Millisecond)
-		fmt.Printf("Waited %dms\n", ms)
-	case "press_key":
-		// Try keycode first, then key name
-		if kc, ok := getInt(action.Args, "keycode"); ok {
-			if err := sess.PressKey(kc); err != nil {
 				return err
 			}
-			fmt.Printf("Key %d pressed\n", kc)
-		} else if keyName, ok := action.Args["key"].(string); ok {
-			kc := int(keycodeFromName(strings.ToLower(strings.TrimSpace(keyName))))
-			if kc == 0 {
-				return fmt.Errorf("unknown key name: %q", keyName)
+			var resp struct {
+				Message string `json:"message"`
 			}
-			if err := sess.PressKey(kc); err != nil {
-				return err
+			if err := json.Unmarshal(result, &resp); err == nil && resp.Message != "" {
+				fmt.Println(resp.Message)
+			} else {
+				fmt.Println(string(result))
 			}
-			fmt.Printf("Key '%s' pressed\n", keyName)
-		} else {
-			return fmt.Errorf("press_key requires keycode or key parameter")
 		}
-	default:
-		return fmt.Errorf("unknown action: %s", action.Action)
-	}
-	return nil
+		return nil
+	})
 }
 
 func getInt(args map[string]any, key string) (int, bool) {
@@ -1485,22 +1117,25 @@ func parseUIShowArgs(args []string, defaultVal int) (int, bool, string) {
 	return defaultVal, summary, formatType
 }
 
-func printMessage(result json.RawMessage) {
+// extractMessage returns the human-readable message for a daemon result: the
+// "message" field when present and non-empty, otherwise the raw JSON text.
+// Extracted from printMessage so the selection logic is unit-testable without
+// capturing stdout.
+func extractMessage(result json.RawMessage) string {
 	var resp struct {
 		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(result, &resp); err == nil && resp.Message != "" {
-		fmt.Println(resp.Message)
-	} else {
-		fmt.Println(string(result))
+		return resp.Message
 	}
+	return string(result)
 }
 
-func timeSleep(ms int) {
-	time.Sleep(time.Duration(ms) * time.Millisecond)
+func printMessage(result json.RawMessage) {
+	fmt.Println(extractMessage(result))
 }
 
-func printUsage() {
+func (e *cmdEnv) printUsage() {
 	fmt.Print(strings.ReplaceAll(`phonefast — Fast Android device control
 
 Options:
@@ -1543,7 +1178,7 @@ Other:
   phonefast status                     Show daemon status
   phonefast help                       Show this help message
   phonefast --version                  Show version
-  phonefast --help / -h                Show this help message`, "phonefast", binName))
+  phonefast --help / -h                Show this help message`, "phonefast", e.binName))
 }
 
 func init() {

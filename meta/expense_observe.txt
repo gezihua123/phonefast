@@ -1,0 +1,33 @@
+count=32
+#0 (FrameLayout) | bounds=[0,0][1080,2400] | | depth=0 parent=#-1
+#1 (LinearLayout) | bounds=[0,0][1080,2337] | | depth=1 parent=#0
+#2 (FrameLayout) | bounds=[0,128][1080,2337] | | depth=2 parent=#1
+#3 id="action_bar_root" (LinearLayout) | bounds=[0,128][1080,2337] | | depth=3 parent=#2
+#4 id="content" (FrameLayout) | bounds=[0,128][1080,2337] | | depth=4 parent=#3
+#5 id="dl_main" (DrawerLayout) | bounds=[0,128][1080,2337] | | depth=5 parent=#4
+#6 id="cl_main" (ViewGroup) | bounds=[0,128][1080,2337] | | depth=6 parent=#5
+#7 id="fc_main" (FrameLayout) | bounds=[0,128][1080,2337] | | depth=7 parent=#6
+#8 id="ml_home" (ViewGroup) | bounds=[0,128][1080,2337] | | depth=8 parent=#7
+#9 id="abl_home" (LinearLayout) | bounds=[0,128][1080,275] | | depth=9 parent=#8
+#10 id="toolbar" (ViewGroup) | bounds=[0,128][1080,275] | | depth=10 parent=#9
+#11 (IconBtn) | bounds=[0,128][147,275] | [clickable] | depth=11 parent=#10
+#12 text="Home" (Text) | bounds=[189,166][334,237] | | depth=11 parent=#10
+#13 id="rv_home" (RecyclerView) | bounds=[0,275][1080,2337] | | depth=9 parent=#8
+#14 (CardView) | bounds=[21,296][1059,898] | | depth=10 parent=#13
+#15 (RelativeLayout) | bounds=[21,296][1059,898] | | depth=11 parent=#14
+#16 text="Totals" id="tv_expense_in_out_title" (Text) | bounds=[63,338][193,401] | | depth=12 parent=#15
+#17 id="tv_date_range" (Text) | bounds=[63,412][63,480] | | depth=12 parent=#15
+#18 text="INCOME" id="tv_income" (Text) | bounds=[105,522][230,558] | | depth=12 parent=#15
+#19 id="tv_income_value" (Text) | bounds=[105,558][105,647] | | depth=12 parent=#15
+#20 id="tv_income_symobol" (Text) | bounds=[105,576][105,627] | | depth=12 parent=#15
+#21 text="OUTCOME" id="tv_outcome" (Text) | bounds=[105,689][259,725] | | depth=12 parent=#15
+#22 id="tv_outcome_value" (Text) | bounds=[105,725][105,814] | | depth=12 parent=#15
+#23 id="tv_outcome_symbol" (Text) | bounds=[105,743][105,794] | | depth=12 parent=#15
+#24 (CardView) | bounds=[21,919][1059,1565] | | depth=10 parent=#13
+#25 (RelativeLayout) | bounds=[21,919][1059,1565] | | depth=11 parent=#24
+#26 text="Expenses in this Week" id="tv_title" (Text) | bounds=[63,961][532,1024] | | depth=12 parent=#25
+#27 id="tv_date_range" (Text) | bounds=[63,1035][63,1103] | | depth=12 parent=#25
+#28 id="expense_graph" (View) | bounds=[21,1103][1059,1523] | | depth=12 parent=#25
+#29 id="fb_main_add" (IconBtn) | bounds=[891,2106][1038,2253] | [clickable] | depth=7 parent=#6
+#30 id="statusBarBackground" (View) | bounds=[0,0][1080,128] | | depth=1 parent=#0
+#31 id="navigationBarBackground" (View) | bounds=[0,2337][1080,2400] | [off-screen] | depth=1 parent=#0

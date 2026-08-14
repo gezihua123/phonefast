@@ -5,7 +5,6 @@ package log
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,7 +38,7 @@ type Config struct {
 // The caller must call Close() to flush and stop the writer.
 func New(cfg Config) (*Logger, error) {
 	if cfg.Path == "" {
-		cfg.Path = fmt.Sprintf("/tmp/phonefast-%d.log", os.Getuid())
+		cfg.Path = defaultPath()
 	}
 	if cfg.BufferSize <= 0 {
 		cfg.BufferSize = 1024
@@ -130,11 +129,6 @@ func (l *Logger) formatEntry(msg string, callerSkip int) string {
 	return fmt.Sprintf("%s [%s] %s\n", now, caller, msg)
 }
 
-// writeEntry is kept for synchronous fallback writes (buffer full case).
-func (l *Logger) writeEntry(w io.Writer, msg string, callerSkip int) {
-	w.Write([]byte(l.formatEntry(msg, callerSkip)))
-}
-
 // captureCaller returns a string like "daemon/daemon.go:147 Start()".
 func captureCaller(skip int) string {
 	pc, file, line, ok := runtime.Caller(skip)
@@ -189,4 +183,24 @@ func CloseDefault() {
 	if defaultLogger != nil {
 		defaultLogger.Close()
 	}
+}
+
+// DefaultPath returns the path the default logger writes to
+// (/tmp/phonefast-<uid>.log). Exported so callers can point users at the log
+// file in error messages without duplicating the path format.
+func DefaultPath() string {
+	return defaultPath()
+}
+
+func defaultPath() string {
+	return fmt.Sprintf("/tmp/phonefast-%d.log", os.Getuid())
+}
+
+// DaemonStderrPath returns the path capturing the daemon child process's raw
+// stderr (/tmp/phonefast-daemon-<uid>.log). The shared phonelog only sees
+// errors after the child's logger initializes; a crash before that (CGO
+// loader failure, runtime panic) would be invisible if stderr went to
+// /dev/null. Exported so spawn sites and error messages share one path.
+func DaemonStderrPath() string {
+	return fmt.Sprintf("/tmp/phonefast-daemon-%d.log", os.Getuid())
 }

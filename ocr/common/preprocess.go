@@ -55,7 +55,8 @@ const RecHeight = 48
 //
 // Pipeline:
 //  1. Compute target resolution: cap longer side at maxSide pixels
-//     (default 1024 for speed, 0 = keep original)
+//     (PP-OCRv6 default 960 = PaddleOCR resize_long=960, limit_type="max";
+//     0 = keep original)
 //  2. Cap max dimension and round to 32×
 //  3. Resize with bilinear (or fast copy if near 1:1)
 //  4. No padding — the model accepts dynamic input shapes [1, 3, ?, ?]
@@ -63,7 +64,9 @@ const RecHeight = 48
 //  6. Normalize: (val - mean) / std
 //
 // maxSide=0 means keep original resolution (quality mode, up to ~173ms).
-// maxSide=1024 is the default speed/quality trade-off (~35ms for 1080×2400).
+// maxSide=960 matches PaddleOCR's PP-OCRv6 training resolution. The earlier
+// 1024 was out-of-distribution and caused intra-word fragmentation on live
+// screens (see ocr/detect/detect.go).
 //
 // Returns tensor data, resized width, resized height, and tensor shape.
 func DetPreprocess(img image.Image, maxSide int) ([]float32, int, int, []int64) {
@@ -83,13 +86,19 @@ func DetPreprocess(img image.Image, maxSide int) ([]float32, int, int, []int64) 
 // returning).
 func DetPreprocessInto(img image.Image, maxSide int, buf []float32) ([]float32, int, int, []int64) {
 	const (
-		minSide  = 32
-		detMeanR = 0.485
-		detMeanG = 0.456
-		detMeanB = 0.406
-		detStdR  = 0.229
-		detStdG  = 0.224
-		detStdB  = 0.225
+		minSide = 32
+		// PaddleOCR feeds BGR (img_mode: BGR, PP-OCRv6_medium_det/inference.yml).
+		// NormalizeImage mean/std [0.485,0.456,0.406]/[0.229,0.224,0.225] are
+		// applied per-plane in BGR order: plane0(B)←0.485, plane1(G)←0.456,
+		// plane2(R)←0.406. Constants are named by plane index, not color — the
+		// model was trained with this BGR-mean pairing (ImageNet means listed in
+		// RGB order but applied to BGR channels), so inference must match exactly.
+		detMean0 = 0.485 // plane0 = B
+		detMean1 = 0.456 // plane1 = G
+		detMean2 = 0.406 // plane2 = R
+		detStd0  = 0.229
+		detStd1  = 0.224
+		detStd2  = 0.225
 	)
 
 	bounds := img.Bounds()
@@ -133,16 +142,17 @@ func DetPreprocessInto(img image.Image, maxSide int, buf []float32) ([]float32, 
 		rowPix := pix[y*stride:]
 		for x := 0; x < resizeW; x++ {
 			px := x * 4
+			// image.RGBA layout is [R,G,B,A]; PaddleOCR wants BGR planes.
 			r := rowPix[px]
 			g := rowPix[px+1]
 			b := rowPix[px+2]
 			base := y*resizeW + x
-			tensor[base] = float32(float64(r)/255.0-detMeanR) / detStdR
-			tensor[resizeH*resizeW+base] = float32(float64(g)/255.0-detMeanG) / detStdG
-			tensor[2*resizeH*resizeW+base] = float32(float64(b)/255.0-detMeanB) / detStdB
+			tensor[base] = float32(float64(b)/255.0-detMean0) / detStd0
+			tensor[resizeH*resizeW+base] = float32(float64(g)/255.0-detMean1) / detStd1
+			tensor[2*resizeH*resizeW+base] = float32(float64(r)/255.0-detMean2) / detStd2
 		}
 	}
-	// Release resized intermediate (~2 MB for 480×1024) after tensor is built.
+	// Release resized intermediate (~2 MB for 480×960) after tensor is built.
 	resized = nil
 
 	shape := []int64{1, 3, int64(resizeH), int64(resizeW)}
@@ -155,7 +165,13 @@ func DetPreprocessInto(img image.Image, maxSide int, buf []float32) ([]float32, 
 // shape-specialized to this width on conversion (see scripts/convert-ncnn.sh);
 // single engines pad each crop to it. Defined once here so the ncnn engine
 // and the preprocess helpers share the single source of truth.
-const RecMaxWidth = 320
+//
+// 640 prevents character truncation on long merged text lines (e.g. the full
+// title "Avocado Toast with Egg" ≈ 576px at H=48). At 480, the line was capped
+// and compressed, dropping the trailing 'g' → "Ego". 640 leaves headroom without
+// meaningfully increasing inference cost (T ∝ W, CTC is O(T·nClass); most crops
+// are far shorter than the cap, so the average impact is small).
+const RecMaxWidth = 640
 
 // RecResizeWidth computes the resized width for a crop: H=RecHeight keeping
 // aspect ratio, capped at capW (PP-OCR rec ceiling is RecMaxWidth), floored at 1.
@@ -172,50 +188,91 @@ func RecResizeWidth(crop image.Image, capW int) int {
 	return rw
 }
 
-// RecBatchPreprocess converts multiple cropped text images into a single
-// batched float32 tensor for one-pass recognition inference.
+// recMaxImgW is PaddleOCR's max_imgW cap on the rec input width
+// (processors.py:51, OCRReisizeNormImg). The rec ONNX model accepts dynamic
+// width up to this; PP-OCRv6_medium_rec's TRT dynamic shapes declare W up to
+// 3200 (inference.yml). Used only by the ONNX path — the NCNN path uses the
+// static RecMaxWidth=640 shape-specialized model.
+const recMaxImgW = 3200
+
+// recMinRatio is PaddleOCR's max_wh_ratio floor: rec_image_shape [3,48,320] →
+// 320/48 ≈ 6.667 (processors.py:91-96, OCRReisizeNormImg.resize). A crop
+// narrower than this is still padded to width 320 so the rec model sees ≥320
+// timesteps — matching PaddleOCR exactly, where the old pure-aspect resize fed
+// short text a sub-320 width and changed the temporal context.
+const recMinRatio = 320.0 / 48.0
+
+// recResizeDims ports PaddleOCR OCRReisizeNormImg.resize_norm_img
+// (processors.py:56-83) for one crop of size w×h. It returns:
+//   - resizedW: the aspect-preserved content width
+//   - imgW: the per-crop padded width = int(48·max(320/48, w/h)), capped 3200
 //
-// Pipeline:
-//  1. For each crop: resize to H=RecHeight, W=dynamic (keep aspect ratio)
-//  2. Find max width across all crops, pad all to that width
-//  3. Stack into [B, 3, RecHeight, maxW] float32 tensor
-//  4. Normalize each: (pixel/255 - 0.5) / 0.5
-func RecBatchPreprocess(crops []image.Image) ([]float32, int) {
-	return RecBatchPreprocessInto(crops, nil)
+// Faithful detail: the `if ceil(imgH·ratio) > imgW` branch (processors.py:71-75)
+// means a wide crop (ratio > 320/48) resizes to int(48·ratio) with no padding,
+// while a narrow crop resizes to ceil(48·ratio) and pads up to 320.
+func recResizeDims(w, h int) (resizedW, imgW int) {
+	const imgH = RecHeight
+	if h <= 0 || w <= 0 {
+		return 1, int(float64(imgH) * recMinRatio)
+	}
+	ratio := float64(w) / float64(h)
+	maxWhRatio := recMinRatio
+	if ratio > maxWhRatio {
+		maxWhRatio = ratio
+	}
+	imgW = int(float64(imgH) * maxWhRatio)
+	if imgW > recMaxImgW {
+		resizedW = recMaxImgW
+		imgW = recMaxImgW
+		return
+	}
+	if math.Ceil(float64(imgH)*ratio) > float64(imgW) {
+		resizedW = imgW
+	} else {
+		resizedW = int(math.Ceil(float64(imgH) * ratio))
+	}
+	if resizedW < 1 {
+		resizedW = 1
+	}
+	return
 }
 
-// RecBatchPreprocessInto is the buffer-reusing variant of RecBatchPreprocess.
-// It writes the batched [B,3,RecHeight,maxW] tensor into `buf` (grown on demand)
-// and returns the (possibly reallocated) slice. Eliminates the ~6 MB per-call
-// allocation when the caller reuses one scratch buffer across serialized calls.
+// RecBatchPreprocessChunkInto writes a [B,3,RecHeight,maxW] tensor for a chunk
+// of crops, faithful to PaddleOCR's OCRReisizeNormImg + ToBatch
+// (processors.py:47-105, 322-359). Each crop is resized to its content width
+// (recResizeDims) and right-padded with zeros to the chunk's max imgW. The
+// caller bounds B (≤8, PaddleOCR's rec batch) to keep the output [B,T,nClass]
+// memory-bounded.
+//
+// The whole tensor is zeroed before writing so the padding region is exactly
+// 0.0 — matching PaddleOCR's np.pad(constant_values=0). (growFloat32 reuses the
+// backing array across calls without re-zeroing, so stale padding would
+// otherwise leak into the rec input.)
 //
 // Safety: same zero-copy ORT contract as DetPreprocessInto — do not reuse the
 // returned slice until the input Value built from it is Closed.
-//
-// It also releases each resized intermediate as soon as its channel is written,
-// so the B resized RGBA images (~60 KB each) don't all coexist with the tensor.
-func RecBatchPreprocessInto(crops []image.Image, buf []float32) ([]float32, int) {
-	if len(crops) == 0 {
+func RecBatchPreprocessChunkInto(crops []image.Image, buf []float32) ([]float32, int) {
+	B := len(crops)
+	if B == 0 {
 		return nil, 0
 	}
-
-	B := len(crops)
-
-	// Step 1: Resize each crop to H=RecHeight, record widths.
 	resizedWidths := make([]int, B)
 	resizedImages := make([]*image.RGBA, B)
 	maxW := 0
 	for i, crop := range crops {
-		rw := RecResizeWidth(crop, RecMaxWidth)
+		b := crop.Bounds()
+		rw, iw := recResizeDims(b.Dx(), b.Dy())
 		resizedWidths[i] = rw
-		if rw > maxW {
-			maxW = rw
+		if iw > maxW {
+			maxW = iw
 		}
 		resizedImages[i] = ResizeImage(crop, rw, RecHeight)
 	}
 
-	// Step 2: Build stacked tensor [B, 3, RecHeight, maxW] reusing buf.
+	// Zero the (possibly reused) buffer so right-padding is exactly 0.0,
+	// matching PaddleOCR's np.pad constant_values=0.
 	tensor := growFloat32(buf, B*3*RecHeight*maxW)
+	clear(tensor)
 	stride := 3 * RecHeight * maxW
 	for b := 0; b < B; b++ {
 		writeRecChannel(tensor[b*stride:], resizedImages[b], resizedWidths[b], maxW)
@@ -223,7 +280,6 @@ func RecBatchPreprocessInto(crops []image.Image, buf []float32) ([]float32, int)
 		// B intermediates don't all live alongside the tensor.
 		resizedImages[b] = nil
 	}
-
 	return tensor, maxW
 }
 
@@ -254,13 +310,18 @@ func RecPreprocessFixedInto(img image.Image, width int, dst []float32) {
 func writeRecChannel(dst []float32, resized *image.RGBA, rw, strideW int) {
 	pix := resized.Pix
 	stride := resized.Stride
+	// PaddleOCR feeds BGR (img_mode: BGR, PP-OCRv6_medium_rec/inference.yml):
+	// plane0=B, plane1=G, plane2=R. image.RGBA layout is [R,G,B,A], so map
+	// plane index → byte offset {2,1,0}. Rec norm is symmetric (0.5/0.5), so
+	// only the channel order changes.
+	planeByte := [3]int{2, 1, 0}
 	for c := 0; c < 3; c++ {
 		chanOffset := c * RecHeight * strideW
 		for y := 0; y < RecHeight; y++ {
 			rowOffset := chanOffset + y*strideW
 			srcRow := pix[y*stride:]
 			for x := 0; x < rw; x++ {
-				val := float64(srcRow[x*4+c]) / 255.0
+				val := float64(srcRow[x*4+planeByte[c]]) / 255.0
 				dst[rowOffset+x] = float32(val-0.5) / 0.5
 			}
 		}

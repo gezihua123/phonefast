@@ -8,13 +8,12 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
 // ErrDaemonUnreachable is returned by Client.Call when the daemon's Unix socket
 // cannot be dialed — i.e. no daemon process is listening. Client.Call itself
-// recovers from this when an ensurer is configured (see SetEnsurer); callers
+// recovers from this when an ensurer is configured (see WithEnsurer); callers
 // only see it if recovery fails or no ensurer is set.
 var ErrDaemonUnreachable = errors.New("daemon unreachable")
 
@@ -30,26 +29,18 @@ func PidFileName() string {
 	return fmt.Sprintf("/tmp/phonefast-%d.pid", os.Getuid())
 }
 
-// ensurerClient is the shared restart-on-unreachable state for all Clients on
-// the same socket path. It collapses concurrent unreachable errors into a
-// single restart attempt so N simultaneous failed calls don't spawn N daemons.
-var (
-	globalEnsurerMu      sync.Mutex
-	globalEnsurer        func() error
-	globalRestartInFlight bool
-)
+// ClientOption configures a Client at construction.
+type ClientOption func(*Client)
 
-// SetEnsurer installs a process-wide callback the Client invokes when the
-// daemon is unreachable (its socket won't dial). The callback should start the
-// daemon and return nil once it's listening (or return an error). Concurrent
-// unreachable calls share one restart attempt — the callback runs at most once
-// per concurrent burst. Long-lived callers (the MCP server) use this to
-// self-heal after a daemon crash; short-lived CLI calls don't need it because
-// ensureDaemon runs at startup.
-func SetEnsurer(fn func() error) {
-	globalEnsurerMu.Lock()
-	globalEnsurer = fn
-	globalEnsurerMu.Unlock()
+// WithEnsurer installs a daemon-restart callback the Client invokes when the
+// daemon is unreachable (its socket won't dial). The callback should start
+// the daemon and return nil once it's listening (or return an error).
+// Concurrent-restart deduplication is the ensurer's own responsibility —
+// Supervisor.EnsureRunning provides it (all clients in a process share one
+// Supervisor instance, so N simultaneous unreachable calls collapse into one
+// restart attempt).
+func WithEnsurer(fn func() error) ClientOption {
+	return func(c *Client) { c.ensurer = fn }
 }
 
 // Client talks to the unified daemon over a Unix socket. The serial is
@@ -59,25 +50,30 @@ type Client struct {
 	socketPath string
 	serial     string
 	timeout    time.Duration
+	ensurer    func() error // optional daemon-restart callback (WithEnsurer)
 }
 
 // NewClient creates a client for the unified daemon, bound to the given
 // device serial. The serial is sent with every RPC call so the daemon can
 // route the request to the correct DeviceActor.
-func NewClient(serial string) *Client {
-	return &Client{
+func NewClient(serial string, opts ...ClientOption) *Client {
+	c := &Client{
 		socketPath: SocketName(),
 		serial:     serial,
 		timeout:    30 * time.Second,
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // Call sends a JSON-RPC request to the daemon and returns the result.
 //
-// If the daemon is unreachable and an ensurer is configured (SetEnsurer),
-// Call restarts the daemon once — deduplicated across concurrent callers — and
-// retries the request a single time. Regular RPC errors (device down, bad
-// params) are returned as-is and never trigger a restart.
+// If the daemon is unreachable and an ensurer is configured (WithEnsurer),
+// Call restarts the daemon once and retries the request a single time.
+// Regular RPC errors (device down, bad params) are returned as-is and never
+// trigger a restart.
 func (c *Client) Call(method string, params map[string]any) (json.RawMessage, error) {
 	result, err := c.callOnce(method, params)
 	if err == nil {
@@ -87,44 +83,14 @@ func (c *Client) Call(method string, params map[string]any) (json.RawMessage, er
 		return nil, err
 	}
 
-	// Daemon down. Run the ensurer at most once for this burst of concurrent
-	// unreachable callers, then retry once.
-	if restartErr := c.ensureDaemonOnce(); restartErr != nil {
+	// Daemon down. Run the ensurer (if any), then retry once.
+	if c.ensurer == nil {
+		return nil, err
+	}
+	if restartErr := c.ensurer(); restartErr != nil {
 		return nil, restartErr
 	}
 	return c.callOnce(method, params)
-}
-
-// ensureDaemonOnce invokes the configured ensurer, but if another goroutine is
-// already restarting the daemon, waits for it instead of spawning a second
-// restart. Returns nil if the daemon is (now) up, or the ensurer's error.
-func (c *Client) ensureDaemonOnce() error {
-	globalEnsurerMu.Lock()
-	ensurer := globalEnsurer
-	if ensurer == nil {
-		globalEnsurerMu.Unlock()
-		return ErrDaemonUnreachable
-	}
-	// Another caller is already restarting — wait for it.
-	for globalRestartInFlight {
-		globalEnsurerMu.Unlock()
-		time.Sleep(50 * time.Millisecond)
-		globalEnsurerMu.Lock()
-	}
-	// Re-check: the prior restart may have succeeded while we waited.
-	if _, statErr := os.Stat(c.socketPath); statErr == nil {
-		globalEnsurerMu.Unlock()
-		return nil
-	}
-	globalRestartInFlight = true
-	globalEnsurerMu.Unlock()
-	defer func() {
-		globalEnsurerMu.Lock()
-		globalRestartInFlight = false
-		globalEnsurerMu.Unlock()
-	}()
-
-	return ensurer()
 }
 
 // callOnce performs a single dial + request, with no retry logic.

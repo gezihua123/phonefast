@@ -2,7 +2,6 @@ package ocr
 
 import (
 	"fmt"
-
 )
 
 // Engine constructors registered by backends via init(). This follows

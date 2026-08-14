@@ -10,29 +10,33 @@ set -euo pipefail
 #
 # This script fixes the engine's two external dependencies:
 #   1. CAPABILITY  — the NCNN C library (libncnn.dylib + c_api.h), via `brew install ncnn`.
-#   2. DATA        — the converted rec model (rec.ncnn.param + rec.ncnn.bin),
-#                    generated from the PP-OCR v3 rec ONNX via pnnx.
+#   2. DATA        — the PP-OCRv6 medium rec ncnn model (rec.ncnn.param + .bin),
+#                    downloaded pre-converted from HuggingFace.
 #
 # Both are pinned: brew ncnn version is whatever brew ships (currently 20260526);
-# the model is shape-specialized to [1,3,48,320] (NCNN can't handle the rec
-# model's dynamic width unspecialized — see docs/DEV.md).
+# the model is the PP-OCRv6_medium_rec ncnn conversion from
+# https://huggingface.co/qefro/pp-OCRv5-6-ncnn — a faithful ONNX→ncnn conversion
+# with native ncnn LayerNorm + MultiHeadAttention layers (pnnx's own ONNX import
+# leaves v6's LayerNorm/Linear as unconverted F.* ops, which ncnn rejects; this
+# pre-converted model avoids that). The model has a dynamic Input blob and is fed
+# each crop's natural width (capped at 640) — see ocr/ncnn/ncnn.go.
 #
 # Usage:
-#   bash scripts/setup-ncnn.sh            # install lib + (re)build model
+#   bash scripts/setup-ncnn.sh            # install lib + download model
 #   bash scripts/setup-ncnn.sh --lib      # lib only (brew install ncnn)
-#   bash scripts/setup-ncnn.sh --model    # model only (pnnx convert)
+#   bash scripts/setup-ncnn.sh --model    # model only (download from HF)
 #
 # After setup, build & run:
 #   CGO_ENABLED=1 go build -tags ncnn ./cmd/phonefast/
 #   PHONEFAST_OCR_ENGINE=ncnn \
-#     PHONEFAST_NCNN_PARAM=<repo>/tests/ocr-models/ncnn/rec.ncnn.param \
-#     PHONEFAST_NCNN_BIN=<repo>/tests/ocr-models/ncnn/rec.ncnn.bin \
+#     PHONEFAST_NCNN_PARAM=<repo>/ocr/models/ncnn/rec.ncnn.param \
+#     PHONEFAST_NCNN_BIN=<repo>/ocr/models/ncnn/rec.ncnn.bin \
 #     phonefast daemon --foreground
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-MODEL_DIR="$PROJECT_ROOT/tests/ocr-models/ncnn"
-SRC_ONNX="$PROJECT_ROOT/assets/ocr/ppocr-rec.onnx"
+MODEL_DIR="$PROJECT_ROOT/ocr/models/ncnn"
+HF_BASE="https://huggingface.co/qefro/pp-OCRv5-6-ncnn/resolve/main"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[+]${NC} $*"; }
@@ -80,38 +84,45 @@ install_lib() {
     log "  pkg-config: ncnn.pc found"
 }
 
-# ── 2. DATA: convert PP-OCR rec ONNX → NCNN model ───────────────
-# pnnx converts ONNX → NCNN (.param + .bin), specializing the input shape to
-# [1,3,48,320]. NCNN loads models from files at runtime (PHONEFAST_NCNN_PARAM/BIN
-# env vars), so the model is NOT embedded — it lives in tests/ocr-models/ncnn/.
-build_model() {
-    log "Building NCNN rec model from PP-OCR v3 ONNX..."
-    [ -s "$SRC_ONNX" ] || err "Source ONNX not found: $SRC_ONNX\nRun: bash scripts/download-ocr-models.sh --models"
-
-    # pnnx ships in the pip `pnnx` package.
-    export PATH="$HOME/Library/Python/3.13/bin:$PATH"
-    command -v pnnx >/dev/null 2>&1 || err "pnnx not found. Install: pip3 install --user pnnx"
+# ── 2. DATA: download the PP-OCRv6 medium rec ncnn model ────────
+# The model is a faithful ONNX→ncnn conversion of PP-OCRv6_medium_rec, hosted
+# on HuggingFace. NCNN loads models from files at runtime
+# (PHONEFAST_NCNN_PARAM/BIN env vars), so the model is NOT embedded — it lives
+# in ocr/models/ncnn/. We download rather than convert locally because pnnx's
+# ONNX importer leaves v6's LayerNorm/Linear as unconverted F.* ops (ncnn
+# rejects them); the HF model was converted with a pnnx build that lowers them
+# to native ncnn LayerNorm + MultiHeadAttention layers.
+download_model() {
+    log "Downloading PP-OCRv6 medium rec ncnn model from HuggingFace..."
+    command -v curl >/dev/null 2>&1 || err "curl not found"
 
     mkdir -p "$MODEL_DIR"
-    local tmp_onnx="$MODEL_DIR/rec.onnx"
-    cp "$SRC_ONNX" "$tmp_onnx"
+    local param="$MODEL_DIR/rec.ncnn.param"
+    local bin="$MODEL_DIR/rec.ncnn.bin"
 
-    # Shape-specialize to [1,3,48,320] (PP-OCR rec ships dynamic; NCNN needs static).
-    ( cd "$MODEL_DIR" && pnnx rec.onnx inputshape="[1,3,48,320]f32" >/dev/null )
+    curl -fL -o "$param" "$HF_BASE/PP_OCRv6_medium_rec.param"
+    curl -fL -o "$bin"   "$HF_BASE/PP_OCRv6_medium_rec.bin"
 
-    # Keep only the NCNN model; drop pnnx intermediates + the ONNX copy.
-    ( cd "$MODEL_DIR" && rm -f rec.onnx rec.pnnx.param rec.pnnx.bin rec.pnnx.py rec.pnnx.onnx rec.pnnxsim.onnx )
+    [ -s "$param" ] && [ -s "$bin" ] \
+        || err "download failed: rec.ncnn.param/bin missing."
 
-    [ -s "$MODEL_DIR/rec.ncnn.param" ] && [ -s "$MODEL_DIR/rec.ncnn.bin" ] \
-        || err "pnnx conversion failed: rec.ncnn.param/bin missing."
+    # Sanity: the .param must have zero unconverted F.*/aten:: ops (the pnnx
+    # failure mode) and 18710 output classes (v6 medium: 18708 dict + blank + space).
+    if grep -qE '^(F\.|aten::|prim::)' "$param"; then
+        err "downloaded .param contains unconverted ops (F.*/aten::) — wrong model file."
+    fi
+    if ! grep -q '8=18710' "$param"; then
+        err "downloaded .param missing Gemm 8=18710 (v6 medium output classes)."
+    fi
 
-    log "  param: $MODEL_DIR/rec.ncnn.param ($(du -h "$MODEL_DIR/rec.ncnn.param" | cut -f1))"
-    log "  bin:   $MODEL_DIR/rec.ncnn.bin ($(du -h "$MODEL_DIR/rec.ncnn.bin" | cut -f1))"
+    log "  param: $param ($(du -h "$param" | cut -f1))"
+    log "  bin:   $bin ($(du -h "$bin" | cut -f1))"
+    log "  dict:  reuses ocr/common/ppocr_keys.txt (18708 v6 chars; identical to HF)"
 }
 
 # ── main ────────────────────────────────────────────────────────
 $do_lib && install_lib
-$do_model && build_model
+$do_model && download_model
 
 log "NCNN engine ready (macOS). Build & run:"
 echo "  CGO_ENABLED=1 go build -tags ncnn ./cmd/phonefast/"

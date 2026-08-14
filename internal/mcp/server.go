@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log"
 
-	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/gezihua123/phonefast/internal/daemon"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 )
 
 // MCPConfig holds the MCP server configuration.
@@ -33,23 +33,41 @@ type rpcCaller interface {
 // daemon each holding their own session on the same device and killing each
 // other's scrcpy server.
 //
-// Daemon-crash recovery is handled inside daemon.Client (via daemon.SetEnsurer),
-// not here: rpcCall is just Call + Unmarshal.
+// Daemon-crash recovery is handled inside daemon.Client (via the ensurer
+// installed by WithEnsurer), not here: rpcCall is just Call + Unmarshal.
 type Server struct {
 	// rpcClient talks to the unified daemon. The daemon injects `device=serial`
 	// into every request (see daemon.Client.Call). nil means "no daemon" —
 	// rpcCall returns a retry-style error.
 	rpcClient rpcCaller
 
+	// ensurer is the optional daemon-restart callback (WithEnsurer), wired
+	// into the underlying daemon.Client at construction.
+	ensurer func() error
+
 	// mcp-go server instance
 	mcpServer *mcpserver.MCPServer
+}
+
+// Option configures a Server at construction.
+type Option func(*Server)
+
+// WithEnsurer wires a daemon-restart callback into the RPC client so a
+// long-lived MCP server self-heals after a daemon crash (see
+// daemon.Client.WithEnsurer).
+func WithEnsurer(fn func() error) Option {
+	return func(s *Server) { s.ensurer = fn }
 }
 
 // New creates a new MCP server bound to the given device serial via the
 // unified daemon. Pass serial="" to let the daemon auto-detect the first
 // connected device per request.
-func New(serial string) *Server {
-	srv := &Server{rpcClient: daemon.NewClient(serial)}
+func New(serial string, opts ...Option) *Server {
+	srv := &Server{}
+	for _, opt := range opts {
+		opt(srv)
+	}
+	srv.rpcClient = daemon.NewClient(serial, daemon.WithEnsurer(srv.ensurer))
 	srv.initMCPServer()
 	return srv
 }
@@ -77,8 +95,8 @@ func (s *Server) initMCPServer() {
 
 // rpcCall sends a JSON-RPC request to the daemon and decodes the result into
 // out. The daemon.Client handles restart-on-unreachable transparently (via
-// daemon.SetEnsurer), so this is a plain Call + Unmarshal. Returns an error if
-// the daemon is not reachable or the RPC itself failed.
+// its WithEnsurer option), so this is a plain Call + Unmarshal. Returns an
+// error if the daemon is not reachable or the RPC itself failed.
 func (s *Server) rpcCall(method string, params map[string]any, out any) error {
 	if s.rpcClient == nil {
 		return fmt.Errorf("device connecting, retry in a moment")

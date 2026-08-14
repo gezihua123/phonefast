@@ -109,10 +109,10 @@ func TestSimplifyClassName(t *testing.T) {
 		{"android.webkit.WebView", "Browser"},
 		{"android.widget.FrameLayout", "FrameLayout"},   // not in widget map — unchanged
 		{"android.widget.LinearLayout", "LinearLayout"}, // not in widget map — unchanged
-		{"com.example.CustomView", "CustomView"},         // unknown — unchanged
-		{"TextView", "Text"},                             // already simple
-		{"ImageView", "Image"},                           // already simple
-		{"", ""},                                         // empty
+		{"com.example.CustomView", "CustomView"},        // unknown — unchanged
+		{"TextView", "Text"},                            // already simple
+		{"ImageView", "Image"},                          // already simple
+		{"", ""},                                        // empty
 	}
 
 	for _, tt := range tests {

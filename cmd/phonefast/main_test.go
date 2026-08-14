@@ -1,82 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
+	"github.com/gezihua123/phonefast/internal/daemon"
 	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
-
-// --- keycodeFromName tests ---
-
-// TestKeycodeFromNameCLI verifies the CLI-local keycodeFromName delegates
-// correctly to protocol.KeycodeFromName (the duplicate map was removed and
-// replaced with a delegation call — this guards against regressions).
-func TestKeycodeFromNameCLI(t *testing.T) {
-	tests := []struct {
-		name     string
-		expected uint32
-	}{
-		{"enter", 66},
-		{"back", 4},
-		{"home", 3},
-		{"escape", 111},
-		{"esc", 111},
-		{"page_up", 92},
-		{"media_play_pause", 85},
-		{"volume_mute", 164},
-		{"camera", 27},
-		// numeric passthrough
-		{"123", 123},
-		{"287", 287},
-		// unknown
-		{"nonexistent", 0},
-		{"", 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := keycodeFromName(tt.name)
-			if got != tt.expected {
-				t.Errorf("keycodeFromName(%q) = %d, want %d", tt.name, got, tt.expected)
-			}
-			// Must agree with protocol.KeycodeFromName exactly.
-			wantProto := uint32(protocol.KeycodeFromName(tt.name))
-			if got != wantProto {
-				t.Errorf("keycodeFromName(%q) = %d diverges from protocol.KeycodeFromName = %d",
-					tt.name, got, wantProto)
-			}
-		})
-	}
-}
-
-// TestKeycodeFromNameCLIAllProtocolKeys ensures the CLI helper covers every
-// key the protocol layer knows — the old local map was missing 9 keys.
-func TestKeycodeFromNameCLIAllProtocolKeys(t *testing.T) {
-	protocolKeys := []string{
-		"enter", "tab", "delete", "backspace", "space",
-		"volume_up", "volume_down", "volume_mute",
-		"power", "menu", "search", "camera",
-		"escape", "esc",
-		"media_play_pause", "media_stop", "media_next", "media_previous",
-		"dpad_up", "dpad_down", "dpad_left", "dpad_right", "dpad_center",
-		"page_up", "page_down",
-		"back", "home",
-	}
-	for _, k := range protocolKeys {
-		cli := keycodeFromName(k)
-		proto := uint32(protocol.KeycodeFromName(k))
-		if cli == 0 {
-			t.Errorf("CLI keycodeFromName missing key %q (returns 0)", k)
-		}
-		if cli != proto {
-			t.Errorf("key %q: CLI=%d, protocol=%d (must match)", k, cli, proto)
-		}
-	}
-}
 
 // --- getInt tests ---
 
@@ -183,20 +120,23 @@ func indexOf(s, sub string) int {
 	return -1
 }
 
-// --- printMessage tests ---
+// --- extractMessage tests ---
 
-func TestPrintMessageExtractsMessage(t *testing.T) {
-	// We can't easily capture stdout here without refactoring printMessage,
-	// but we can at least ensure it doesn't panic on various inputs.
-	cases := []string{
-		`{"message":"Back pressed"}`,
-		`{"foo":"bar"}`,
-		`not json`,
-		``,
+func TestExtractMessage(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{`{"message":"Back pressed"}`, "Back pressed"},
+		{`{"foo":"bar"}`, `{"foo":"bar"}`},
+		{`not json`, "not json"},
+		{``, ""},
 	}
 	for _, c := range cases {
-		// Just ensure no panic.
-		_ = json.RawMessage(c)
+		got := extractMessage(json.RawMessage(c.in))
+		if got != c.want {
+			t.Errorf("extractMessage(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 
@@ -251,5 +191,234 @@ func TestParseModeFlagsSerialMissingValue(t *testing.T) {
 	err := cmd.Run()
 	if err == nil {
 		t.Fatal("expected non-zero exit for --serial without value")
+	}
+}
+
+// TestFallbackToDirect verifies that a daemon auto-start failure flips the
+// process to direct mode instead of exiting: the command then runs through its
+// withSession branch rather than dying with "daemon failed to start".
+func TestFallbackToDirect(t *testing.T) {
+	env := &cmdEnv{useDaemon: true, binName: "phonefast"}
+	env.fallbackToDirect(errors.New("boom"))
+	if env.useDaemon {
+		t.Error("useDaemon = true after fallbackToDirect, want false")
+	}
+}
+
+// TestFallbackToDirectHardErrorEnv verifies the PHONEFAST_NO_DAEMON_FALLBACK=1
+// opt-out: a daemon auto-start failure is fatal instead of silently degrading
+// to direct mode. run as a subprocess because the branch exits.
+func TestFallbackToDirectHardErrorEnv(t *testing.T) {
+	if os.Getenv("PHONEFAST_TEST_FATAL") == "1" {
+		env := &cmdEnv{binName: "phonefast"}
+		env.fallbackToDirect(errors.New("boom"))
+		return // unreachable — fallbackToDirect must os.Exit(1)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestFallbackToDirectHardErrorEnv")
+	cmd.Env = append(os.Environ(), "PHONEFAST_TEST_FATAL=1", "PHONEFAST_NO_DAEMON_FALLBACK=1")
+	if err := cmd.Run(); err == nil {
+		t.Fatal("expected non-zero exit when PHONEFAST_NO_DAEMON_FALLBACK=1")
+	}
+}
+
+// TestEnsureDaemonOrExitFatal verifies ensureDaemonOrExit exits(1) when the
+// supervisor cannot start the daemon (commands without a direct fallback must
+// fail rather than proceed). run as a subprocess because the branch exits.
+func TestEnsureDaemonOrExitFatal(t *testing.T) {
+	if os.Getenv("PHONEFAST_TEST_FATAL") == "1" {
+		env := &cmdEnv{
+			binName: "phonefast",
+			supervisor: daemon.NewSupervisor(daemon.SupervisorConfig{
+				SocketPath: filepath.Join(os.TempDir(), "pf-nonexistent-test.sock"),
+				PIDFile:    filepath.Join(os.TempDir(), "pf-nonexistent-test.pid"),
+				Spawn: func(extraEnv []string) (*exec.Cmd, error) {
+					return nil, errors.New("spawn must fail")
+				},
+			}),
+		}
+		env.ensureDaemonOrExit()
+		return // unreachable — ensureDaemonOrExit must os.Exit(1)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestEnsureDaemonOrExitFatal")
+	cmd.Env = append(os.Environ(), "PHONEFAST_TEST_FATAL=1")
+	if err := cmd.Run(); err == nil {
+		t.Fatal("expected non-zero exit from ensureDaemonOrExit on EnsureRunning failure")
+	}
+}
+
+// TestParseUIShowArgs verifies the ui/observe argument parser: max-elements
+// parsing, --summary and --format flags, -1 semantics, and the
+// --format-without-value edge.
+func TestParseUIShowArgs(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantMax    int
+		wantSum    bool
+		wantFormat string
+	}{
+		{"max + summary + format", []string{"50", "--summary", "--format", "jsonl"}, 50, true, "jsonl"},
+		{"-1 shows all", []string{"-1"}, -1, false, ""},
+		{"0 → default", []string{"0"}, protocol.DefClientMaxElements, false, ""},
+		{"non-numeric → default", []string{"abc"}, protocol.DefClientMaxElements, false, ""},
+		{"--format without value → empty, no panic", []string{"--format"}, protocol.DefClientMaxElements, false, ""},
+		{"empty args", nil, protocol.DefClientMaxElements, false, ""},
+		{"summary only", []string{"--summary"}, protocol.DefClientMaxElements, true, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMax, gotSum, gotFormat := parseUIShowArgs(tt.args, protocol.DefClientMaxElements)
+			if gotMax != tt.wantMax || gotSum != tt.wantSum || gotFormat != tt.wantFormat {
+				t.Errorf("parseUIShowArgs(%v) = (%d, %v, %q), want (%d, %v, %q)",
+					tt.args, gotMax, gotSum, gotFormat, tt.wantMax, tt.wantSum, tt.wantFormat)
+			}
+		})
+	}
+}
+
+// TestExtFromMimeType verifies the MIME → extension mapping.
+func TestExtFromMimeType(t *testing.T) {
+	tests := map[string]string{
+		"image/jpeg":               "jpg",
+		"image/jpg":                "jpg",
+		"image/png":                "png",
+		"":                         "png",
+		"application/octet-stream": "png",
+	}
+	for mime, want := range tests {
+		if got := extFromMimeType(mime); got != want {
+			t.Errorf("extFromMimeType(%q) = %q, want %q", mime, got, want)
+		}
+	}
+}
+
+// TestWriteScreenshot verifies the base64 decode + file write path with an
+// explicit output path.
+func TestWriteScreenshot(t *testing.T) {
+	payload := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46} // JPEG magic prefix
+	b64 := base64.StdEncoding.EncodeToString(payload)
+	out := filepath.Join(t.TempDir(), "shot.jpg")
+
+	writeScreenshot([]string{out}, b64, "image/jpeg")
+
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read written screenshot: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("written bytes = %v, want %v", got, payload)
+	}
+}
+
+// TestKnownCommand ensures every command dispatched by main()'s switch is
+// accepted by knownCommand (the pre-auto-start gate), and typos are rejected.
+func TestKnownCommand(t *testing.T) {
+	dispatched := []string{
+		"daemon", "daemon_worker", "serve", "run", "devices", "help",
+		"connect", "disconnect",
+		"tap", "tap_element", "swipe", "type", "text", "back", "home",
+		"key", "press_key", "launch", "screenshot", "ui", "observe", "ocr",
+		"wait", "status",
+	}
+	for _, c := range dispatched {
+		if !knownCommand(c) {
+			t.Errorf("knownCommand(%q) = false, but main() dispatches it", c)
+		}
+	}
+	for _, c := range []string{"foobar", "", "TAP", "daemon-worker", "--daemon"} {
+		if knownCommand(c) {
+			t.Errorf("knownCommand(%q) = true, want false", c)
+		}
+	}
+}
+
+// TestForegroundNeverTouchesDaemon guards the --foreground invariant:
+// direct mode must never create a daemon process. The supervisor is given a
+// Spawn hook that fails the test if invoked, and a direct-mode command path
+// is exercised — the hook must not fire and no pidfile/socket may appear.
+func TestForegroundNeverTouchesDaemon(t *testing.T) {
+	dir := t.TempDir()
+	spawnCalled := false
+	supervisor := daemon.NewSupervisor(daemon.SupervisorConfig{
+		SocketPath: filepath.Join(dir, "daemon.sock"),
+		PIDFile:    filepath.Join(dir, "daemon.pid"),
+		Spawn: func(extraEnv []string) (*exec.Cmd, error) {
+			spawnCalled = true
+			return nil, errors.New("spawn must never be called in direct mode")
+		},
+	})
+	env := &cmdEnv{
+		useDaemon:  false,
+		binName:    "phonefast",
+		supervisor: supervisor,
+		dispatcher: daemon.NewDispatcher(nil),
+	}
+
+	// A direct-mode command that fails fast (no device): withSession connects
+	// to "" serial → the tap handler errors out before any daemon interaction.
+	// statusCmd in direct mode probes the pidfile without starting anything —
+	// use it as the harmless direct-mode path.
+	env.statusCmd()
+
+	if spawnCalled {
+		t.Fatal("supervisor spawn was invoked in --foreground mode")
+	}
+	// Note: the Spawn hook is the complete guard — every daemon-process
+	// creation path goes through Supervisor.Spawn (spawnDaemonWorker). If the
+	// hook never fires, no daemon process was created by this --foreground run.
+}
+
+// TestDaemonStartMode verifies the routing of commands through daemon
+// auto-start: excluded commands skip it entirely; required commands
+// (connect/disconnect, which have no direct fallback) fail fast; everything
+// else degrades to direct mode on failure.
+func TestDaemonStartMode(t *testing.T) {
+	tests := []struct {
+		cmd          string
+		wantExcluded bool
+		wantRequired bool
+	}{
+		{"tap", false, false},
+		{"swipe", false, false},
+		{"screenshot", false, false},
+		{"daemon", true, false},
+		{"daemon_worker", true, false},
+		{"serve", true, false},
+		{"devices", true, false},
+		{"help", true, false},
+		{"status", true, false},
+		{"wait", true, false},
+		{"connect", false, true},
+		{"disconnect", false, true},
+		{"unknown_cmd", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.cmd, func(t *testing.T) {
+			ex, req := daemonStartMode(tt.cmd)
+			if ex != tt.wantExcluded {
+				t.Errorf("daemonStartMode(%q) excluded = %v, want %v", tt.cmd, ex, tt.wantExcluded)
+			}
+			if req != tt.wantRequired {
+				t.Errorf("daemonStartMode(%q) required = %v, want %v", tt.cmd, req, tt.wantRequired)
+			}
+		})
+	}
+}
+
+// TestEnsureDaemonFallsBackToDirect covers the auto-start-failure integration:
+// ensureDaemon → Supervisor.EnsureRunning (spawn fails) → fallbackToDirect
+// flips the env to direct mode instead of exiting.
+func TestEnsureDaemonFallsBackToDirect(t *testing.T) {
+	supervisor := daemon.NewSupervisor(daemon.SupervisorConfig{
+		SocketPath: filepath.Join(t.TempDir(), "daemon.sock"),
+		PIDFile:    filepath.Join(t.TempDir(), "daemon.pid"),
+		Spawn: func(extraEnv []string) (*exec.Cmd, error) {
+			return nil, errors.New("spawn failed")
+		},
+	})
+	env := &cmdEnv{useDaemon: true, binName: "phonefast", supervisor: supervisor}
+	env.ensureDaemon()
+	if env.useDaemon {
+		t.Error("useDaemon = true after failed auto-start, want direct fallback")
 	}
 }

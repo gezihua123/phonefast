@@ -2,7 +2,7 @@
 
 // Command verify_rec loads a pre-exported rec input tensor
 // (/tmp/go_rec_tensor.bin, 1x3x48x320 float32 — a crop of "Hello World 你好世界"),
-// runs it through the PP-OCR v3 rec model via the onnxruntime-purego binding,
+// runs it through the PP-OCRv6 rec model via the onnxruntime-purego binding,
 // and CTC-decodes the result. Used to verify rec produces correct (non-garbled)
 // recognition output on the current libonnxruntime build.
 //
@@ -85,10 +85,10 @@ func main() {
 		}
 	}()
 
-	// Pick the output value. The task names "softmax_5.tmp_0"; fall back to the
+	// Pick the output value. The task names "fetch_name_0"; fall back to the
 	// first declared output name (the production rec path uses [0]).
 	outNames := recSess.OutputNames()
-	outName := "softmax_5.tmp_0"
+	outName := "fetch_name_0"
 	if _, ok := outputs[outName]; !ok && len(outNames) > 0 {
 		outName = outNames[0]
 	}

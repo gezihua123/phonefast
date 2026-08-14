@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
+	phonelog "github.com/gezihua123/phonefast/internal/log"
 	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
@@ -16,8 +17,8 @@ func (s *Session) Tap(x, y int) error {
 		return fmt.Errorf("control socket not available")
 	}
 
-	w := uint16(s.DeviceW)
-	h := uint16(s.DeviceH)
+	w := uint16(s.deviceW)
+	h := uint16(s.deviceH)
 
 	// Touch down
 	down := protocol.NewTouchMsg(protocol.ActionDown, int32(x), int32(y), w, h)
@@ -27,7 +28,7 @@ func (s *Session) Tap(x, y int) error {
 
 	delay := s.TapDelay
 	if delay <= 0 {
-		delay = 10 * time.Millisecond
+		delay = defaultTapDelay
 	}
 	time.Sleep(delay)
 
@@ -46,8 +47,8 @@ func (s *Session) Swipe(x1, y1, x2, y2, durationMs int) error {
 		return fmt.Errorf("control socket not available")
 	}
 
-	w := uint16(s.DeviceW)
-	h := uint16(s.DeviceH)
+	w := uint16(s.deviceW)
+	h := uint16(s.deviceH)
 
 	// Touch down at start
 	down := protocol.NewTouchMsg(protocol.ActionDown, int32(x1), int32(y1), w, h)
@@ -63,7 +64,9 @@ func (s *Session) Swipe(x1, y1, x2, y2, durationMs int) error {
 		fx := int32(x1 + (x2-x1)*i/steps)
 		fy := int32(y1 + (y2-y1)*i/steps)
 		move := protocol.NewTouchMsg(protocol.ActionMove, fx, fy, w, h)
-		s.controlConn.Write(move.Encode())
+		if _, err := s.controlConn.Write(move.Encode()); err != nil {
+			return fmt.Errorf("swipe move: %w", err)
+		}
 	}
 
 	time.Sleep(stepInterval)
@@ -125,29 +128,66 @@ func (s *Session) Home() error {
 	return s.PressKey(protocol.KeycodeHome)
 }
 
+// pfimeGate encapsulates the "activate PFIME once per session" state
+// machine. activate runs on the first ensure call only; subsequent calls
+// are no-ops. Extracted from TypeText so the state machine is testable
+// without ADB.
+type pfimeGate struct {
+	active bool
+}
+
+// ensure runs activate on the first call only. Returns activate's error
+// wrapped with the "pfime set:" prefix. Not safe for concurrent use —
+// the session owns it on a single goroutine.
+func (g *pfimeGate) ensure(activate func() error) error {
+	if g.active {
+		return nil
+	}
+	if err := activate(); err != nil {
+		return fmt.Errorf("pfime set: %w", err)
+	}
+	g.active = true
+	return nil
+}
+
+// reset clears the gate so the next ensure re-runs activation (used when
+// the original IME is restored on session close).
+func (g *pfimeGate) reset() { g.active = false }
+
 // TypeText types text into the currently focused field.
-// For ASCII-only text, uses the fast scrcpy control socket path (<10ms).
-// For non-ASCII (CJK/emoji), switches to PhoneFast IME and commits via broadcast.
+//
+// All text goes through the PhoneFast IME (PFIME), which commits via
+// broadcast straight into the focused field's InputConnection. This is the
+// only path that is reliable regardless of soft-keyboard state:
+//
+//   - scrcpy INJECT_TEXT (control socket) drops/loses chunks while the soft
+//     keyboard is open — the IME's predictive input interferes with injected
+//     text ("Spicy Tuna Wrapsyy", or truncated input on emulators).
+//   - Hiding the keyboard first is not dependable: keyevent 111 (ESCAPE) is
+//     ignored by many IMEs (AOSP on API 33 emulators), and BACK would leave
+//     the page when no keyboard is showing.
+//   - Switching to PFIME itself hides the soft keyboard (IME switch tears it
+//     down), and the broadcast commit does not depend on keyboard visibility.
+//
+// Cost: one ADB round-trip per call (~50-100ms) vs <10ms for INJECT_TEXT.
+// Correctness wins — typing with a visible keyboard is the common case in
+// agent flows (tap to focus, then type), and lost/duplicated characters
+// fail the whole task.
 func (s *Session) TypeText(text string) error {
-	// ASCII fast path via scrcpy control socket
-	if adb.IsASCII(text) {
-		if s.controlConn == nil {
-			return fmt.Errorf("control socket not available")
-		}
-		msg := protocol.NewTextMsg(text)
-		_, err := s.controlConn.Write(msg.Encode())
+	// Skip SetPFIME if already active (avoids ADB round-trip on every keystroke).
+	firstActivation := !s.pfime.active
+	if err := s.pfime.ensure(func() error { return adb.SetPFIME(s.serial) }); err != nil {
 		return err
 	}
-
-	// Unicode path via PFIME IME broadcast.
-	// Skip SetPFIME if already active (avoids ADB round-trip on every keystroke).
-	if !s.pfimeActive {
-		if err := adb.SetPFIME(s.Serial); err != nil {
-			return fmt.Errorf("pfime set: %w", err)
-		}
-		s.pfimeActive = true
+	if firstActivation {
+		// On the first type of a session the IME switch/startup tears down and
+		// re-binds the InputConnection; a broadcast sent in that window is
+		// silently dropped by PFIME (it has no connection to commit into).
+		// Give the bind a beat before the first broadcast. Subsequent calls
+		// skip this — the connection is already established.
+		time.Sleep(300 * time.Millisecond)
 	}
-	if err := adb.TypeTextB64(s.Serial, text); err != nil {
+	if err := adb.TypeTextB64(s.serial, text); err != nil {
 		return fmt.Errorf("pfime type: %w", err)
 	}
 	return nil
@@ -165,18 +205,15 @@ func (s *Session) LaunchApp(packageName string) error {
 }
 
 // Scroll performs a scroll at the specified position.
-func (s *Session) Scroll(x, y int, hScroll, vScroll float32) error {
-	if s.controlConn == nil {
-		return fmt.Errorf("control socket not available")
-	}
 
-	w := uint16(s.DeviceW)
-	h := uint16(s.DeviceH)
-
-	msg := protocol.NewScrollMsg(int32(x), int32(y), w, h, hScroll, vScroll)
-	_, err := s.controlConn.Write(msg.Encode())
-	return err
-}
+// observeTimeout and observeDrainGrace bound Observe's collect and drain
+// phases. Package-level vars so tests can shrink them (same pattern as
+// observeFullTimeout) — in production the fetchers are internally bounded
+// (3s keyframe wait, 5s socket deadlines), so 5s is always enough to drain.
+var (
+	observeTimeout    = 5 * time.Second
+	observeDrainGrace = 5 * time.Second
+)
 
 // Observe captures both a screenshot and UI hierarchy concurrently, then
 // waits for both to complete (or a 5s timeout). Running them in separate
@@ -187,12 +224,37 @@ func (s *Session) Scroll(x, y int, hScroll, vScroll float32) error {
 // maxElements controls the collection limit on the device side:
 //   - > 0: request that many elements (capped at 500 by the server)
 //   - <= 0: use server default (500 for full, 100 for summary)
+//
 // summary filters out layout containers, returning only meaningful elements.
 func (s *Session) Observe(maxElements int, summary bool) (screenshot []byte, uiElements []protocol.UIElement, err error) {
-	// Launch screenshot and UI dump concurrently in separate goroutines.
+	return s.observe(
+		func() ([]byte, error) {
+			png, _, _, err := s.Screenshot()
+			return png, err
+		},
+		func() ([]protocol.UIElement, error) {
+			// Flat path always fetches summary-mode elements (layout containers
+			// and pure images filtered server-side). The `summary` param only
+			// affects downstream formatting (viewport collapse), not the fetch.
+			elems, uiErr := s.GetUISummary(maxElements)
+			if uiErr != nil {
+				elems, uiErr = s.GetUIElementsFallbackADB(maxElements)
+			}
+			return elems, uiErr
+		},
+	)
+}
+
+// observe is the testable seam for Observe: two fetchers run concurrently
+// with an overall timeout, then a bounded grace drain. UI errors are
+// non-fatal (the screenshot is still returned with whatever elements were
+// collected) — see Observe's contract.
+func (s *Session) observe(
+	fetchScreen func() ([]byte, error),
+	fetchUI func() ([]protocol.UIElement, error),
+) (screenshot []byte, uiElements []protocol.UIElement, err error) {
 	type screenResult struct {
 		pngData []byte
-		w, h    int
 		err     error
 	}
 	type uiResult struct {
@@ -204,33 +266,53 @@ func (s *Session) Observe(maxElements int, summary bool) (screenshot []byte, uiE
 	uiCh := make(chan uiResult, 1)
 
 	go func() {
-		png, w, h, err := s.Screenshot()
-		screenCh <- screenResult{png, w, h, err}
+		png, err := fetchScreen()
+		screenCh <- screenResult{png, err}
 	}()
 
 	go func() {
-		// Flat path always fetches summary-mode elements (layout containers
-		// and pure images filtered server-side). The `summary` param only
-		// affects downstream formatting (viewport collapse), not the fetch.
-		elems, uiErr := s.GetUISummary(maxElements)
-		if uiErr != nil {
-			elems, uiErr = s.GetUIElementsFallbackADB(maxElements)
-		}
+		elems, uiErr := fetchUI()
 		uiCh <- uiResult{elems, uiErr}
 	}()
 
 	// Collect results with overall timeout.
 	var screen screenResult
 	var ui uiResult
-	timer := time.NewTimer(5 * time.Second)
+	gotScreen, gotUI := false, false
+	timer := time.NewTimer(observeTimeout)
 	defer timer.Stop()
 
+collect:
 	for i := 0; i < 2; i++ {
 		select {
 		case screen = <-screenCh:
+			gotScreen = true
 		case ui = <-uiCh:
+			gotUI = true
 		case <-timer.C:
-			return nil, nil, fmt.Errorf("observe timeout")
+			// Wait for the spawned goroutines so they cannot keep using the
+			// session after Observe returns (the caller may Close() it next).
+			// Bounded by a grace window: the session calls have internal
+			// bounds (3s keyframe wait, 5s socket deadlines), but a call
+			// stuck past the grace window must not block the caller
+			// indefinitely — returning keeps the timeout contract.
+			grace := time.NewTimer(observeDrainGrace)
+			defer grace.Stop()
+			for !gotScreen || !gotUI {
+				select {
+				case screen = <-screenCh:
+					gotScreen = true
+				case ui = <-uiCh:
+					gotUI = true
+				case <-grace.C:
+					phonelog.Default().Write("observe: timeout, goroutine still running (screen=%v ui=%v)",
+						gotScreen, gotUI)
+					return nil, nil, fmt.Errorf("observe timeout")
+				}
+			}
+			// Both results arrived within the grace window — the data is
+			// valid, so return it instead of discarding a successful capture.
+			break collect
 		}
 	}
 

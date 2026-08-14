@@ -30,12 +30,19 @@ type actorRequest struct {
 	replyCh chan *Response
 }
 
-// DeviceActor exclusively owns a session for one device. All session access
+// DeviceActor exclusively owns a device for one device. All device access
 // is serialized through its event loop goroutine (run()).
 type DeviceActor struct {
-	serial  string
-	scid    int // assigned once at construction; reused across reconnects
-	session *session.Session
+	serial string
+	scid   int // assigned once at construction; reused across reconnects
+	device Device
+
+	dispatch *Dispatcher // RPC dispatch for this daemon (shared across actors)
+
+	// connectFn is the connect implementation used by initial connect and
+	// reconnect. Injected at construction (production: connectDevice) so
+	// tests can substitute a fake without touching package state.
+	connectFn func(serial string, scid int) (Device, error)
 
 	reqCh chan actorRequest // unbuffered — natural backpressure
 
@@ -62,11 +69,6 @@ type DeviceActor struct {
 // only stops request-driven reconnects from stacking.
 const reconnectCooldown = 5 * time.Second
 
-// connectDeviceFn is the connect implementation used by newDeviceActor and
-// reconnect. It is a package-level variable so tests can substitute a fake
-// that doesn't touch ADB. Production code uses connectDevice.
-var connectDeviceFn = connectDevice
-
 // cooldown returns the effective reconnect cooldown for this actor.
 func (a *DeviceActor) cooldown() time.Duration {
 	if a.reconnectCooldown > 0 {
@@ -81,26 +83,28 @@ func (a *DeviceActor) cooldown() time.Duration {
 //
 // The allocator is borrowed: the caller owns it and must Release(actor.scid)
 // when the actor is permanently removed.
-func newDeviceActor(serial string, alloc *ScidAllocator) (*DeviceActor, error) {
+func newDeviceActor(serial string, alloc *ScidAllocator, dispatch *Dispatcher, connectFn func(string, int) (Device, error)) (*DeviceActor, error) {
 	scid, err := alloc.Alloc()
 	if err != nil {
 		return nil, fmt.Errorf("allocate scid: %w", err)
 	}
 
 	a := &DeviceActor{
-		serial: serial,
-		scid:   scid,
-		reqCh:  make(chan actorRequest),
+		serial:    serial,
+		scid:      scid,
+		reqCh:     make(chan actorRequest),
+		dispatch:  dispatch,
+		connectFn: connectFn,
 	}
 
 	// Initial connect
-	sess, err := connectDeviceFn(serial, scid)
+	sess, err := connectFn(serial, scid)
 	if err != nil {
 		alloc.Release(scid) // free the slot so a later device can reuse it
 		return nil, err
 	}
-	a.session = sess
-	a.serial = sess.Serial // update to resolved serial (important when input was empty)
+	a.device = sess
+	a.serial = sess.Serial() // update to resolved serial (important when input was empty)
 	a.updateStatus(sess)
 
 	return a, nil
@@ -130,9 +134,9 @@ func (a *DeviceActor) run(ctx context.Context, wg *sync.WaitGroup) {
 	// Final cleanup on real shutdown (ctx cancelled). On panic, run()
 	// is re-invoked by the loop below and the session is closed there.
 	defer func() {
-		if a.session != nil {
-			a.session.Close()
-			a.session = nil
+		if a.device != nil {
+			a.device.Close()
+			a.device = nil
 		}
 		a.updateStatus(nil)
 	}()
@@ -146,10 +150,10 @@ func (a *DeviceActor) run(ctx context.Context, wg *sync.WaitGroup) {
 		if !restarted {
 			return // ctx cancelled — clean exit
 		}
-		// Panic path: close stale session, back off, then retry.
-		if a.session != nil {
-			a.session.Close()
-			a.session = nil
+		// Panic path: close stale device, back off, then retry.
+		if a.device != nil {
+			a.device.Close()
+			a.device = nil
 		}
 		a.updateStatus(nil)
 		// NewTimer (not time.After) so we Stop it on the ctx.Done path and
@@ -198,15 +202,15 @@ func (a *DeviceActor) runLoop(ctx context.Context) (panicked bool) {
 // handleRequest dispatches an RPC, reconnecting + retrying if the session
 // is missing or died during the request.
 func (a *DeviceActor) handleRequest(req actorRequest) {
-	resp := Dispatch(a.session, req.req)
+	resp := a.dispatch.Dispatch(a.device, req.req)
 
-	// If the session is nil (prior reconnect failed) or died during this
+	// If the device is nil (prior reconnect failed) or died during this
 	// request, try reconnect + retry once. This prevents a temporary
 	// disconnect from failing every request until the next health tick.
-	dead := a.session == nil || !a.session.IsAlive()
+	dead := a.device == nil || !a.device.IsAlive()
 	if resp.Error != nil && dead {
 		if a.tryReconnect() {
-			resp = Dispatch(a.session, req.req)
+			resp = a.dispatch.Dispatch(a.device, req.req)
 		}
 		// On throttle/failure, resp keeps the original error.
 	}
@@ -235,60 +239,60 @@ func (a *DeviceActor) tryReconnect() bool {
 // and reconnects if the session is dead. It respects the reconnect cooldown
 // so the 10s ticker and request-driven reconnects don't stack.
 func (a *DeviceActor) healthCheck() {
-	if a.session == nil {
+	if a.device == nil {
 		phonelog.Default().Write("actor [%s]: health: no session", a.serial)
 		a.tryReconnect()
 		return
 	}
 
-	if !a.session.IsAlive() {
+	if !a.device.IsAlive() {
 		phonelog.Default().Write("actor [%s]: health: connection dead", a.serial)
 		a.tryReconnect()
 	}
 }
 
-// reconnect tears down the old session and creates a new one.
+// reconnect tears down the old device and creates a new one.
 // Called ONLY from the actor goroutine — no synchronization needed.
 func (a *DeviceActor) reconnect() error {
-	// Close old session
-	if a.session != nil {
-		a.session.Close()
-		a.session = nil
+	// Close old device
+	if a.device != nil {
+		a.device.Close()
+		a.device = nil
 	}
 
-	sess, err := connectDeviceFn(a.serial, a.scid)
+	dev, err := a.connectFn(a.serial, a.scid)
 	if err != nil {
 		a.updateStatus(nil)
 		return err
 	}
 
-	a.session = sess
+	a.device = dev
 	// a.serial is immutable after initial connect; reconnect uses same serial (may change if serial was auto-detected)
-	a.updateStatus(sess)
+	a.updateStatus(dev)
 	return nil
 }
 
 // updateStatus publishes a snapshot of the actor's state for fast reads.
-// Pass nil session to mark the actor as disconnected.
-func (a *DeviceActor) updateStatus(sess *session.Session) {
-	if sess == nil {
+// Pass nil device to mark the actor as disconnected.
+func (a *DeviceActor) updateStatus(dev DeviceHealth) {
+	if dev == nil {
 		a.status.Store(&ActorStatus{Serial: a.serial})
 		return
 	}
 	a.status.Store(&ActorStatus{
 		Connected:    true,
-		Serial:       sess.Serial,
-		DeviceWidth:  sess.DeviceW,
-		DeviceHeight: sess.DeviceH,
-		ControlAvail: sess.IsControlAvailable(),
-		UIAvail:      sess.IsUIAvailable(),
+		Serial:       dev.Serial(),
+		DeviceWidth:  dev.DeviceWidth(),
+		DeviceHeight: dev.DeviceHeight(),
+		ControlAvail: dev.IsControlAvailable(),
+		UIAvail:      dev.IsUIAvailable(),
 	})
 }
 
 // connectDevice resolves the serial (auto-detect if empty) and establishes
 // a session. This is the shared connect logic used by both initial connect
 // and reconnect.
-func connectDevice(serial string, scid int) (*session.Session, error) {
+func connectDevice(serial string, scid int) (Device, error) {
 	// Resolve serial if empty
 	if serial == "" {
 		devices, err := adb.ListDevices()
@@ -307,6 +311,6 @@ func connectDevice(serial string, scid int) (*session.Session, error) {
 		return nil, fmt.Errorf("connect device: %w", err)
 	}
 
-	phonelog.Default().Write("device ready: %s (%dx%d)", serial, sess.DeviceW, sess.DeviceH)
+	phonelog.Default().Write("device ready: %s (%dx%d)", serial, sess.DeviceWidth(), sess.DeviceHeight())
 	return sess, nil
 }

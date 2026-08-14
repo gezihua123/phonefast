@@ -111,15 +111,20 @@ func TestKeycodeFromName(t *testing.T) {
 }
 
 // TestKeycodeFromNameCaseInsensitive verifies key name lookup is
-// case-insensitive (callers are expected to ToLower).
+// case-insensitive and whitespace-tolerant — normalization is internal to
+// KeycodeFromName so callers don't each have to lowercase/trim.
 func TestKeycodeFromNameCaseInsensitive(t *testing.T) {
-	// KeycodeFromName itself is case-sensitive; callers lowercase.
-	// Verify the lowercase version works and uppercase does not.
-	if KeycodeFromName("enter") != 66 {
-		t.Error("lowercase 'enter' should return 66")
-	}
-	if KeycodeFromName("ENTER") == 66 {
-		t.Error("KeycodeFromName is case-sensitive; 'ENTER' should not match 'enter'")
+	for name, want := range map[string]int{
+		"enter":     66,
+		"ENTER":     66,
+		"  enter  ": 66,
+		"Back":      4,
+		" PAGE_UP ": 92,
+		" 4 ":       4, // numeric passthrough also trims
+	} {
+		if got := KeycodeFromName(name); got != want {
+			t.Errorf("KeycodeFromName(%q) = %d, want %d", name, got, want)
+		}
 	}
 }
 
@@ -134,7 +139,8 @@ func TestStartAppMsgEncode(t *testing.T) {
 
 // TestTouchMsgFullLayout verifies the exact binary layout matches
 // scrcpy's ControlMessageReader.parseInjectTouchEvent():
-//   1B action + 8B pointerId + 12B position + 2B pressure(u16) + 4B actionBtn + 4B buttons
+//
+//	1B action + 8B pointerId + 12B position + 2B pressure(u16) + 4B actionBtn + 4B buttons
 func TestTouchMsgFullLayout(t *testing.T) {
 	msg := NewTouchMsg(ActionDown, 540, 960, 1080, 1920)
 	msg.Pressure = 1.0 // full pressure
@@ -148,13 +154,19 @@ func TestTouchMsgFullLayout(t *testing.T) {
 	r := bytes.NewReader(data)
 	readByte := func() byte { b, _ := r.ReadByte(); return b }
 	readU64 := func() uint64 {
-		var v [8]byte; r.Read(v[:]); return binary.BigEndian.Uint64(v[:])
+		var v [8]byte
+		r.Read(v[:])
+		return binary.BigEndian.Uint64(v[:])
 	}
 	readU32 := func() uint32 {
-		var v [4]byte; r.Read(v[:]); return binary.BigEndian.Uint32(v[:])
+		var v [4]byte
+		r.Read(v[:])
+		return binary.BigEndian.Uint32(v[:])
 	}
 	readU16 := func() uint16 {
-		var v [2]byte; r.Read(v[:]); return binary.BigEndian.Uint16(v[:])
+		var v [2]byte
+		r.Read(v[:])
+		return binary.BigEndian.Uint16(v[:])
 	}
 
 	if typ := readByte(); typ != TypeInjectTouchEvent {
@@ -208,7 +220,8 @@ func TestTouchPressureEncoding(t *testing.T) {
 }
 
 // TestScrollMsgLayout verifies scroll encoding matches scrcpy:
-//   position(12B) + hScroll(2B i16) + vScroll(2B i16) + buttons(4B) = 20B payload
+//
+//	position(12B) + hScroll(2B i16) + vScroll(2B i16) + buttons(4B) = 20B payload
 func TestScrollMsgLayout(t *testing.T) {
 	msg := NewScrollMsg(540, 960, 1080, 1920, 0, -3.0)
 	data := msg.Encode()

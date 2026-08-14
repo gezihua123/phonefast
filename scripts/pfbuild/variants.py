@@ -23,6 +23,10 @@ class Variant:
     platform_prefix: True = output name includes {goos}-{goarch} (plain/full,
                      needed for --all multi-platform archives); False = bare
                      phonefast<suffix> (cgo1/apple, macos_only so no collision)
+    force_cgo:       True = never downgrade CGO to 0 even if FFmpeg missing.
+                     Needed for variants that embed the ORT lib (full) or need
+                     the Apple Vision engine (cgo1/apple) — losing CGO breaks
+                     the engine, not just the astiav decoder.
     """
     name: str
     suffix: str
@@ -30,6 +34,7 @@ class Variant:
     cgo: str = "1"
     macos_only: bool = False
     platform_prefix: bool = True
+    force_cgo: bool = False
 
 
 # The variant table. Add a row here to add a variant; build_target adapts.
@@ -41,15 +46,15 @@ VARIANTS: dict[str, Variant] = {
     # CGO=1 explicit: same as plain but pinned CGO=1 so the apple engine is
     # guaranteed active on macOS (plain can lose it if FFmpeg missing → CGO=0).
     # macos_only because the whole point is the apple engine.
-    "cgo1":  Variant("cgo1", "-cgo1", [], macos_only=True, platform_prefix=False),
+    "cgo1":  Variant("cgo1", "-cgo1", [], macos_only=True, platform_prefix=False, force_cgo=True),
 
     # Apple Vision only: no ONNX models embedded (NO_OCR_MODELS → DetModel/RecModel
     # nil → onnx engine returns ErrNotAvailable). Smallest macOS build.
-    "apple": Variant("apple", "-apple", ["NO_OCR_MODELS"], macos_only=True, platform_prefix=False),
+    "apple": Variant("apple", "-apple", ["NO_OCR_MODELS"], macos_only=True, platform_prefix=False, force_cgo=True),
 
     # Self-contained: embeds ORT shared lib (ocr_embed) on top of plain.
     # Only darwin/arm64 is embeddable (platform.py Target.embeddable).
-    "full":  Variant("full", "-full", ["ocr_embed"]),
+    "full":  Variant("full", "-full", ["ocr_embed"], force_cgo=True),
 }
 
 

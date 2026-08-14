@@ -11,7 +11,7 @@ set -euo pipefail
 # This script fixes the engine's two external dependencies:
 #   1. CAPABILITY  — the NCNN C library (libncnn.dylib + c_api.h), via `brew install ncnn`.
 #   2. DATA        — the converted rec model (rec.ncnn.param + rec.ncnn.bin),
-#                    generated from the PP-OCR v3 rec ONNX via pnnx.
+#                    generated from the PP-OCR v6 rec ONNX via pnnx.
 #
 # Both are pinned: brew ncnn version is whatever brew ships (currently 20260526);
 # the model is shape-specialized to [1,3,48,320] (NCNN can't handle the rec
@@ -32,7 +32,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 MODEL_DIR="$PROJECT_ROOT/tests/ocr-models/ncnn"
-SRC_ONNX="$PROJECT_ROOT/assets/ocr/ppocr-rec.onnx"
+SRC_ONNX="$PROJECT_ROOT/ocr/assets/ppocr-rec.onnx"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[+]${NC} $*"; }
@@ -85,7 +85,7 @@ install_lib() {
 # [1,3,48,320]. NCNN loads models from files at runtime (PHONEFAST_NCNN_PARAM/BIN
 # env vars), so the model is NOT embedded — it lives in tests/ocr-models/ncnn/.
 build_model() {
-    log "Building NCNN rec model from PP-OCR v3 ONNX..."
+    log "Building NCNN rec model from PP-OCR v6 ONNX..."
     [ -s "$SRC_ONNX" ] || err "Source ONNX not found: $SRC_ONNX\nRun: bash scripts/download-ocr-models.sh --models"
 
     # pnnx ships in the pip `pnnx` package.

@@ -41,6 +41,17 @@ func (s *Session) dropUIConn() {
 // Summary mode filters out layout containers on the server side.
 // maxElements controls the element limit. Pass <= 0 for server default (DefMaxElements).
 func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
+	elems, err := s.getUISummaryOnce(maxElements)
+	if err == nil {
+		return elems, nil
+	}
+	// Retry once on transient errors (stale-node exceptions during animations
+	// are common now that waitForIdle is removed) — the same mitigation
+	// ObserveFull applies to GetUIFull.
+	return s.getUISummaryOnce(maxElements)
+}
+
+func (s *Session) getUISummaryOnce(maxElements int) ([]protocol.UIElement, error) {
 	conn, err := s.getUIConn()
 	if err != nil {
 		return nil, err
@@ -59,6 +70,7 @@ func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 		return nil, fmt.Errorf("read ui summary response: %w", err)
 	}
 	if resp.Error != "" {
+		s.dropUIConn()
 		return nil, fmt.Errorf("server error: %s", resp.Error)
 	}
 
@@ -74,6 +86,9 @@ func (s *Session) GetUISummary(maxElements int) ([]protocol.UIElement, error) {
 // (jsonl, simplexml, flatref).
 // maxElements controls the element limit. Pass <= 0 for server default (DefMaxElements).
 func (s *Session) GetUIFull(maxElements int) ([]protocol.UIFullElement, error) {
+	if s.getUIFullFn != nil { // test seam — see Session fields
+		return s.getUIFullFn(maxElements)
+	}
 	conn, err := s.getUIConn()
 	if err != nil {
 		return nil, err
@@ -105,7 +120,7 @@ func (s *Session) GetUIFull(maxElements int) ([]protocol.UIFullElement, error) {
 // This is used when the fast UI socket is unavailable.
 // maxElements is accepted for API consistency (ADB-side limit not supported).
 func (s *Session) GetUIElementsFallbackADB(maxElements int) ([]protocol.UIElement, error) {
-	xmlContent, err := dumpUIXML(s.Serial)
+	xmlContent, err := dumpUIXML(s.serial)
 	if err != nil {
 		return nil, fmt.Errorf("adb ui dump: %w", err)
 	}

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/gezihua123/phonefast/internal/format"
 	"github.com/gezihua123/phonefast/pkg/protocol"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 // fakeRPC is a test stub for rpcCaller. It records the last method/params and
@@ -453,6 +454,124 @@ func TestHandlePressKeyParamsValidation(t *testing.T) {
 	})
 }
 
+// --- wait / ocr handler tests ---
+
+// TestHandleWaitSleepsLocally verifies handleWait's core contract: the sleep
+// happens in the MCP process with NO daemon round-trip (routing "wait" to
+// the daemon would run time.Sleep on the device actor's single-threaded
+// event loop, stalling every other request to that device).
+func TestHandleWaitSleepsLocally(t *testing.T) {
+	fake := &fakeRPC{err: fmt.Errorf("daemon must not be called")}
+	s := newWithClient(fake)
+
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{"duration_ms": float64(1)},
+	}}
+	start := time.Now()
+	result, _ := s.handleWait(context.Background(), req)
+	if result.IsError {
+		t.Fatal("expected success, got error")
+	}
+	tc, ok := result.Content[0].(mcp.TextContent)
+	if !ok || tc.Text != "Waited 1ms" {
+		t.Errorf("text = %q, want 'Waited 1ms'", tc.Text)
+	}
+	if el := time.Since(start); el < time.Millisecond {
+		t.Errorf("returned after %v — no local sleep happened", el)
+	}
+	if fake.calls != 0 {
+		t.Errorf("handleWait made %d daemon call(s), want 0 (local sleep only)", fake.calls)
+	}
+}
+
+// TestHandleWaitDefaultDuration verifies the default: no duration_ms means
+// protocol.DefaultWaitMs (1000ms). The 1s sleep is tolerated — shrinking it
+// would require making the default a mutable package var, which is worse.
+func TestHandleWaitDefaultDuration(t *testing.T) {
+	fake := &fakeRPC{}
+	s := newWithClient(fake)
+
+	result, _ := s.handleWait(context.Background(), mcp.CallToolRequest{})
+	if result.IsError {
+		t.Fatal("expected success, got error")
+	}
+	tc, ok := result.Content[0].(mcp.TextContent)
+	if !ok || tc.Text != "Waited 1000ms" {
+		t.Errorf("text = %q, want 'Waited 1000ms'", tc.Text)
+	}
+	if fake.calls != 0 {
+		t.Errorf("handleWait made %d daemon call(s), want 0", fake.calls)
+	}
+}
+
+// TestHandleOcrFormatsItems verifies the success branch: per-item lines plus
+// the count/size header.
+func TestHandleOcrFormatsItems(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{
+		"count":        1,
+		"image_width":  100,
+		"image_height": 200,
+		"items": []map[string]any{
+			{"text": "hello", "center": []float64{5, 7}, "confidence": 0.95},
+		},
+	}}
+	s := newWithClient(fake)
+
+	result, _ := s.handleOcr(context.Background(), mcp.CallToolRequest{})
+	if result.IsError {
+		t.Fatal("expected success, got error")
+	}
+	tc, ok := result.Content[0].(mcp.TextContent)
+	if !ok {
+		t.Fatal("expected TextContent")
+	}
+	if !strings.Contains(tc.Text, "OCR: 1 text regions (100x200)") {
+		t.Errorf("missing count/size header, got: %s", tc.Text)
+	}
+	if !strings.Contains(tc.Text, `[5,7] "hello" (95%)`) {
+		t.Errorf("missing item line, got: %s", tc.Text)
+	}
+	if fake.method != "ocr" {
+		t.Errorf("method = %q, want ocr", fake.method)
+	}
+}
+
+// TestHandleOcrNoText verifies the count==0 branch returns the "no text"
+// message (not an empty list or an error).
+func TestHandleOcrNoText(t *testing.T) {
+	fake := &fakeRPC{result: map[string]any{"count": 0, "image_width": 100, "image_height": 200}}
+	s := newWithClient(fake)
+
+	result, _ := s.handleOcr(context.Background(), mcp.CallToolRequest{})
+	if result.IsError {
+		t.Fatal("expected success, got error")
+	}
+	tc, ok := result.Content[0].(mcp.TextContent)
+	if !ok || tc.Text != "OCR found no text on the current screen." {
+		t.Errorf("text = %q, want the no-text message", tc.Text)
+	}
+}
+
+// TestHandleOcrRPCError verifies an RPC failure surfaces as a ToolResultError.
+func TestHandleOcrRPCError(t *testing.T) {
+	fake := &fakeRPC{err: fmt.Errorf("ocr engine unavailable")}
+	s := newWithClient(fake)
+
+	result, _ := s.handleOcr(context.Background(), mcp.CallToolRequest{})
+	if !result.IsError {
+		t.Fatal("expected IsError result for RPC failure")
+	}
+	found := false
+	for _, c := range result.Content {
+		if tc, ok := c.(mcp.TextContent); ok && strings.Contains(tc.Text, "ocr engine unavailable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected the RPC error text in the error result")
+	}
+}
+
 // TestAllMCPToolsRegistered verifies every expected tool is registered.
 func TestAllMCPToolsRegistered(t *testing.T) {
 	srv := New("")
@@ -550,5 +669,74 @@ func TestObserveResultShape(t *testing.T) {
 	}
 	if !hasText {
 		t.Error("observe result missing TextContent (UI elements)")
+	}
+}
+
+// TestSimpleHandlersRouteRPC covers the handlers that were untested:
+// swipe/type_text/home/launch_app/tap_element route the right method + params
+// to the daemon via the fake client.
+func TestSimpleHandlersRouteRPC(t *testing.T) {
+	cases := []struct {
+		name     string
+		args     map[string]any
+		run      func(s *Server, req mcp.CallToolRequest) (*mcp.CallToolResult, error)
+		wantMeth string
+		wantKey  string
+		wantVal  any
+	}{
+		{
+			name: "swipe", args: map[string]any{"start_x": float64(1), "start_y": float64(2), "end_x": float64(3), "end_y": float64(4)},
+			run: func(s *Server, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return s.handleSwipe(context.Background(), req)
+			},
+			wantMeth: "swipe", wantKey: "start_x", wantVal: 1,
+		},
+		{
+			name: "type_text", args: map[string]any{"text": "hello"},
+			run: func(s *Server, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return s.handleTypeText(context.Background(), req)
+			},
+			wantMeth: "type_text", wantKey: "text", wantVal: "hello",
+		},
+		{
+			name: "home", args: map[string]any{},
+			run: func(s *Server, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return s.handleHome(context.Background(), req)
+			},
+			wantMeth: "home",
+		},
+		{
+			name: "launch_app", args: map[string]any{"app": "com.example"},
+			run: func(s *Server, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return s.handleLaunchApp(context.Background(), req)
+			},
+			wantMeth: "launch_app", wantKey: "package", wantVal: "com.example",
+		},
+		{
+			name: "tap_element by index", args: map[string]any{"index": float64(5)},
+			run: func(s *Server, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return s.handleTapElement(context.Background(), req)
+			},
+			wantMeth: "tap_element", wantKey: "index", wantVal: 5,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeRPC{result: map[string]any{"message": "ok"}}
+			s := newWithClient(fake)
+			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
+			if _, err := tc.run(s, req); err != nil {
+				t.Fatalf("handler error: %v", err)
+			}
+			if fake.method != tc.wantMeth {
+				t.Errorf("method = %q, want %q", fake.method, tc.wantMeth)
+			}
+			if tc.wantKey != "" {
+				if got, ok := fake.params[tc.wantKey]; !ok || got != tc.wantVal {
+					t.Errorf("params[%q] = %v, want %v", tc.wantKey, got, tc.wantVal)
+				}
+			}
+		})
 	}
 }

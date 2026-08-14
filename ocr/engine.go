@@ -74,6 +74,5 @@ const (
 	EngineONNX      = "onnx"      // default; pure-Go, embedded models, zero external deps
 	EngineNCNN      = "ncnn"      // opt-in; -tags ncnn + brew libncnn, models via env
 	EngineTesseract = "tesseract" // Latin-text fast-path; uses system tesseract CLI
-	EngineApple     = "apple"     // macOS-only; Apple Vision full OCR (ANE accelerated)
+	EngineApple     = "apple"     // macOS-only; v6 det+rec with Vision detection fast-path (ANE)
 )
-

@@ -9,9 +9,9 @@ import (
 	"sort"
 	"testing"
 
+	pkgocr "github.com/gezihua123/phonefast/ocr"
 	"github.com/gezihua123/phonefast/ocr/ncnn"
 	"github.com/gezihua123/phonefast/ocr/onnx"
-	pkgocr "github.com/gezihua123/phonefast/ocr"
 )
 
 // TestOCRAccuracy compares onnx vs ncnn recognition on the same images: how

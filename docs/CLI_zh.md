@@ -159,6 +159,10 @@ phonefast [--foreground|--daemon] [--serial <SERIAL> | -s <SERIAL>] <command> [a
 | 适用场景 | 批量操作、脚本自动化、AI Agent 高频循环 | 临时单次操作 |
 | 自动管理 | 自动启动、自动重启、断线自动恢复 | 无状态 |
 
+**两种模式输出完全一致**——direct 模式经进程内 Dispatcher 走与 daemon 相同的 handler：
+`screenshot` 两种模式都返回 JPEG、`ui` 都支持 `--format` 分层格式、`run` 结果结构一致。
+`--foreground` 永不创建 daemon 进程；只有 `daemon`/`serve` 命令本身管理或依赖 daemon。
+
 ### 多设备管理
 
 单一 daemon 进程服务所有已连接设备；每个请求通过其 `device` 字段路由到目标设备。用 `-s`（或 `--serial`）选设备——该 flag 是每命令级的，不是每 daemon 级：
@@ -607,13 +611,7 @@ phonefast status
 }
 ```
 
-**输出（直接模式）：**
-```
-daemon running (pid 60977)
-  device:    13709314CF044927 (488x1080)
-  control:   true
-  ui:        true
-```
+**输出**：两种模式完全一致的 JSON——`status` 是 daemon 进程的只读探测（永不自动启动），`--foreground status` 输出相同 JSON。若无 daemon 运行则打印 `daemon not running`。
 
 ---
 
@@ -774,9 +772,10 @@ phonefast daemon --stop
 
 Daemon 具有完善的自动管理机制：
 
-1. **自动启动** — 使用任何命令时，如果 daemon 未运行，自动在后台启动
+1. **自动启动** — 使用任何命令时，如果 daemon 未运行，自动在后台启动。若 daemon 启动失败，一次性命令会降级为 direct 模式（一次性会话，约 2.5s/次）而非直接失败——警告信息会指向 `/tmp/phonefast-{uid}.log` 中的启动错误；可运行 `phonefast daemon --foreground` 排查。设置 `PHONEFAST_NO_DAEMON_FALLBACK=1` 可关闭降级、直接硬失败（适合宁可明确报错也不要静默慢约 250 倍的 agent/CI 场景）。
 2. **自动恢复** — 如果 daemon 进程存在但无响应，自动杀死并重启
-3. **防重复** — 多次调用 `phonefast daemon` 不会重复启动（已运行则退出并提示）
+3. **会话中途自愈** — 若 daemon 在命令执行途中崩溃，CLI 会自动重启并重试一次（与 MCP server 同款自愈）。`connect`/`disconnect`/`serve` 无 direct 降级，自启失败时直接快速失败而非降级。
+4. **防重复** — 多次调用 `phonefast daemon` 不会重复启动（已运行则退出并提示）
 
 ### 启动流程
 
@@ -787,7 +786,7 @@ Daemon 具有完善的自动管理机制：
 ④ 等待 Unix Socket 就绪 → ⑤ 返回命令执行
 ```
 
-daemon 空载启动（不连接设备）；目标设备在首次使用它的请求时才连接。启动超时约 8 秒。
+daemon 空载启动（不连接设备）；目标设备在首次使用它的请求时才连接。启动超时约 8 秒。若启动失败，一次性命令会带警告降级为 direct 模式（约 2.5s）而非退出；`connect`/`disconnect`/`serve` 则快速失败，因为它们没有 direct 降级路径。
 
 ### 文件路径
 

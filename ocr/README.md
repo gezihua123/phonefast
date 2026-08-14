@@ -41,12 +41,7 @@ CGO_ENABLED=1 go build -tags ncnn ./...
 
 # 全量 (嵌入 ORT 库)
 go build -tags ocr_embed ./...
-
-# 下载 ONNX Runtime 独立库（用于 ocr_embed）
-bash scripts/download.sh lib
 ```
-
-> **dylib 来源说明**： `ocr_embed` 默认使用 `ocr/assets/` 下的 GitHub Release 静态链接版 ONNX Runtime（~37MB，零外部依赖，推荐发布使用）。本地开发可直接 `brew install onnxruntime`，引擎会自动从 `/opt/homebrew/lib/` 加载系统版。两个版本在推理结果和性能上无差异，详见 [DEV.md](DEV.md)
 
 ## 测试
 

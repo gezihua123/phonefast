@@ -28,6 +28,7 @@
 |---|---|---|
 | [docs/CLI.md](docs/CLI.md) | 🇬🇧 | **命令行工具完整使用手册**（英文），含中文版 [docs/CLI_zh.md](docs/CLI_zh.md) |
 | [docs/BUILD.md](docs/BUILD.md) | 🇨🇳 | **构建手册** — Go 主程序（plain/-full/纯Go）、scrcpy-server.jar、OCR 引擎变体的构建命令、产物与依赖；CGO 降级机制、build tag 语义、环境准备 |
+| [docs/OCR.md](docs/OCR.md) | 🇨🇳 | **OCR 引擎文档** — 三引擎（ONNX/APPLE/NCNN）PP-OCRv6 架构、NCNN v6 接入流程（HF 预转换模型 + 变宽）、构建/测试命令、踩坑经验 |
 | [docs/DEV.md](docs/DEV.md) | 🇨🇳 | **开发笔记** — LocalSocket 4字节读取限制（Android 14）的排查与修复过程、H.264 截图解码架构设计（astiav CGO + ffmpeg CLI 双路径）、交叉编译踩坑记录（仅中文，内部开发用） |
 | [docs/BENCHMARK.md](docs/BENCHMARK.md) | 🇬🇧 | **Benchmark 历史记录**（英文），含中文版 [docs/BENCHMARK_zh.md](docs/BENCHMARK_zh.md) |
 | [docs/PHONEFAST.md](docs/PHONEFAST.md) | 🇬🇧 | **产品横向对比**（英文），含中文版 [docs/PHONEFAST_zh.md](docs/PHONEFAST_zh.md) |

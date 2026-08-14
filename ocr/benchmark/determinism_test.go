@@ -1,4 +1,4 @@
-//go:build darwin && cgo
+//go:build darwin && cgo && ocrbench
 
 package ocrbenchmark
 
@@ -8,8 +8,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/gezihua123/phonefast/ocr/onnx"
 	pkgocr "github.com/gezihua123/phonefast/ocr"
+	"github.com/gezihua123/phonefast/ocr/onnx"
 )
 
 // TestOCRDeterminism runs the same image through OCR many times and asserts

@@ -48,10 +48,12 @@ func (b *BaseEngine) Recognize(imgBytes []byte) ([]TextResult, error) {
 		return nil, nil
 	}
 
-	// Crop all boxes — copies pixel data so the full image can be freed.
+	// Crop all boxes via perspective warp — faithful to PaddleOCR's
+	// get_rotate_crop_image (de-rotates the text line). Copies pixel data so the
+	// full image can be freed.
 	crops := make([]image.Image, len(boxes))
 	for i, box := range boxes {
-		crops[i] = common.CropBox(img, box)
+		crops[i] = common.WarpCropBox(img, box)
 	}
 	// Release the full decoded image (~10 MB for 1080×2400) before
 	// recognition allocates tensors — reduces peak memory by ~10 MB.

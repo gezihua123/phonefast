@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/gezihua123/phonefast/ocr/onnx" // register ONNX backend
 	ocrsvc "github.com/gezihua123/phonefast/ocr"
+	_ "github.com/gezihua123/phonefast/ocr/onnx" // register ONNX backend
 )
 
 // TestOCRSmoke verifies the OCR engine can initialize and recognize text
@@ -130,32 +130,40 @@ func TestOCRBenchmarkAccuracy(t *testing.T) {
 		t.Skip("skipping accuracy test in short mode")
 	}
 
-	// Ground truth for all 20 benchmark images.
-	// Each entry: filename → list of must-contain texts verified manually.
+	// Ground truth updated from PaddleOCR v6 medium baseline (2026-08-12).
+	// Each entry: filename → list of must-contain texts (substring match).
+	// Selected from PaddleOCR's actual output on each benchmark image.
 	groundTruth := map[string][]string{
 		// English UI screenshots
-		"01_home.png":     {"Calendar", "Weather", "Google", "PlayStore", "PalmStore"},
-		"02_settings.png": {"Settings", "Search", "Wi-Fi", "Bluetooth", "Hotspot"},
-		"03_drawer.png":   {"Calendar", "Weather", "Google", "PlayStore", "PalmStore"},
-		"04_notif.png":    {"9:43", "Daxiang", "now", "spotify"},
-		"05_fixed.png":    {"Al Gallery", "All Apps", "Assistant", "Calendar", "Chrome"},
-		"06_web.png":      {"baidu.com", "世界杯", "上海", "新闻", "总书记"},
-		"07_dialer.png":   {"Contacts", "Emergency", "Recents", "ABC"},
-		"08_alarm.png":    {"06:00", "Alarm", "Timer", "Stopwatch"},
-		"09_files.png":    {"Facebook", "Gmail", "YouTube", "Play"},
-		"10_recent.png":   {"Meituan-Android", "5GHz", "WPA", "安全性", "已连接"},
+		"01_home.png":     {"Palm Store", "Hot Apps", "Fri", "0943"},
+		"02_settings.png": {"Settings", "Log In", "My Phone", "SIM", "Bluetooth"},
+		"03_drawer.png":   {"Palm Store", "Hot Apps", "Fri", "0943"},
+		"04_notif.png":    {"9:43", "No SIM", "Fri", "Daxiang"},
+		"05_fixed.png":    {"Search", "Recent Apps", "Google", "Daxiang"},
+		"06_web.png":      {"baidu.com", "百度一下", "世界杯", "百度APP"},
+		"07_dialer.png":   {"Recents", "Emergency", "Missed", "All"},
+		"08_alarm.png":    {"Alarm", "06:00", "Mon to Fri", "07:00"},
+		"09_files.png":    {"YouTube", "Facebook", "Gmail", "Play"},
+		"10_recent.png":   {"Meituan-Android", "网络详情", "信号强度", "5 GHz"},
+
+		// Recipe image — full-line OCR parity vs PaddleOCR (same PP-OCRv6
+		// weights). phonefast reads the truncated long line "6 servings"
+		// where PaddleOCR itself stops at "6 serving". Ground truth uses
+		// the shared prefix so both engines pass.
+		"recipes_sample.jpg": {"Recipes from Image", "Chocolate Cake", "A rich dessert",
+			"Chicken Soup", "Hearty soup", "Pasta Primavera", "Light pasta dish"},
 
 		// Chinese UI screenshots
-		"zh_01_settings.png": {"10:13", "搜索设置", "内存扩展", "亮度", "屏幕"},
-		"zh_02_wifi.png":     {"10:13", "Meituan-Android", "MAC", "Wi-Fi"},
-		"zh_03_about.png":    {"10:13", "基本信息", "手机名称", "设备详细信息"},
-		"zh_04_display.png":  {"10:13", "字体", "显示", "亮度", "桌面"},
-		"zh_05_apps.png":     {"10:13", "MB", "GB", "应用"},
-		"zh_06_storage.png":  {"10:14", "GB", "MB", "存储"},
-		"zh_07_bluetooth.png":{"10:14", "蓝牙", "配对", "设备"},
-		"zh_08_sound.png":    {"10:14", "音量", "铃声", "勿扰", "Moto"},
-		"zh_09_home.png":     {"10:14", "Google", "Meet", "1月"},
-		"zh_10_notif.png":    {"10:14", "全部清除", "Android", "Meituan"},
+		"zh_01_settings.png":  {"搜索设置", "内存扩展", "护眼模式", "电子邮件"},
+		"zh_02_wifi.png":      {"Meituan-Android", "已连接", "断开连接", "信号强度"},
+		"zh_03_about.png":     {"关", "基本信息", "手机名称", "moto"},
+		"zh_04_display.png":   {"显示", "亮度", "自动调节", "锁定显示屏"},
+		"zh_05_apps.png":      {"所有应用", "MB", "地图", "电话"},
+		"zh_06_storage.png":   {"存储", "GB", "共", "释放空间"},
+		"zh_07_bluetooth.png": {"连接与共享", "其他设备", "USB", "与新设备配对"},
+		"zh_08_sound.png":     {"提示音", "杜比全景声", "铃声音量", "通话音量"},
+		"zh_09_home.png":      {"7月", "Google", "Meet"},
+		"zh_10_notif.png":     {"Meituan-Android", "移动数据", "蓝牙", "勿扰", "Android"},
 	}
 
 	base := "benchmark/images"

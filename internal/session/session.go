@@ -11,37 +11,42 @@ import (
 	phonelog "github.com/gezihua123/phonefast/internal/log"
 	"github.com/gezihua123/phonefast/pkg/avcodec"
 	"github.com/gezihua123/phonefast/pkg/h264"
+	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
 // Session represents a live connection to a device via scrcpy sockets.
+//
+// The display/serial fields are unexported with accessor methods (Serial(),
+// DeviceWidth(), ...) so *Session can satisfy the daemon.Device interface —
+// Go forbids a method and a field sharing a name.
 type Session struct {
-	Serial  string
+	serial  string
 	Scid    int
-	DeviceW int
-	DeviceH int
+	deviceW int
+	deviceH int
 
 	// originalIME holds the IME active before phonefast switched to PFIME,
 	// so we can restore it on session close. Empty if PFIME was never activated.
 	originalIME string
-	// pfimeActive is set true after the first successful SetPFIME call,
-	// avoiding redundant ADB round-trips on subsequent non-ASCII TypeText.
-	pfimeActive bool
+	// pfime tracks whether PFIME has been activated for this session,
+	// avoiding redundant ADB round-trips on subsequent TypeText calls.
+	pfime pfimeGate
 
 	// TapDelay controls the DOWN→UP interval used by Tap().
-	// Default 50ms (minimum human touch duration, passes Play Store
-	// anti-automation checks). Set to 0 to use the default.
+	// Defaults to defaultTapDelay (10ms — a latency floor, not an
+	// anti-automation threshold). Set to 0 to use the default.
 	// Configurable so callers can tune for different device behavior.
 	TapDelay time.Duration
 
-	// NativeW × NativeH is the device's physical display resolution
+	// nativeW × nativeH is the device's physical display resolution
 	// (from "adb shell wm size"). UI elements from both the fast socket
 	// and ADB uiautomator dump use this coordinate space.
 	// Set once during Connect(); never changes.
 	//
-	// Touch injection uses DeviceW×DeviceH (video resolution). Call
+	// Touch injection uses deviceW×deviceH (video resolution). Call
 	// ScaleToDevice() to convert UI coordinates to touch coordinates.
-	NativeW int
-	NativeH int
+	nativeW int
+	nativeH int
 
 	videoConn   net.Conn
 	controlConn net.Conn
@@ -60,7 +65,19 @@ type Session struct {
 	avDecoderErr error           // cached init error — don't retry
 
 	uiConn net.Conn // persistent UI socket (reused across GetUI* calls)
+
+	// Test seams (nil in production): when set, ScreenshotFormat / GetUIFull
+	// delegate to these instead of touching the device, so wrapper-level
+	// policy (ObserveFull's retry-once and error wrapping) is unit-testable
+	// without a device. Mirrors the daemon's connectFn injection.
+	screenshotFormatFn func(format avcodec.ImageFormat) ([]byte, int, int, string, error)
+	getUIFullFn        func(maxElements int) ([]protocol.UIFullElement, error)
 }
+
+// defaultTapDelay is the DOWN→UP interval used by Tap() when Session.TapDelay
+// is zero. Shared by Connect() and the Tap() fallback so the default lives in
+// exactly one place.
+const defaultTapDelay = 10 * time.Millisecond
 
 // Connect deploys scrcpy-server, starts it, and establishes all socket connections.
 //
@@ -75,9 +92,9 @@ type Session struct {
 //  7. Probe UI socket availability (no persistent connection — server closes after each dump)
 func Connect(serial string, scid int) (*Session, error) {
 	s := &Session{
-		Serial:    serial,
+		serial:    serial,
 		Scid:      scid,
-		TapDelay:  10 * time.Millisecond,
+		TapDelay:  defaultTapDelay,
 		videoDied: make(chan struct{}),
 	}
 
@@ -96,8 +113,8 @@ func Connect(serial string, scid int) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get native display size: %w", err)
 	}
-	s.NativeW = nativeW
-	s.NativeH = nativeH
+	s.nativeW = nativeW
+	s.nativeH = nativeH
 
 	// Step 1: deploy scrcpy-server jar
 	info := adb.DefaultScrcpyServer()
@@ -108,8 +125,9 @@ func Connect(serial string, scid int) (*Session, error) {
 	// Step 2: kill existing server (StopServer waits for process exit + removes forwards)
 	adb.StopServer(serial)
 
-	// Step 3: assign ports
-	s.videoPort = 27183 + hashScid(scid)
+	// Step 3: assign ports (formula owned by pkg/protocol — single source
+	// shared with the daemon's ScidAllocator)
+	s.videoPort = protocol.ScidPort(scid)
 	s.uiPort = s.videoPort + 10
 
 	// Step 4: start server on device (tunnel_forward=true)
@@ -189,8 +207,8 @@ func Connect(serial string, scid int) (*Session, error) {
 		s.Close()
 		return nil, fmt.Errorf("read video header: %w", err)
 	}
-	s.DeviceW = s.decoder.Width()
-	s.DeviceH = s.decoder.Height()
+	s.deviceW = s.decoder.Width()
+	s.deviceH = s.decoder.Height()
 
 	// Step 9: probe UI socket readiness with adaptive polling.
 	// UISocketHandler.start() runs after the server reads the video header.
@@ -208,7 +226,7 @@ func Connect(serial string, scid int) (*Session, error) {
 	}
 
 	phonelog.Default().Write("connected: %dx%d  control=%t  ui_fast=%t",
-		s.DeviceW, s.DeviceH,
+		s.deviceW, s.deviceH,
 		s.controlConn != nil,
 		s.uiReady,
 	)
@@ -263,15 +281,15 @@ func (s *Session) Close() error {
 		s.uiConn = nil
 	}
 
-	adbRemoveForward(s.Serial, s.videoPort)
-	adbRemoveForward(s.Serial, s.uiPort)
+	adbRemoveForward(s.serial, s.videoPort)
+	adbRemoveForward(s.serial, s.uiPort)
 
-	adb.StopServer(s.Serial)
+	adb.StopServer(s.serial)
 
 	// Restore original IME (best-effort)
 	if s.originalIME != "" {
-		adb.RestoreIME(s.Serial, s.originalIME)
-		s.pfimeActive = false
+		adb.RestoreIME(s.serial, s.originalIME)
+		s.pfime.reset()
 	}
 	return nil
 }
@@ -323,15 +341,6 @@ func (s *Session) markControlBroken(err error) {
 // IsUIAvailable returns whether the fast UI socket is reachable.
 // UI connections are not persistent — each dump opens a fresh connection.
 func (s *Session) IsUIAvailable() bool { return s.uiReady }
-
-// UIPort returns the forwarded TCP port for fresh UI socket connections.
-func (s *Session) UIPort() int { return s.uiPort }
-
-// VideoConn returns the video socket connection.
-func (s *Session) VideoConn() net.Conn { return s.videoConn }
-
-// Decoder returns the H.264 decoder.
-func (s *Session) Decoder() *h264.Decoder { return s.decoder }
 
 // --- helpers ---
 
@@ -414,16 +423,26 @@ func probeUISocket(port int, maxAttempts int, interval time.Duration) bool {
 	return false
 }
 
-// hashScid computes (scid*31) % 100 for deriving a port offset.
-// Mirrored in daemon/scid.go:scidPort — both must stay in sync.
-// videoPort = 27183 + hashScid(scid)
-func hashScid(scid int) int {
-	h := scid * 31
-	if h < 0 {
-		h = -h
-	}
-	return h % 100
-}
+// ── Display/serial accessors ──
+//
+// Exposed as methods (not exported fields) so *Session satisfies the
+// daemon.Device interface. Go forbids a method and a field sharing a name,
+// hence the unexported fields above.
+
+// Serial returns the device serial this session is connected to.
+func (s *Session) Serial() string { return s.serial }
+
+// DeviceWidth returns the video-stream width used for touch injection.
+func (s *Session) DeviceWidth() int { return s.deviceW }
+
+// DeviceHeight returns the video-stream height used for touch injection.
+func (s *Session) DeviceHeight() int { return s.deviceH }
+
+// NativeWidth returns the physical display width (UI coordinate space).
+func (s *Session) NativeWidth() int { return s.nativeW }
+
+// NativeHeight returns the physical display height (UI coordinate space).
+func (s *Session) NativeHeight() int { return s.nativeH }
 
 // ScaleToDevice converts UI-element coordinates (in NativeW×NativeH space)
 // to device touch coordinates (in DeviceW×DeviceH space).
@@ -434,11 +453,11 @@ func hashScid(scid int) int {
 // used by both the fast UI socket (AccessibilityNodeInfo.getBoundsInScreen())
 // and the ADB uiautomator dump.
 func (s *Session) ScaleToDevice(x, y int) (int, int) {
-	if s.NativeW == s.DeviceW && s.NativeH == s.DeviceH {
+	if s.nativeW == s.deviceW && s.nativeH == s.deviceH {
 		return x, y // same resolution, no scaling needed
 	}
-	sx := int(float64(x) * float64(s.DeviceW) / float64(s.NativeW))
-	sy := int(float64(y) * float64(s.DeviceH) / float64(s.NativeH))
+	sx := int(float64(x) * float64(s.deviceW) / float64(s.nativeW))
+	sy := int(float64(y) * float64(s.deviceH) / float64(s.nativeH))
 	return sx, sy
 }
 

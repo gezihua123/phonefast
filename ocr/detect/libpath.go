@@ -60,7 +60,6 @@ func loadRuntimeLib() (path string, isTemp bool, err error) {
 	return path, false, err
 }
 
-
 func findSystemLib() (string, error) {
 	for _, p := range systemLibPaths() {
 		if _, err := os.Stat(p); err == nil {

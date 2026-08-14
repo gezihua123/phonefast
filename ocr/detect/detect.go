@@ -109,7 +109,13 @@ func (d *Detector) Detect(img image.Image, imgData []byte) ([][4][2]float64, err
 		}
 	}
 
-	tensorData, resizeW, resizeH, shape := common.DetPreprocessInto(img, 1024, d.detBuf)
+	// PP-OCRv6 detection resize: cap the longer side at 960 (matches
+	// PaddleOCR's resize_long=960, limit_type="max" — the model's training
+	// resolution). 1024 was out-of-distribution: for a 1080×2400 screen it
+	// produced a 448×1024 prob map (vs PaddleOCR's 448×960) whose vertical
+	// receptive-field mismatch pushed intra-word glyph boundaries below
+	// thresh=0.3, fragmenting "Fried Rice"→"F ri ed Rice" on live screens.
+	tensorData, resizeW, resizeH, shape := common.DetPreprocessInto(img, 960, d.detBuf)
 	d.detBuf = tensorData
 	probData, outShape, err := d.runInference(tensorData, shape)
 	if err != nil {

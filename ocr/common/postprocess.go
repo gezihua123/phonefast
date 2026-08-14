@@ -3,136 +3,108 @@ package common
 import (
 	"math"
 	"sort"
+
+	"github.com/gezihua123/phonefast/ocr/postprocess"
 )
-
-// DedupBoxes removes overlapping bounding boxes, keeping the larger one when
-// two boxes overlap significantly (IoU > 0.5). Used to merge Vision + ONNX
-// detection results.
-func DedupBoxes(boxes [][4][2]float64, _ float64) [][4][2]float64 {
-	if len(boxes) <= 1 {
-		return boxes
-	}
-
-	// Sort by size descending (larger boxes kept when overlapping)
-	sort.Slice(boxes, func(i, j int) bool {
-		ai := (boxes[i][2][0] - boxes[i][0][0]) * (boxes[i][2][1] - boxes[i][0][1])
-		aj := (boxes[j][2][0] - boxes[j][0][0]) * (boxes[j][2][1] - boxes[j][0][1])
-		return ai > aj
-	})
-
-	kept := boxes[:0]
-	for _, box := range boxes {
-		dup := false
-		for _, k := range kept {
-			if boxIoU(box, k) > 0.5 {
-				dup = true
-				break
-			}
-		}
-		if !dup {
-			kept = append(kept, box)
-		}
-	}
-	return kept
-}
-
-func boxIoU(a, b [4][2]float64) float64 {
-	// Intersection over Union for axis-aligned bounding boxes
-	ax1 := min(a[0][0], a[1][0], a[2][0], a[3][0])
-	ax2 := max(a[0][0], a[1][0], a[2][0], a[3][0])
-	ay1 := min(a[0][1], a[1][1], a[2][1], a[3][1])
-	ay2 := max(a[0][1], a[1][1], a[2][1], a[3][1])
-	bx1 := min(b[0][0], b[1][0], b[2][0], b[3][0])
-	bx2 := max(b[0][0], b[1][0], b[2][0], b[3][0])
-	by1 := min(b[0][1], b[1][1], b[2][1], b[3][1])
-	by2 := max(b[0][1], b[1][1], b[2][1], b[3][1])
-
-	x1 := math.Max(ax1, bx1)
-	y1 := math.Max(ay1, by1)
-	x2 := math.Min(ax2, bx2)
-	y2 := math.Min(ay2, by2)
-	intersection := math.Max(0, x2-x1) * math.Max(0, y2-y1)
-
-	union := (ax2-ax1)*(ay2-ay1) + (bx2-bx1)*(by2-by1) - intersection
-	if union == 0 {
-		return 0
-	}
-	return intersection / union
-}
 
 // ── Postprocessing: Box Extraction ───────────────────────────────
 
 // ExtractTextBoxes extracts text bounding boxes from the detection model's
-// output probability map using DB (Differentiable Binarization) postprocessing.
+// output probability map using DB (Differentiable Binarization) postprocessing,
+// faithfully ported from PaddleOCR's DBPostProcess.boxes_from_bitmap
+// (processors.py:366-419). Constants come from the model's inference.yml, not
+// the DBPostProcess class defaults — see the const block below for the source.
 //
 // Boxes are returned in the model's coordinate space (mapW × mapH).
 // The caller must scale to original image coordinates.
 //
-// Pipeline:
-//  1. Threshold probability map at 0.3 → binary mask
-//  2. Find 8-connected components via flood fill
-//  3. Fit axis-aligned quadrilaterals
-//  4. Filter tiny boxes (min side < 3px)
-//  5. Sort top-to-bottom, left-to-right
+// Pipeline (PP-OCRv6_medium_det inference.yml: thresh=0.2, box_thresh=0.45,
+// unclip_ratio=1.4, max_candidates=3000):
+//  1. Threshold probability map at 0.2 → binary mask (use_dilation=False)
+//  2. Find 8-connected components via flood fill (≈ cv2.findContours)
+//  3. get_mini_boxes: minAreaRect quad + sside; drop if sside < min_size(3)
+//  4. box_score_fast gate: drop if mean prob inside the quad < box_thresh(0.45)
+//  5. unclip: expand the quad by distance = area·ratio/perimeter (ratio 1.4)
+//  6. get_mini_boxes again on the expanded polygon; drop if sside < min_size+2(5)
+//  7. Sort top-to-bottom, left-to-right (PaddleOCR returns all survivors, no dedup)
 func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
 	npixels := mapW * mapH
 
-	// Step 1: Threshold at 0.3 — use pooled bool buffer.
-	const threshold = float32(0.3)
+	// PP-OCRv6_medium_det postprocess constants — read directly from the
+	// model's inference.yml (PostProcess section), NOT the DBPostProcess
+	// class defaults. Source:
+	//   ~/.paddlex/official_models/PP-OCRv6_medium_det/inference.yml
+	//       PostProcess: { thresh: 0.2, box_thresh: 0.45,
+	//                       unclip_ratio: 1.4, max_candidates: 3000 }
+	// These override the class defaults (processors.py:284-294:
+	// thresh=0.3/box_thresh=0.7/unclip_ratio=2.0/max_candidates=1000) because
+	// build_postprocess (predictor.py:201-214) passes `thresh=self.thresh or
+	// default_thresh` and the pipeline supplies no override, so the YAML wins.
+	// min_size=3 is the DBPostProcess constant (processors.py:300), with the
+	// two gates sside<min_size (first get_mini_boxes) and sside<min_size+2
+	// (second, after unclip) at processors.py:397 and :409.
+	const (
+		threshold     = float32(0.2) // thresh:    pred > 0.2 → text pixel
+		boxThresh     = 0.45         // box_thresh: mean-prob gate
+		unclipRatio   = 1.4          // unclip_ratio: box expansion factor
+		maxCandidates = 3000         // max contours scanned
+		minSize       = 3            // min_size: sside gate base
+	)
+
+	// Step 1: Threshold at 0.2 (inference.yml) — use pooled bool buffer.
 	binary := getBool(npixels)
 	for i, v := range probMap {
 		binary[i] = v > threshold
 	}
 
-	// Step 2: Dilate mask to connect nearby text fragments (replaces O(n²) merge).
-	dilated := getBool(npixels)
-	dilateMaskInto(binary, dilated, mapW, mapH)
-	putBool(binary)
-	binary = nil
+	// Step 2: connected components. PaddleOCR's DBPostProcess defaults to
+	// use_dilation=False — it findContours directly on `pred > thresh`. We match
+	// that: skip dilation. Each 8-connected component of the thresholded prob
+	// map is one contour, which we feed to get_mini_boxes.
+	mask := binary
 
-	// Step 3: Find connected components via flood fill.
+	// Step 3: Find connected components via flood fill. Each 8-connected
+	// component of the thresholded prob map is one contour (cv2.findContours
+	// with RETR_LIST). We collect the component's foreground pixels to feed
+	// GetMiniBoxes — faithful because cv2.minAreaRect on the contour equals
+	// minAreaRect on all pixels (interior points never change the convex hull,
+	// and CHAIN_APPROX_SIMPLE only drops collinear boundary points).
 	visited := getBool(npixels)
-	// visited starts zeroed from pool? Not guaranteed — the pool may return
-	// stale data. Zero it.
+	// visited may hold stale data from the pool — zero it.
 	for i := range visited {
 		visited[i] = false
 	}
 
 	type point struct{ x, y int }
 	var boxes [][4][2]float64
-	const minBoxSide = 3
+	var compPix [][2]float64 // reused across components (reset per component)
+	var stack []point        // reused across components
+	contourCount := 0
 
 	for y := 0; y < mapH; y++ {
 		for x := 0; x < mapW; x++ {
 			idx := y*mapW + x
-			if !dilated[idx] || visited[idx] {
+			if !mask[idx] || visited[idx] {
 				continue
 			}
 
-			// Flood fill — track bounding box only (no pixel list allocation).
-			count := 0
-			stack := []point{{x, y}}
+			// PaddleOCR caps scanned contours at max_candidates
+			// (boxes_from_bitmap: num_contours = min(len(contours), max_candidates)).
+			if contourCount >= maxCandidates {
+				break
+			}
+			contourCount++
+
+			// Flood fill, collecting every foreground pixel of this component.
+			compPix = compPix[:0]
+			stack = stack[:0]
+			stack = append(stack, point{x, y})
 			visited[idx] = true
-			minX, minY := x, y
-			maxX, maxY := x, y
 
 			for len(stack) > 0 {
 				p := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
-				count++
-
-				if p.x < minX {
-					minX = p.x
-				}
-				if p.x > maxX {
-					maxX = p.x
-				}
-				if p.y < minY {
-					minY = p.y
-				}
-				if p.y > maxY {
-					maxY = p.y
-				}
+				compPix = append(compPix, [2]float64{float64(p.x), float64(p.y)})
 
 				for dy := -1; dy <= 1; dy++ {
 					for dx := -1; dx <= 1; dx++ {
@@ -144,7 +116,7 @@ func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
 							continue
 						}
 						nidx := ny*mapW + nx
-						if dilated[nidx] && !visited[nidx] {
+						if mask[nidx] && !visited[nidx] {
 							visited[nidx] = true
 							stack = append(stack, point{nx, ny})
 						}
@@ -152,80 +124,46 @@ func ExtractTextBoxes(probMap []float32, mapW, mapH int) [][4][2]float64 {
 				}
 			}
 
-			if count < 4 {
+			// boxes_from_bitmap step 1 (processors.py:396-398): get_mini_boxes
+			// → rotated min-area rect quad + sside; skip if sside < min_size(3).
+			quad, sside := postprocess.GetMiniBoxes(compPix)
+			if sside < minSize {
 				continue
 			}
 
-			bw := maxX - minX + 1
-			bh := maxY - minY + 1
-			if bw < minBoxSide || bh < minBoxSide {
+			// boxes_from_bitmap step 2 (processors.py:400-405): box_score_fast
+			// on the rotated quad; skip if box_thresh > score. The general
+			// (polygon-fill) path in BoxScoreFast handles rotated quads exactly.
+			score := postprocess.BoxScoreFast(probMap, mapW, mapH, quad)
+			if score < boxThresh {
 				continue
 			}
 
-			expand := 2
-			qMinX := minX - expand
-			qMinY := minY - expand
-			qMaxX := maxX + expand
-			qMaxY := maxY + expand
-			if qMinX < 0 {
-				qMinX = 0
+			// boxes_from_bitmap step 3 (processors.py:407): unclip the quad —
+			// pyclipper JT_ROUND offset by distance = area·ratio/perimeter.
+			expanded := postprocess.UnclipBoxPaddle(quad, unclipRatio)
+
+			// boxes_from_bitmap step 4 (processors.py:408-410): second
+			// get_mini_boxes on the expanded polygon; skip if sside < min_size+2(5).
+			finalBox, sside2 := postprocess.GetMiniBoxes(expanded)
+			if sside2 < minSize+2 {
+				continue
 			}
-			if qMinY < 0 {
-				qMinY = 0
-			}
-			if qMaxX >= mapW {
-				qMaxX = mapW - 1
-			}
-			if qMaxY >= mapH {
-				qMaxY = mapH - 1
-			}
-			quad := fitQuadrilateral(qMinX, qMinY, qMaxX, qMaxY)
-			boxes = append(boxes, quad)
+
+			boxes = append(boxes, finalBox)
 		}
 	}
 
-	putBool(dilated)
+	putBool(mask)
 	putBool(visited)
+
+	// PaddleOCR's boxes_from_bitmap returns ALL surviving boxes — it does NOT
+	// dedup or line-merge. (Its DB prob map is trained solid per text line, so
+	// each contour is already one line; a merge/dedup pass would over-join
+	// adjacent lines whose unclip-expanded heights overlap.) phonefast matches
+	// that exactly: sort and return.
 	sortBoxes(boxes)
 	return boxes
-}
-
-// dilateMaskInto applies a 3×3 morphological dilation from src into dst.
-// This connects nearby text fragments so flood fill produces larger,
-// more coherent boxes. dst must be pre-allocated to w*h. Both src and dst
-// are typically pool buffers (reused across ExtractTextBoxes calls).
-func dilateMaskInto(src []bool, dst []bool, w, h int) {
-	for i := range dst[:w*h] {
-		dst[i] = false
-	}
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			idx := y*w + x
-			if src[idx] {
-				for dy := -1; dy <= 1; dy++ {
-					for dx := -1; dx <= 1; dx++ {
-						nx, ny := x+dx, y+dy
-						if nx >= 0 && nx < w && ny >= 0 && ny < h {
-							dst[ny*w+nx] = true
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-// fitQuadrilateral creates a 4-point quadrilateral from bounding box coordinates.
-// Uses axis-aligned rectangle for robustness.
-func fitQuadrilateral(minX, minY, maxX, maxY int) [4][2]float64 {
-	// For robustness with small components, use axis-aligned rect
-	// Convert to 4 corners: top-left, top-right, bottom-right, bottom-left
-	return [4][2]float64{
-		{float64(minX), float64(minY)}, // top-left
-		{float64(maxX), float64(minY)}, // top-right
-		{float64(maxX), float64(maxY)}, // bottom-right
-		{float64(minX), float64(maxY)}, // bottom-left
-	}
 }
 
 // sortBoxes sorts boxes top-to-bottom, then left-to-right within same row.

@@ -13,37 +13,39 @@ import (
 
 // NAL unit types.
 const (
-	NALTypeSlice    = 1
-	NALTypeIDR      = 5 // Instantaneous Decoder Refresh (keyframe)
-	NALTypeSEI      = 6
-	NALTypeSPS      = 7
-	NALTypePPS      = 8
-	NALTypeAUD      = 9
+	NALTypeSlice = 1
+	NALTypeIDR   = 5 // Instantaneous Decoder Refresh (keyframe)
+	NALTypeSEI   = 6
+	NALTypeSPS   = 7
+	NALTypePPS   = 8
+	NALTypeAUD   = 9
 )
 
 // Scrcpy frame metadata header (12 bytes):
-//   8 bytes: ptsAndFlags (PACKET_FLAG_CONFIG=1<<63, PACKET_FLAG_KEY_FRAME=1<<62)
-//   4 bytes: packet size
+//
+//	8 bytes: ptsAndFlags (PACKET_FLAG_CONFIG=1<<63, PACKET_FLAG_KEY_FRAME=1<<62)
+//	4 bytes: packet size
 const (
-	FrameHeaderSize   = 12
-	PacketFlagConfig  = uint64(1 << 63)
+	FrameHeaderSize    = 12
+	PacketFlagConfig   = uint64(1 << 63)
 	PacketFlagKeyFrame = uint64(1 << 62)
 )
 
 // VideoHeader as sent by scrcpy Streamer.writeVideoHeader:
-//   4 bytes: codec ID (0x68323634 = "h264" little-endian)
-//   4 bytes: width
-//   4 bytes: height
+//
+//	4 bytes: codec ID (0x68323634 = "h264" little-endian)
+//	4 bytes: width
+//	4 bytes: height
 const VideoHeaderSize = 12
 
 // A Frame is a decoded video frame.
 type Frame struct {
-	Data      []byte // raw frame data (H.264 NAL units, AnnexB format)
-	PTS       int64
-	KeyFrame  bool
-	Config    bool
-	Width     int
-	Height    int
+	Data     []byte // raw frame data (H.264 NAL units, AnnexB format)
+	PTS      int64
+	KeyFrame bool
+	Config   bool
+	Width    int
+	Height   int
 }
 
 // Decoder extracts frames from scrcpy's video socket stream.
@@ -164,6 +166,18 @@ func (d *Decoder) LatestKeyframe() []byte {
 	return d.latestKeyframe
 }
 
+// LatestKeyframePTS returns the PTS of the most recent keyframe.
+// Screenshot uses it to detect whether a fresh keyframe has arrived after
+// requesting one via RESET_VIDEO — a screen change lives in P-frames, which
+// never update latestKeyframe, so PTS monotonicity is the only reliable
+// "is this new?" signal (MediaCodec presentationTimeUs is monotonically
+// increasing, and so is scrcpy's after each reset).
+func (d *Decoder) LatestKeyframePTS() int64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.latestPTS
+}
+
 // buildKeyframe prepends the SPS+PPS config data before the IDR frame.
 // Both configRaw and idr are already in AnnexB format (00 00 00 01 start codes),
 // so a plain concatenation is sufficient and correct.
@@ -189,7 +203,9 @@ func (d *Decoder) buildKeyframe(idr []byte) []byte {
 
 // extractConfigs stores the raw AnnexB config packet (SPS+PPS).
 // scrcpy's MediaCodec outputs config data as:
-//   [00 00 00 01] SPS-NAL [00 00 00 01] PPS-NAL
+//
+//	[00 00 00 01] SPS-NAL [00 00 00 01] PPS-NAL
+//
 // We store it verbatim so buildKeyframe can prepend it unchanged.
 func (d *Decoder) extractConfigs(data []byte) {
 	d.configRaw = make([]byte, len(data))

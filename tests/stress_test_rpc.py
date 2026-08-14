@@ -533,7 +533,7 @@ class StressTest:
                             print(f"\n  [ERR] {op_name}: {err[:200]}")
 
                             if any(kw in err.lower() for kw in
-                                  ["connection", "closed", "broken pipe", "refused"]):
+                                  ["connection", "closed", "broken pipe", "refused", "no such file"]):
                                 self.reconnects.append(
                                     (time.time() - self.start_time, f"reconnect: {err}"))
                                 print(f"\n  ⚠️  Connection lost, reconnecting for {self.serial}...")

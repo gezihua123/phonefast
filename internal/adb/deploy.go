@@ -135,9 +135,9 @@ func fileSize(path string) int64 {
 
 // ScrcpyArgs holds the scrcpy server command-line arguments.
 type ScrcpyArgs struct {
-	Scid          int
-	LogLevel      string
-	MaxSize       int
+	Scid     int
+	LogLevel string
+	MaxSize  int
 	// BitRate is the H.264 target bitrate in BITS PER SECOND (scrcpy
 	// server convention: video_bit_rate is bits/s, NOT Mbps). 8 Mbps =
 	// 8_000_000. Do NOT pass 8 - that is 8 bits/s and yields a heavily

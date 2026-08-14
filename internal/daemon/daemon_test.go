@@ -37,3 +37,52 @@ func TestStatusWithNilStatusValue(t *testing.T) {
 		t.Fatal("actor with no status snapshot reports connected")
 	}
 }
+
+// TestRemoveDeviceSuccess verifies removeDevice's success path drains the
+// full device lifecycle: the actor's per-actor context is cancelled (so its
+// run loop exits), the scid is released back to the allocator (a re-Alloc
+// hands it out again), and both the devices and connectMu map entries are
+// removed. A leak in any of the three would be caught here.
+func TestRemoveDeviceSuccess(t *testing.T) {
+	d := newTestDaemon(t)
+	d.connectFn = func(s string, scid int) (Device, error) { return newFakeDevice(s), nil }
+
+	actor, err := d.getOrCreateActor("dev-A")
+	if err != nil {
+		t.Fatalf("getOrCreateActor: %v", err)
+	}
+	scid := actor.scid
+
+	if err := d.removeDevice("dev-A"); err != nil {
+		t.Fatalf("removeDevice: %v", err)
+	}
+
+	d.mu.RLock()
+	_, stillMapped := d.devices["dev-A"]
+	d.mu.RUnlock()
+	if stillMapped {
+		t.Error("devices map still contains dev-A after removeDevice")
+	}
+
+	d.connectMuMu.Lock()
+	_, muMapped := d.connectMu["dev-A"]
+	d.connectMuMu.Unlock()
+	if muMapped {
+		t.Error("connectMu still contains dev-A after removeDevice")
+	}
+
+	// Context cancellation is synchronous, so this is immediately observable.
+	if actor.ctx == nil || actor.ctx.Err() == nil {
+		t.Error("actor context not cancelled — removeDevice did not stop the actor")
+	}
+
+	// The released scid must be allocatable again. dev-A held the allocator's
+	// first (default) scid, so a fresh Alloc returns that same value.
+	got, err := d.scidAlloc.Alloc()
+	if err != nil {
+		t.Fatalf("Alloc after release: %v", err)
+	}
+	if got != scid {
+		t.Errorf("re-Alloc = %#x, want the released scid %#x", got, scid)
+	}
+}

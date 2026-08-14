@@ -1,0 +1,56 @@
+count=55
+#0 (FrameLayout) | bounds=[0,0][1080,2400] | | depth=0 parent=#-1
+#1 (LinearLayout) | bounds=[0,0][1080,2337] | | depth=1 parent=#0
+#2 (FrameLayout) | bounds=[0,0][1080,2337] | | depth=2 parent=#1
+#3 id="action_bar_root" (LinearLayout) | bounds=[0,0][1080,2337] | | depth=3 parent=#2
+#4 id="content" (FrameLayout) | bounds=[0,0][1080,2337] | | depth=4 parent=#3
+#5 id="drawer_layout" (DrawerLayout) | bounds=[0,0][1080,2337] | | depth=5 parent=#4
+#6 (ViewGroup) | bounds=[0,128][1080,2337] | | depth=6 parent=#5
+#7 (LinearLayout) | bounds=[0,128][1080,275] | | depth=7 parent=#6
+#8 id="toolbar" (ViewGroup) | bounds=[0,128][1080,275] | | depth=8 parent=#7
+#9 desc="Open navigation drawer" (IconBtn) | bounds=[0,128][147,275] | [clickable] | depth=9 parent=#8
+#10 text="Recipes" (Text) | bounds=[189,166][382,237] | | depth=9 parent=#8
+#11 (LinearLayoutCompat) | bounds=[1080,128][1080,275] | [off-screen] | depth=9 parent=#8
+#12 (ViewGroup) | bounds=[0,275][1080,2337] | | depth=7 parent=#6
+#13 id="nav_host_fragment" (FrameLayout) | bounds=[0,275][1080,2337] | | depth=8 parent=#12
+#14 (ViewGroup) | bounds=[0,275][1080,2337] | | depth=9 parent=#13
+#15 (LinearLayout) | bounds=[0,275][1080,422] | | depth=10 parent=#14
+#16 id="toolbar_recipes" (ViewGroup) | bounds=[0,275][1080,422] | | depth=11 parent=#15
+#17 desc="Categories" id="spinner" (Select) | bounds=[42,285][953,411] | [clickable] | depth=12 parent=#16
+#18 text="All recipes" id="text1" (Text) | bounds=[42,312][827,383] | | depth=13 parent=#17
+#19 (LinearLayoutCompat) | bounds=[953,275][1080,422] | | depth=12 parent=#16
+#20 desc="Search" id="action_search" (Button) | bounds=[953,285][1080,411] | [clickable] | depth=13 parent=#19
+#21 desc="Recipes" id="recycler_view" (RecyclerView) | bounds=[0,422][1080,2337] | | depth=10 parent=#14
+#22 (CardView) | bounds=[21,443][1059,758] | [clickable] | depth=11 parent=#21
+#23 (ViewGroup) | bounds=[21,443][1059,758] | | depth=12 parent=#22
+#24 desc="Recipe photo" id="card_image" (Image) | bounds=[21,443][336,758] | | depth=13 parent=#23
+#25 text="Avocado Toast with Egg" id="card_text_view_title" (Text) | bounds=[336,494][1059,562] | | depth=13 parent=#23
+#26 text="A delicious and healthy choice for any time of the day." id="card_text_view_description" (Text) | bounds=[336,562][1059,656] | | depth=13 parent=#23
+#27 id="card_text_view_source" (Text) | bounds=[336,656][1059,707] | | depth=13 parent=#23
+#28 (CardView) | bounds=[21,779][1059,1094] | [clickable] | depth=11 parent=#21
+#29 (ViewGroup) | bounds=[21,779][1059,1094] | | depth=12 parent=#28
+#30 desc="Recipe photo" id="card_image" (Image) | bounds=[21,779][336,1094] | | depth=13 parent=#29
+#31 text="Chicken Soup" id="card_text_view_title" (Text) | bounds=[336,830][1059,898] | | depth=13 parent=#29
+#32 text="A hearty soup perfect for cold winter days." id="card_text_view_description" (Text) | bounds=[336,898][1059,992] | | depth=13 parent=#29
+#33 id="card_text_view_source" (Text) | bounds=[336,992][1059,1043] | | depth=13 parent=#29
+#34 (CardView) | bounds=[21,1115][1059,1430] | [clickable] | depth=11 parent=#21
+#35 (ViewGroup) | bounds=[21,1115][1059,1430] | | depth=12 parent=#34
+#36 desc="Recipe photo" id="card_image" (Image) | bounds=[21,1115][336,1430] | | depth=13 parent=#35
+#37 text="Chocolate Cake" id="card_text_view_title" (Text) | bounds=[336,1166][1059,1234] | | depth=13 parent=#35
+#38 text="A rich and moist chocolate cake for special occasions." id="card_text_view_description" (Text) | bounds=[336,1234][1059,1328] | | depth=13 parent=#35
+#39 id="card_text_view_source" (Text) | bounds=[336,1328][1059,1379] | | depth=13 parent=#35
+#40 (CardView) | bounds=[21,1451][1059,1766] | [clickable] | depth=11 parent=#21
+#41 (ViewGroup) | bounds=[21,1451][1059,1766] | | depth=12 parent=#40
+#42 desc="Recipe photo" id="card_image" (Image) | bounds=[21,1451][336,1766] | | depth=13 parent=#41
+#43 text="Greek Salad Pita Pockets" id="card_text_view_title" (Text) | bounds=[336,1502][1059,1570] | | depth=13 parent=#41
+#44 text="An ideal recipe for experimenting with different flavors and ingredients." id="card_text_view_description" (Text) | bounds=[336,1570][1059,1664] | | depth=13 parent=#41
+#45 id="card_text_view_source" (Text) | bounds=[336,1664][1059,1715] | | depth=13 parent=#41
+#46 (CardView) | bounds=[21,1787][1059,2102] | [clickable] | depth=11 parent=#21
+#47 (ViewGroup) | bounds=[21,1787][1059,2102] | | depth=12 parent=#46
+#48 desc="Recipe photo" id="card_image" (Image) | bounds=[21,1787][336,2102] | | depth=13 parent=#47
+#49 text="Pasta Primavera" id="card_text_view_title" (Text) | bounds=[336,1838][1059,1906] | | depth=13 parent=#47
+#50 text="A light pasta dish loaded with fresh seasonal vegetables." id="card_text_view_description" (Text) | bounds=[336,1906][1059,2000] | | depth=13 parent=#47
+#51 id="card_text_view_source" (Text) | bounds=[336,2000][1059,2051] | | depth=13 parent=#47
+#52 desc="New Recipe" id="fab_recipes" (IconBtn) | bounds=[891,2148][1038,2295] | [clickable] | depth=10 parent=#14
+#53 id="statusBarBackground" (View) | bounds=[0,0][1080,128] | | depth=1 parent=#0
+#54 id="navigationBarBackground" (View) | bounds=[0,2337][1080,2400] | [off-screen] | depth=1 parent=#0

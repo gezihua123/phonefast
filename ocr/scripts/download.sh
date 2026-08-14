@@ -3,22 +3,27 @@
 # download.sh — download OCR models and ONNX Runtime lib into ocr/assets/
 #
 # Usage:
-#   bash ocr/scripts/download.sh models            # PP-OCR v3 ONNX models only
+#   bash ocr/scripts/download.sh models            # PP-OCRv6 ONNX models only
 #   bash ocr/scripts/download.sh lib               # ONNX Runtime lib (current platform)
-#   bash ocr/scripts/download.sh all               # models + lib
+#   bash ocr/scripts/download.sh keys              # character set (ppocr_keys.txt)
+#   bash ocr/scripts/download.sh all               # models + lib + keys
 #
 # Sources:
-#   models: HuggingFace RapidOCR (primary) → pip rapidocr_onnxruntime (fallback)
+#   models: HuggingFace PaddlePaddle (primary)
+#   keys:   extracted from v6 model inference.yml
 #   lib:    system install (brew/apt) → GitHub release (cross-platform)
 #
 # Environment:
 #   ORT_VERSION    ONNX Runtime version (default: 1.27.1)
+#   OCR_MODEL      Model level: medium (default), small, tiny
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ASSETS_DIR="$(cd "$SCRIPT_DIR/../assets" && pwd)"
+KEYS_DIR="$(cd "$SCRIPT_DIR/../common" && pwd)"
 ORT_VERSION="${ORT_VERSION:-1.27.1}"
+OCR_MODEL="${OCR_MODEL:-medium}"
 
 # ── Helpers ──────────────────────────────────────────────────────
 
@@ -37,7 +42,7 @@ download() {
     fi
 }
 
-# ── Models ───────────────────────────────────────────────────────
+# ── Models (PP-OCRv6) ────────────────────────────────────────────
 
 download_models() {
     local det="$ASSETS_DIR/ppocr-det.onnx"
@@ -51,29 +56,62 @@ download_models() {
         return
     fi
 
-    info "Downloading PP-OCR v3 models..."
+    # Map model level to HuggingFace repo suffix
+    local level="$OCR_MODEL"
+    case "$level" in
+        medium) ;;
+        small)  ;;
+        tiny)   ;;
+        *)      warn "Unknown OCR_MODEL=$level, falling back to medium"; level="medium" ;;
+    esac
 
-    # Source 1: HuggingFace
-    local hf="https://huggingface.co/SWHL/RapidOCR/resolve/main/PP-OCRv3"
+    local hf="https://huggingface.co/PaddlePaddle/PP-OCRv6_${level}_det_onnx/resolve/main/inference.onnx"
+    local hf_rec="https://huggingface.co/PaddlePaddle/PP-OCRv6_${level}_rec_onnx/resolve/main/inference.onnx"
+
+    info "Downloading PP-OCRv6 ${level} models..."
+    info "  det: $hf"
+    info "  rec: $hf_rec"
+
     if ! $got_det; then
-        download "$hf/ch_PP-OCRv3_det_infer.onnx" "$det" && info "det: $(du -sh "$det" | cut -f1)" || got_det=false
+        if download "$hf" "$det"; then
+            info "det: $(du -sh "$det" | cut -f1)"
+            got_det=true
+        fi
     fi
     if ! $got_rec; then
-        download "$hf/ch_PP-OCRv3_rec_infer.onnx" "$rec" && info "rec: $(du -sh "$rec" | cut -f1)" || got_rec=false
-    fi
-
-    # Source 2: pip rapidocr_onnxruntime (offline fallback)
-    if ! $got_det; then
-        local site
-        site="$(python3 -c 'import site; print(site.getsitepackages()[0])' 2>/dev/null || true)"
-        if [ -n "$site" ] && [ -d "$site/rapidocr_onnxruntime/models" ]; then
-            local src="$site/rapidocr_onnxruntime/models"
-            [ -f "$src/ch_PP-OCRv3_det_infer.onnx" ] && cp "$src/ch_PP-OCRv3_det_infer.onnx" "$det" && got_det=true
-            [ -f "$src/ch_PP-OCRv3_rec_infer.onnx" ] && cp "$src/ch_PP-OCRv3_rec_infer.onnx" "$rec" && got_rec=true
+        if download "$hf_rec" "$rec"; then
+            info "rec: $(du -sh "$rec" | cut -f1)"
+            got_rec=true
         fi
     fi
 
     $got_det && $got_rec || warn "Some models missing. OCR will return ErrNotAvailable."
+}
+
+# ── Keys (character set from v6 model config) ────────────────────
+
+download_keys() {
+    local keys_file="$KEYS_DIR/ppocr_keys.txt"
+    local yml_url="https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx/resolve/main/inference.yml"
+
+    info "Downloading PP-OCRv6 character set from inference.yml..."
+
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf $tmpdir" EXIT
+
+    download "$yml_url" "$tmpdir/inference.yml" || err "Failed to download inference.yml"
+
+    python3 -c "
+import yaml, sys
+with open('$tmpdir/inference.yml') as f:
+    cfg = yaml.safe_load(f)
+chars = cfg['PostProcess']['character_dict']
+with open('$keys_file', 'w') as f:
+    for c in chars:
+        f.write(c + '\n')
+print(f'Extracted {len(chars)} characters -> $keys_file')
+" || err "Failed to extract character set"
 }
 
 # ── ORT lib ──────────────────────────────────────────────────────
@@ -142,16 +180,24 @@ case "${1:-}" in
         mkdir -p "$ASSETS_DIR"
         download_lib
         ;;
+    keys)
+        download_keys
+        ;;
     all)
         mkdir -p "$ASSETS_DIR"
         download_models
         download_lib
+        download_keys
         ;;
     *)
-        echo "Usage: $0 {models|lib|all}"
-        echo "  models   PP-OCR v3 ONNX models (det + rec) -> ocr/assets/"
+        echo "Usage: $0 {models|lib|keys|all}"
+        echo "  models   PP-OCRv6 ONNX models (det + rec) -> ocr/assets/"
         echo "  lib      ONNX Runtime native lib -> ocr/assets/"
-        echo "  all      Both"
+        echo "  keys     PP-OCRv6 character set -> ocr/common/ppocr_keys.txt"
+        echo "  all      All of the above"
+        echo ""
+        echo "Environment:"
+        echo "  OCR_MODEL   Model level: medium (default), small, tiny"
         exit 1
         ;;
 esac
