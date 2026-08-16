@@ -17,17 +17,23 @@ import (
 // newMockSession creates a Session with a net.Pipe()-backed controlConn.
 // The caller gets the reader end to verify what the Session writes.
 // TapDelay defaults to defaultTapDelay (same as production Connect()).
+//
+// preheatKeyframe is stubbed out: the post-action RESET_VIDEO write blocks
+// on the synchronous pipe until someone reads it, which would stall every
+// action test after its final expected message. The preheat write itself is
+// covered by TestTapPreheatsKeyframe.
 func newMockSession() (s *Session, reader net.Conn) {
 	client, server := net.Pipe()
 	s = &Session{
-		serial:      "test-device",
-		Scid:        1,
-		deviceW:     1080,
-		deviceH:     2400,
-		nativeW:     1080,
-		nativeH:     2400,
-		TapDelay:    defaultTapDelay,
-		controlConn: client,
+		serial:            "test-device",
+		Scid:              1,
+		deviceW:           1080,
+		deviceH:           2400,
+		nativeW:           1080,
+		nativeH:           2400,
+		TapDelay:          defaultTapDelay,
+		controlConn:       client,
+		preheatKeyframeFn: func() {},
 	}
 	return s, server
 }
@@ -111,6 +117,40 @@ func TestTapSendsTouchDownThenUp(t *testing.T) {
 	}
 	if pressure2 != 0xffff {
 		t.Errorf("UP pressure = 0x%04x, want 0xffff", pressure2)
+	}
+
+	if err := <-done; err != nil {
+		t.Errorf("Tap() returned error: %v", err)
+	}
+}
+
+// TestTapPreheatsKeyframe verifies Tap's real preheat path: after DOWN+UP
+// the session writes the RESET_VIDEO (17) byte so the next screenshot can
+// hit the freshness fast path. Uses a raw session (no preheat stub).
+func TestTapPreheatsKeyframe(t *testing.T) {
+	client, server := net.Pipe()
+	s := &Session{
+		serial:      "test-device",
+		deviceW:     1080,
+		deviceH:     2400,
+		TapDelay:    defaultTapDelay,
+		controlConn: client,
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Tap(540, 1296)
+	}()
+
+	readTouchMsg(t, server) // DOWN
+	readTouchMsg(t, server) // UP
+
+	buf := make([]byte, 1)
+	if _, err := io.ReadFull(server, buf); err != nil {
+		t.Fatalf("read reset byte: %v", err)
+	}
+	if buf[0] != 17 {
+		t.Errorf("post-tap preheat wrote %d, want 17 (RESET_VIDEO)", buf[0])
 	}
 
 	if err := <-done; err != nil {

@@ -173,6 +173,10 @@ func (s *Session) tryMarkReset() bool {
 // freshness fast path instead of paying the ~350ms pipeline recreation.
 // Best-effort: throttled, no-op on a dead control conn.
 func (s *Session) preheatKeyframe() {
+	if s.preheatKeyframeFn != nil { // test seam - see Session fields
+		s.preheatKeyframeFn()
+		return
+	}
 	s.requestKeyframe()
 }
 

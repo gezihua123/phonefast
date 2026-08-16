@@ -62,8 +62,8 @@ type Session struct {
 	// resetMu guards lastResetAt (RESET_VIDEO throttle; see requestKeyframe).
 	resetMu     sync.Mutex
 	lastResetAt time.Time
-	uiPort     int           // forwarded TCP port for UI (fresh connection per request)
-	uiReady    bool          // whether UI socket is available
+	uiPort      int  // forwarded TCP port for UI (fresh connection per request)
+	uiReady     bool // whether UI socket is available
 
 	avDecoder    avcodec.Decoder // CGO go-astiav decoder (lazy init, may be nil)
 	avDecoderErr error           // cached init error — don't retry
@@ -76,6 +76,11 @@ type Session struct {
 	// without a device. Mirrors the daemon's connectFn injection.
 	screenshotFormatFn func(format avcodec.ImageFormat) ([]byte, int, int, string, error)
 	getUIFullFn        func(maxElements int) ([]protocol.UIFullElement, error)
+
+	// Test seam for preheatKeyframe (nil in production): the post-action
+	// RESET_VIDEO write blocks on a synchronous net.Pipe until the test
+	// reads it, so control-protocol tests stub it out. See preheatKeyframe.
+	preheatKeyframeFn func()
 }
 
 // defaultTapDelay is the DOWN→UP interval used by Tap() when Session.TapDelay
