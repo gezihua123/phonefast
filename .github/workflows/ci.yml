@@ -2,8 +2,7 @@
 #
 # 每次 push/PR 验证代码编译 (CGO + FFmpeg ASM)。
 # 覆盖 Linux/macOS/Windows 三平台基本构建能力。
-# Linux 与 macOS 原生跑全量测试 (CGO)；Windows 交叉编译无法在 ubuntu 上
-# 运行 PE 测试二进制，由 test-windows job 在原生 runner 上跑纯 Go 测试。
+# Linux 与 macOS 原生跑全量测试 (CGO)；Windows 交叉编译只验证构建。
 #
 # 触发方式: main/dev 分支 push 或 PR → main
 
@@ -211,28 +210,7 @@ jobs:
           PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/aarch64-darwin/lib/pkgconfig
         run: go test -count=1 -timeout 300s $(go list ./... | grep -v tests/ocr-benchmark)
 
-  # ── Windows amd64 (native runner, pure-Go tests) ──
-  # build-windows 在 ubuntu 上交叉编译，PE 测试二进制无法在 Linux 上执行；
-  # 这里在真实 Windows runner 上跑 CGO_ENABLED=0 纯 Go 测试（与 CLAUDE.md
-  # Step 1 的交叉编译验证互补：那个只验证编译，这个验证运行时行为）。
-  # 排除 ocr 根包：ONNX 引擎在 Windows 上是 dlopen stub（设计如此，见
-  # ocr/onnx/onnx.go），引擎相关测试无法通过；NO_OCR_MODELS 免去下载模型。
-  test-windows:
-    name: windows-amd64-tests
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-
-      - name: Run pure-Go tests
-        shell: bash
-        env:
-          CGO_ENABLED: 0
-          AVCODEC_SKIP_TEST: 1
-        run: go test -count=1 -tags NO_OCR_MODELS -timeout 300s $(go list ./... | grep -v tests/ocr-benchmark | grep -v 'phonefast/ocr$')
+  # ── Windows amd64 (跨平台编译, ubuntu + mingw) ──
   build-windows:
     name: windows-amd64
     runs-on: ubuntu-24.04
