@@ -93,3 +93,55 @@ func TestDispatchResultUnknownMethod(t *testing.T) {
 		t.Fatalf("err = %v, want 'unknown method' error", err)
 	}
 }
+
+// TestDispatchGetClipboard: the clipboard cache read via the daemon's Device
+// interface round-trips through the RPC result as {"clipboard": "...",
+// "observed": true}. The observed flag separates "empty" from "unknown".
+func TestDispatchGetClipboard(t *testing.T) {
+	dev := newFakeDevice("fake")
+	dev.clipboard = "copied by the agent"
+	dev.clipboardObserved = true
+
+	d := NewDispatcher(nil)
+	raw, err := d.DispatchResult(dev, protocol.MethodGetClipboard, nil)
+	if err != nil {
+		t.Fatalf("DispatchResult: %v", err)
+	}
+	var res struct {
+		Clipboard string `json:"clipboard"`
+		Observed  bool   `json:"observed"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		t.Fatalf("result is not result JSON: %v (%s)", err, raw)
+	}
+	if res.Clipboard != "copied by the agent" || !res.Observed {
+		t.Errorf("got (%q, %v), want (%q, true)", res.Clipboard, res.Observed, "copied by the agent")
+	}
+
+	// No observation yet: empty text + observed=false (unknown, not empty).
+	dev2 := newFakeDevice("fake2")
+	raw2, err := d.DispatchResult(dev2, protocol.MethodGetClipboard, nil)
+	if err != nil {
+		t.Fatalf("DispatchResult: %v", err)
+	}
+	var res2 struct {
+		Clipboard string `json:"clipboard"`
+		Observed  bool   `json:"observed"`
+	}
+	if err := json.Unmarshal(raw2, &res2); err != nil {
+		t.Fatalf("result is not result JSON: %v (%s)", err, raw2)
+	}
+	if res2.Clipboard != "" || res2.Observed {
+		t.Errorf("got (%q, %v), want (\"\", false)", res2.Clipboard, res2.Observed)
+	}
+}
+
+// TestDispatchGetClipboardNoDevice: nil device (no session bound) must map to
+// the ErrNoDevice error response, like every other device method.
+func TestDispatchGetClipboardNoDevice(t *testing.T) {
+	d := NewDispatcher(nil)
+	resp := d.Dispatch(nil, &Request{JSONRPC: "2.0", Method: protocol.MethodGetClipboard, ID: 1})
+	if resp.Error == nil || resp.Error.Code != ErrNoDevice {
+		t.Fatalf("error = %+v, want ErrNoDevice", resp.Error)
+	}
+}

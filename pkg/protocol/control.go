@@ -147,15 +147,83 @@ func (m *ControlMessage) Encode() []byte {
 	return buf
 }
 
-// ReadControlMessage reads a single control message from the reader.
-// Used for potential device → host messages (clipboard etc.) — not needed for v1.
-func ReadControlMessage(r io.Reader) (*ControlMessage, error) {
+// Device message types (from scrcpy DeviceMessage.java, v3.3.4). These are
+// messages the DEVICE sends to the client over the control socket — a
+// separate numbering from the ControlMessage types above (client → device).
+// Do NOT confuse DeviceMsgClipboard with TypeGetClipboard (8), which is the
+// client→device clipboard REQUEST.
+const (
+	DeviceMsgClipboard    = 0 // u32 length + utf8 text
+	DeviceMsgAckClipboard = 1 // u64 sequence
+	DeviceMsgUhidOutput   = 2 // u16 id + u16 length + bytes
+)
+
+// deviceMsgMaxClipboard mirrors scrcpy's MESSAGE_MAX_SIZE (1<<18); the text
+// payload is capped at MESSAGE_MAX_SIZE-5 by the writer.
+const deviceMsgMaxClipboard = 1 << 18
+
+// DeviceMessage is a decoded device → client message from the control socket.
+type DeviceMessage struct {
+	Type int
+	// Text carries the clipboard content for DeviceMsgClipboard pushes.
+	Text string
+}
+
+// ReadDeviceMessage reads one complete device → client message from the
+// control socket. It consumes the full payload of EVERY message type —
+// including ones phonefast ignores (ack, uhid) — so the byte stream never
+// desyncs: leaving a payload unread would corrupt every following message.
+func ReadDeviceMessage(r io.Reader) (*DeviceMessage, error) {
 	var typeBuf [1]byte
 	if _, err := io.ReadFull(r, typeBuf[:]); err != nil {
-		return nil, fmt.Errorf("read type: %w", err)
+		return nil, fmt.Errorf("read device message type: %w", err)
 	}
 
-	msg := &ControlMessage{Type: int(typeBuf[0])}
+	msg := &DeviceMessage{Type: int(typeBuf[0])}
+	switch msg.Type {
+	case DeviceMsgClipboard:
+		var lenBuf [4]byte
+		if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
+			return nil, fmt.Errorf("read clipboard length: %w", err)
+		}
+		length := binary.BigEndian.Uint32(lenBuf[:])
+		if length > deviceMsgMaxClipboard {
+			return nil, fmt.Errorf("invalid clipboard length %d (max %d)", length, deviceMsgMaxClipboard)
+		}
+		data := make([]byte, length)
+		if _, err := io.ReadFull(r, data); err != nil {
+			return nil, fmt.Errorf("read clipboard text: %w", err)
+		}
+		msg.Text = string(data)
+
+	case DeviceMsgAckClipboard:
+		var seq [8]byte
+		if _, err := io.ReadFull(r, seq[:]); err != nil {
+			return nil, fmt.Errorf("read clipboard ack sequence: %w", err)
+		}
+
+	case DeviceMsgUhidOutput:
+		var head [4]byte // u16 id + u16 length
+		if _, err := io.ReadFull(r, head[:]); err != nil {
+			return nil, fmt.Errorf("read uhid header: %w", err)
+		}
+		dataLen := binary.BigEndian.Uint16(head[2:])
+		if dataLen > 0 {
+			data := make([]byte, dataLen)
+			if _, err := io.ReadFull(r, data); err != nil {
+				return nil, fmt.Errorf("read uhid data: %w", err)
+			}
+		}
+
+	default:
+		// Unknown type: scrcpy's writer throws on unknown types, so a
+		// matching server never sends one. Fail closed rather than guess a
+		// payload shape — a wrong guess would desync the stream and poison
+		// every following message (silent clipboard corruption). The error
+		// also flags a server/version skew the jar-rebuild process should
+		// have caught.
+		return nil, fmt.Errorf("unknown device message type %d (scrcpy server version skew?)", msg.Type)
+	}
 	return msg, nil
 }
 

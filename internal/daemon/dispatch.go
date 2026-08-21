@@ -53,6 +53,9 @@ func (d *Dispatcher) Dispatch(dev Device, req *Request) *Response {
 	case protocol.MethodGetUIElements:
 		return handleGetUIElements(dev, req)
 
+	case protocol.MethodGetClipboard:
+		return handleGetClipboard(dev, req)
+
 	case protocol.MethodObserve:
 		return handleObserve(dev, req)
 

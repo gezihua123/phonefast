@@ -6,6 +6,7 @@
 
 - [daemon 架构（2026-08 重构后）](#daemon-架构2026-08-重构后)
 - [LocalSocket 4字节读取限制（Android 14）](#localsocket-4字节读取限制android-14)
+- [scrcpy 消息编号两套体系（剪贴板通道踩坑）](#scrcpy-消息编号两套体系剪贴板通道踩坑)
 - [构建与发布](#构建与发布)
 - [OCR 识别方案调研与选型](#ocr-识别方案调研与选型)
 - [基于 agent-device 的 token 优化](#agent-device-优点调研)
@@ -120,6 +121,27 @@ if (sep == ':') {
 - **不要假设 `DataInputStream.readByte()` 在所有设备上行为一致**。Android 碎片化严重，底层 `SocketInputStream` 的实现因厂商定制而异。
 - **快速 socket 的错误被 fallback 路径吞掉了**，导致用户只看到 `exit 137`。应该在 fallback 时同时日志记录原始错误。
 - **本地用 Python/nc 直连 socket 是极佳的调试手段**，能绕过 Go 代码的 fallback 逻辑，直接看到 Java 服务器的原始行为。
+
+---
+
+## scrcpy 消息编号两套体系（剪贴板通道踩坑）
+
+实现 `get_clipboard` RPC（2026-08-20，fastaget batch-4 审计落地）时确认的两个协议事实，原始审计文档都写错过，记录于此防止复踩：
+
+**1. control socket 上有两个方向、两套互不相干的消息编号。**
+
+- client → device：`ControlMessage`（`pkg/protocol/control.go` 的 `TypeInjectKeycode=0 ... TypeResetVideo=17`），其中 `TypeGetClipboard=8` 是主机**请求**设备读剪贴板。
+- device → client：`DeviceMessage`（scrcpy v3.3.4 `DeviceMessage.java`），剪贴板推送是 **`TYPE_CLIPBOARD = 0`**：`byte type + u32 len + utf8`，另有 `TYPE_ACK_CLIPBOARD=1`（u64 seq）、`TYPE_UHID_OUTPUT=2`（u16 id + u16 len + bytes）。
+
+审计文档曾写"收到 TypeGetClipboard (8) 时缓存 payload"——方向和编号都是错的。**同一字节流里 0 和 8 是完全不同的消息。**
+
+**2. 读设备消息必须消费完整 payload，否则流 desync。**
+
+`ReadDeviceMessage` 对每种类型都要读完全部字节（包括 phonefast 不关心的 ack/uhid）。只读 type 字节就返回的旧 stub（原 `ReadControlMessage`，注释"not needed for v1"）如果真被用上，下一条消息会从 payload 中间开始解析，之后全部错位。`TestReadDeviceMessageStreamNoDesync` 钉住这个性质。
+
+**剪贴板推送的触发条件**（scrcpy v3.3.4 `Controller.java:117-133`）：control 开启 + `clipboard_autosync` 开启（`Options.java` 默认 true，phonefast 未改）→ 设备端注册 `OnPrimaryClipChangedListener`，每次设备剪贴板**变化**时推送全文。变化才推送意味着：daemon 重启后缓存为空，直到下一次 copy。AW 验证总是发生在 agent 复制之后，所以安全。
+
+**为什么这条路绕开了 API 29+ 的后台剪贴板限制**：读剪贴板的进程是设备端常驻的 scrcpy server（shell 域前台服务），不是主机的 `am broadcast`。变化事件自带数据，主机只做被动接收。scrcpy 自己拿 ClipboardManager 用的是 `ServiceManager.getClipboardManager()`，**不需要 Context**（审计文档 Option B 的"needs a Context"也是错的）。
 
 ---
 

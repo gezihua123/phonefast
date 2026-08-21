@@ -14,7 +14,9 @@ import (
 // override funcs below (nil override = embedded session behavior).
 type fakeDevice struct {
 	*session.Session
-	serial string
+	serial            string
+	clipboard         string
+	clipboardObserved bool // returned by GetClipboard (overrides embedded session)
 
 	// Optional per-method overrides / error injection.
 	tapErr  error
@@ -38,6 +40,8 @@ func newFakeDevice(serial string) *fakeDevice {
 }
 
 func (f *fakeDevice) Serial() string { return f.serial }
+
+func (f *fakeDevice) GetClipboard() (string, bool) { return f.clipboard, f.clipboardObserved }
 
 func (f *fakeDevice) Tap(x, y int) error {
 	if f.tapFn != nil {

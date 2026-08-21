@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,14 +60,31 @@ type Session struct {
 	videoDied  chan struct{} // closed when video drain loop exits (connection dead)
 	videoPort  int           // forwarded TCP port for video+control (same socket, multiple accepts)
 
-	// resetMu guards lastResetAt (RESET_VIDEO throttle; see requestKeyframe).
+	// resetMu guards lastResetAt (RESET_VIDEO throttle; see requestKeyframe)
+	// and lastActionAt (stream-frame freshness; see screenshotStream).
 	resetMu     sync.Mutex
 	lastResetAt time.Time
+	lastActionAt time.Time // 最近一次设备动作时间(由 preheatKeyframe 记录)
 	uiPort      int  // forwarded TCP port for UI (fresh connection per request)
 	uiReady     bool // whether UI socket is available
 
+	// clipboardMu guards clipboard/clipboardObserved — the latest text pushed
+	// by the device via DeviceMessage DeviceMsgClipboard (scrcpy
+	// clipboard_autosync, on by default, pushes on every device-side
+	// clipboard change). Read by GetClipboard.
+	clipboardMu       sync.Mutex
+	clipboard         string
+	clipboardObserved bool
+
 	avDecoder    avcodec.Decoder // CGO go-astiav decoder (lazy init, may be nil)
 	avDecoderErr error           // cached init error — don't retry
+
+	// streamDec is the CGO stream decoder fed with every video frame by
+	// drainFrames (nil on pure-Go builds). When non-nil, screenshots are
+	// served from its latest decoded frame — no RESET_VIDEO needed (see
+	// ScreenshotFormat). Written only during Connect (before drainFrames
+	// starts), so reads need no lock.
+	streamDec avcodec.StreamDecoder
 
 	uiConn net.Conn // persistent UI socket (reused across GetUI* calls)
 
@@ -208,6 +226,9 @@ func Connect(serial string, scid int) (*Session, error) {
 		phonelog.Default().Write("warning: control socket unavailable: %v", err)
 	} else {
 		setKeepAlive(s.controlConn, 15*time.Second)
+		// Drain device→client messages (clipboard pushes). Reads and the
+		// Write path share the conn one-each, which net.Conn permits.
+		go s.readDeviceMessages()
 	}
 
 	// Step 8: read video header (blocks until server sends it)
@@ -218,6 +239,14 @@ func Connect(serial string, scid int) (*Session, error) {
 	}
 	s.deviceW = s.decoder.Width()
 	s.deviceH = s.decoder.Height()
+
+	// Step 8b: start the CGO stream decoder (nil on pure-Go builds).
+	// drainFrames feeds it every frame; ScreenshotFormat serves from it.
+	if streamDec, err := avcodec.NewStreamDecoder(); err == nil {
+		s.streamDec = streamDec
+	} else {
+		phonelog.Default().Write("session: stream decoder unavailable → keyframe reset path: %v", err)
+	}
 
 	// Step 9: probe UI socket readiness with adaptive polling.
 	// UISocketHandler.start() runs after the server reads the video header.
@@ -262,12 +291,128 @@ func (s *Session) drainFrames() {
 			return
 		}
 
-		_, err := s.decoder.ReadFrame(conn)
+		frame, err := s.decoder.ReadFrame(conn)
 		if err != nil {
 			phonelog.Default().Write("drainFrames: video read error: %v", err)
 			return
 		}
+		s.feedStreamDecoder(frame)
 	}
+}
+
+// feedStreamDecoder feeds one video frame into the CGO stream decoder so
+// its cached frame tracks the screen continuously. Called only from
+// drainFrames (the h264.Frame.Data aliases the decoder's read buffer, so
+// the frame must be consumed before the next ReadFrame).
+//
+// On a decode error the DPB state is suspect — request a RESET_VIDEO
+// (throttled) so the device emits a fresh IDR to resync. The next natural
+// IDR (10s encoder interval) also heals it, so errors are non-fatal: the
+// screenshot path falls back to the reset+wait loop if frames go stale.
+func (s *Session) feedStreamDecoder(frame *h264.Frame) {
+	if s.streamDec == nil {
+		return
+	}
+	if err := s.streamDec.Feed(frame.Data); err != nil {
+		phonelog.Default().Write("stream decode error (resync via RESET_VIDEO): %v — frame: config=%t key=%t pts=%d len=%d nals=%s",
+			err, frame.Config, frame.KeyFrame, frame.PTS, len(frame.Data), frameNALTypes(frame.Data))
+		s.requestKeyframe()
+	}
+}
+
+// frameNALTypes returns a compact string of the NAL unit types present in an
+// AnnexB frame, e.g. "SPS PPS IDR" — diagnostic aid for stream decode errors.
+func frameNALTypes(data []byte) string {
+	types := make([]string, 0, 4)
+	seen := map[byte]bool{}
+	for pos := 0; pos+3 < len(data); {
+		if !(data[pos] == 0 && data[pos+1] == 0) {
+			pos++
+			continue
+		}
+		if data[pos+2] == 1 {
+			pos += 3
+		} else if data[pos+3] == 1 {
+			pos += 4
+		} else {
+			pos++
+			continue
+		}
+		if pos >= len(data) {
+			break
+		}
+		nalType := data[pos] & 0x1F
+		if !seen[nalType] {
+			seen[nalType] = true
+			var name string
+			switch nalType {
+			case 1:
+				name = "SLICE"
+			case 5:
+				name = "IDR"
+			case 6:
+				name = "SEI"
+			case 7:
+				name = "SPS"
+			case 8:
+				name = "PPS"
+			case 9:
+				name = "AUD"
+			default:
+				name = fmt.Sprintf("N%d", nalType)
+			}
+			types = append(types, name)
+		}
+	}
+	return strings.Join(types, "+")
+}
+
+// readDeviceMessages consumes device→client messages from the control socket
+// until it fails (Close(), markControlBroken(), or device disconnect). The
+// clipboard push is cached for GetClipboard; other message types are drained
+// so they don't stall in kernel buffers.
+func (s *Session) readDeviceMessages() {
+	for {
+		conn := s.lockControlConn()
+		if conn == nil {
+			return
+		}
+
+		msg, err := protocol.ReadDeviceMessage(conn)
+		if err != nil {
+			// Distinguish session teardown (benign, exit silently — same as
+			// drainFrames) from a live-session failure: a parse error or
+			// read error on an otherwise healthy conn kills the clipboard
+			// channel without any other symptom, so mark the control
+			// connection broken. IsControlAvailable() goes false and the
+			// actor's healthCheck reconnects with a fresh reader.
+			s.mu.Lock()
+			closed := s.closed
+			s.mu.Unlock()
+			if !closed {
+				phonelog.Default().Write("readDeviceMessages: marking control broken: %v", err)
+				s.markControlBroken(fmt.Errorf("device message read: %w", err))
+			}
+			return
+		}
+		if msg.Type == protocol.DeviceMsgClipboard {
+			s.clipboardMu.Lock()
+			s.clipboard = msg.Text
+			s.clipboardObserved = true
+			s.clipboardMu.Unlock()
+		}
+	}
+}
+
+// GetClipboard returns the latest clipboard text pushed by the device and
+// whether any push has been observed since connect. scrcpy only pushes on
+// CHANGE, so observed=false means "unknown", NOT "empty": after a daemon
+// (re)start nothing is known until the next device-side copy. Callers that
+// need the current value must copy first, then read.
+func (s *Session) GetClipboard() (text string, observed bool) {
+	s.clipboardMu.Lock()
+	defer s.clipboardMu.Unlock()
+	return s.clipboard, s.clipboardObserved
 }
 
 // Close tears down the session.
@@ -288,6 +433,10 @@ func (s *Session) Close() error {
 	if s.uiConn != nil {
 		s.uiConn.Close()
 		s.uiConn = nil
+	}
+	if s.streamDec != nil {
+		s.streamDec.Close()
+		s.streamDec = nil
 	}
 
 	adbRemoveForward(s.serial, s.videoPort)
@@ -395,7 +544,9 @@ func adbRemoveAllForwards(serial string) {
 }
 
 func dialWithRetry(port int, maxRetries int, interval time.Duration) (net.Conn, error) {
-	addr := fmt.Sprintf("localhost:%d", port)
+	// 127.0.0.1, not "localhost": the forward binds the loopback and the
+	// literal IP skips the system resolver (see getUIConn).
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
 		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
@@ -421,7 +572,8 @@ func setKeepAlive(conn net.Conn, interval time.Duration) {
 // probeUISocket repeatedly attempts to connect to the given local TCP port
 // until one succeeds or maxAttempts are exhausted.
 func probeUISocket(port int, maxAttempts int, interval time.Duration) bool {
-	addr := fmt.Sprintf("localhost:%d", port)
+	// 127.0.0.1, not "localhost" — see getUIConn.
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	for i := 0; i < maxAttempts; i++ {
 		if probe, err := net.DialTimeout("tcp", addr, 200*time.Millisecond); err == nil {
 			probe.Close()

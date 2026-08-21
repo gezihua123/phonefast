@@ -1,7 +1,10 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gezihua123/phonefast/internal/adb"
@@ -146,23 +149,109 @@ type pfimeGate struct {
 	active bool
 }
 
-// ensure runs activate on the first call only. Returns activate's error
-// wrapped with the "pfime set:" prefix. Not safe for concurrent use —
-// the session owns it on a single goroutine.
-func (g *pfimeGate) ensure(activate func() error) error {
+// ensure runs activate on the first call only, returning ran=true when this
+// call performed the activation (false when the gate was already active).
+// Returns activate's error wrapped with the "pfime set:" prefix. Not safe
+// for concurrent use — the session owns it on a single goroutine.
+//
+// The ran flag keeps the gate's state INSIDE the gate: callers used to read
+// g.active externally to decide whether the post-activation wait applies,
+// duplicating the state machine across the boundary. Consuming ran instead
+// makes a desync impossible to express.
+func (g *pfimeGate) ensure(activate func() error) (ran bool, err error) {
 	if g.active {
-		return nil
+		return false, nil
 	}
 	if err := activate(); err != nil {
-		return fmt.Errorf("pfime set: %w", err)
+		return false, fmt.Errorf("pfime set: %w", err)
 	}
 	g.active = true
-	return nil
+	return true, nil
 }
 
 // reset clears the gate so the next ensure re-runs activation (used when
 // the original IME is restored on session close).
 func (g *pfimeGate) reset() { g.active = false }
+
+// pfimeWaitTimeout/pfimeWaitPoll/pfimeBindGrace/pfimeFallbackWait/
+// pfimeProbeTimeout tune waitPFIMEBound, which runs on the first type of a
+// session while PFIME re-binds after the IME switch. Package-level vars so
+// tests can shrink them (same pattern as observeTimeout).
+var (
+	pfimeWaitTimeout  = 3 * time.Second
+	pfimeWaitPoll     = 100 * time.Millisecond
+	pfimeBindGrace    = 200 * time.Millisecond
+	pfimeFallbackWait = 300 * time.Millisecond
+	// pfimeProbeTimeout bounds a SINGLE probe and must stay below
+	// pfimeWaitTimeout: a probe exceeding the whole poll window would be
+	// sampled once and misread as "PFIME did not start" even though the
+	// next probe would have found it. Keeping the probe bound under the
+	// window makes a slow probe fail closed (DeadlineExceeded → surfaced,
+	// retry safe) instead of eating the window.
+	pfimeProbeTimeout = 2 * time.Second
+)
+
+// pfimeWhich and pfimePidOf probe the device for the pidof tool and the
+// PFIME process. Package-level vars so tests can stub the device side out
+// (TypeText itself runs real adb commands).
+var (
+	pfimeWhich = func(serial string) (string, error) {
+		return adb.ADBShellTimeout(serial, pfimeProbeTimeout, "which", "pidof")
+	}
+	pfimePidOf = func(serial string) (string, error) {
+		return adb.ADBShellTimeout(serial, pfimeProbeTimeout, "pidof", adb.PFIMEPackage)
+	}
+)
+
+// waitPFIMEBound waits after the first IME switch of a session for the PFIME
+// process to come up, then gives the InputConnection bind a short grace
+// before the first broadcast.
+//
+// Why poll instead of a fixed sleep: the old 300ms settle was a heuristic —
+// on a slow cold start (first ever type, low-end device) the first broadcast
+// could still land before the bind and be dropped silently. A caller that
+// retypes after seeing no text then produces doubled input if the original
+// broadcast was merely delayed, not lost. Polling pidof tracks the device's
+// actual startup progress; failing closed (error, no broadcast) is safe to
+// retry because nothing was delivered.
+//
+// Devices without pidof fall back to the fixed settle: the subsequent
+// broadcast still surfaces any transport error, so the fallback is safe.
+func waitPFIMEBound(serial string) error {
+	whichOut, err := pfimeWhich(serial)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			// Transport hang: surface it — the caller must know the text was
+			// NOT sent (retry is safe), unlike a silent drop. A hung probe
+			// must not be misclassified as "device has no pidof".
+			return fmt.Errorf("wait pfime: %w", err)
+		}
+		time.Sleep(pfimeFallbackWait)
+		return nil
+	}
+	if strings.TrimSpace(whichOut) == "" {
+		time.Sleep(pfimeFallbackWait)
+		return nil
+	}
+
+	deadline := time.Now().Add(pfimeWaitTimeout)
+	for time.Now().Before(deadline) {
+		out, err := pfimePidOf(serial)
+		if err != nil && errors.Is(err, context.DeadlineExceeded) {
+			// Transport hang: surface it — the caller must know the text was
+			// NOT sent (retry is safe), unlike a silent drop.
+			return fmt.Errorf("wait pfime: %w", err)
+		}
+		// Any other error means pidof exited non-zero: no matching process
+		// yet (toybox pidof exits 1 with no output). Keep polling.
+		if err == nil && strings.TrimSpace(out) != "" {
+			time.Sleep(pfimeBindGrace)
+			return nil
+		}
+		time.Sleep(pfimeWaitPoll)
+	}
+	return fmt.Errorf("pfime did not start within %v of the IME switch — first broadcast would be dropped; retry type", pfimeWaitTimeout)
+}
 
 // TypeText types text into the currently focused field.
 //
@@ -185,17 +274,25 @@ func (g *pfimeGate) reset() { g.active = false }
 // fail the whole task.
 func (s *Session) TypeText(text string) error {
 	// Skip SetPFIME if already active (avoids ADB round-trip on every keystroke).
-	firstActivation := !s.pfime.active
-	if err := s.pfime.ensure(func() error { return adb.SetPFIME(s.serial) }); err != nil {
+	ran, err := s.pfime.ensure(func() error { return adb.SetPFIME(s.serial) })
+	if err != nil {
 		return err
 	}
-	if firstActivation {
+	if ran {
 		// On the first type of a session the IME switch/startup tears down and
 		// re-binds the InputConnection; a broadcast sent in that window is
 		// silently dropped by PFIME (it has no connection to commit into).
-		// Give the bind a beat before the first broadcast. Subsequent calls
-		// skip this — the connection is already established.
-		time.Sleep(300 * time.Millisecond)
+		// Wait for the process to come up before the first broadcast (see
+		// waitPFIMEBound). Subsequent calls skip this — the connection is
+		// already established.
+		if err := waitPFIMEBound(s.serial); err != nil {
+			// The wait failed before anything was sent — a retry MUST
+			// re-enter the protected path (re-probe + grace), so reset the
+			// gate. Leaving it active would make the retry broadcast into
+			// the very drop window this wait exists to prevent.
+			s.pfime.reset()
+			return err
+		}
 	}
 	if err := adb.TypeTextB64(s.serial, text); err != nil {
 		return fmt.Errorf("pfime type: %w", err)

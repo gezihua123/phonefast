@@ -454,6 +454,48 @@ func TestElementsToJSONLWithResourceID(t *testing.T) {
 	}
 }
 
+func TestElementsToJSONLHintText(t *testing.T) {
+	elements := []protocol.UIFullElement{
+		{
+			ID: 0, Parent: -1, Depth: 0,
+			HintText:  "First name",
+			ClassName: "android.widget.EditText",
+			Bounds:    [4]int{10, 20, 100, 80},
+		},
+	}
+
+	result := ElementsToJSONL(elements)
+	if !strings.Contains(result, `"hint_text":"First name"`) {
+		t.Errorf("should include hint_text, got: %s", result)
+	}
+
+	// Absent hint must not emit the key (omitempty behavior for LLM tokens).
+	noHint := ElementsToJSONL([]protocol.UIFullElement{{
+		ID: 1, Parent: -1, Depth: 0,
+		ClassName: "android.widget.EditText",
+		Bounds:    [4]int{10, 20, 100, 80},
+	}})
+	if strings.Contains(noHint, "hint_text") {
+		t.Errorf("empty hint should omit hint_text, got: %s", noHint)
+	}
+}
+
+func TestElementsToFlatRefHintText(t *testing.T) {
+	elements := []protocol.UIFullElement{
+		{
+			ID: 0, Parent: -1, Depth: 0,
+			HintText:  "First name",
+			ClassName: "android.widget.EditText",
+			Bounds:    [4]int{10, 20, 100, 80},
+		},
+	}
+
+	result := ElementsToFlatRef(elements)
+	if !strings.Contains(result, `hint="First name"`) {
+		t.Errorf("should include hint in flatref, got: %s", result)
+	}
+}
+
 func TestElementsToJSONLFocusedSelected(t *testing.T) {
 	elements := []protocol.UIFullElement{
 		{
@@ -1998,5 +2040,61 @@ func TestCompactElementsAllRedundant(t *testing.T) {
 	}
 	if result[0].ID != 0 {
 		t.Errorf("root should survive, got id=%d", result[0].ID)
+	}
+}
+
+func TestElementsForLLMHintText(t *testing.T) {
+	elements := []protocol.UIElement{
+		{Index: 0, HintText: "First name", ClassName: "android.widget.EditText",
+			Bounds: [4]int{10, 20, 100, 80}},
+	}
+	result := ElementsForLLM(elements, -1, true)
+	if !strings.Contains(result, `hint="First name"`) {
+		t.Errorf("legacy formatted output should include hint, got:\n%s", result)
+	}
+}
+
+func TestElementsForLLMHintOnlySurvivesLayoutSkip(t *testing.T) {
+	// A layout-class element whose only semantic property is a hint must NOT
+	// be filtered by the summary-mode layout skip (mirrors the Java hasHint
+	// extension).
+	elements := []protocol.UIElement{
+		{Index: 0, HintText: "Search", ClassName: "androidx.appcompat.widget.SearchView",
+			Bounds: [4]int{10, 20, 100, 80}},
+	}
+	result := ElementsForLLM(elements, -1, true)
+	if !strings.Contains(result, `hint="Search"`) {
+		t.Errorf("hint-only layout element dropped, got:\n%s", result)
+	}
+}
+
+func TestElementsToYMLHintText(t *testing.T) {
+	elements := []protocol.UIFullElement{
+		{ID: 0, Parent: -1, Depth: 0, HintText: "Phone",
+			ClassName: "android.widget.EditText", Bounds: [4]int{10, 20, 100, 80}},
+	}
+	result := ElementsToYML(elements)
+	if !strings.Contains(result, "hint_text: 'Phone'") {
+		t.Errorf("yml should include hint_text, got:\n%s", result)
+	}
+}
+
+func TestCompactElementsKeepsHintOnlyLayout(t *testing.T) {
+	elements := []protocol.UIFullElement{
+		{ID: 0, Parent: -1, Depth: 0, ClassName: "android.widget.FrameLayout"},
+		// Layout-class element whose only semantic property is a hint must
+		// survive compaction (mirrors the Java hasHint extension).
+		{ID: 1, Parent: 0, Depth: 1, HintText: "Email",
+			ClassName: "androidx.appcompat.widget.SearchView"},
+	}
+	compacted := CompactElements(elements)
+	found := false
+	for _, el := range compacted {
+		if el.HintText == "Email" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("hint-only layout element removed by CompactElements")
 	}
 }

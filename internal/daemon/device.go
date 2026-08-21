@@ -52,6 +52,12 @@ type Device interface {
 	GetUIFull(maxElements int) ([]protocol.UIFullElement, error)
 	GetUIElementsFallbackADB(maxElements int) ([]protocol.UIElement, error)
 
+	// Clipboard
+	// GetClipboard returns the latest clipboard text pushed by the device
+	// plus whether any push was observed since connect. observed=false means
+	// "unknown" (nothing observed yet), NOT "empty" — see Session.GetClipboard.
+	GetClipboard() (string, bool)
+
 	// Geometry
 	NativeWidth() int
 	NativeHeight() int

@@ -3,11 +3,13 @@ package adb
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Device represents a connected Android device.
@@ -103,8 +105,23 @@ func ADB(serial string) (string, []string, error) {
 	return adb, []string{adb, "-s", serial}, nil
 }
 
-// ADBShell runs an adb shell command.
+// adbShellTimeout bounds ADBShell. Commands that can legitimately run long
+// (pm install) or that sit on a latency-sensitive path (am broadcast) use
+// ADBShellTimeout with their own bound. A hung adb server must never wedge
+// the caller forever — the daemon's device actor runs this synchronously, so
+// an unbounded adb blocks every subsequent request for the device.
+const adbShellTimeout = 30 * time.Second
+
+// ADBShell runs an adb shell command, bounded by adbShellTimeout.
 func ADBShell(serial string, args ...string) (string, error) {
+	return ADBShellTimeout(serial, adbShellTimeout, args...)
+}
+
+// ADBShellTimeout runs an adb shell command with an explicit bound. On
+// timeout the adb process is killed and the error wraps
+// context.DeadlineExceeded so callers can distinguish a hang from a command
+// failure via errors.Is.
+func ADBShellTimeout(serial string, timeout time.Duration, args ...string) (string, error) {
 	adb, err := findADB()
 	if err != nil {
 		return "", err
@@ -113,12 +130,18 @@ func ADBShell(serial string, args ...string) (string, error) {
 	shellArgs := []string{"-s", serial, "shell"}
 	shellArgs = append(shellArgs, args...)
 
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	var stdout, stderr bytes.Buffer
-	cmd := exec.Command(adb, shellArgs...)
+	cmd := exec.CommandContext(ctx, adb, shellArgs...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("adb shell %v: timed out after %v: %w", args, timeout, context.DeadlineExceeded)
+		}
 		return "", fmt.Errorf("adb shell %v: %w (stderr: %s)", args, err, stderr.String())
 	}
 

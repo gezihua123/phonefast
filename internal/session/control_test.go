@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -765,11 +766,19 @@ func TestPfimeGateActivatesOnce(t *testing.T) {
 		calls++
 		return nil
 	}
-	if err := g.ensure(activate); err != nil {
+	ran, err := g.ensure(activate)
+	if err != nil {
 		t.Fatalf("first ensure: %v", err)
 	}
-	if err := g.ensure(activate); err != nil {
+	if !ran {
+		t.Error("first ensure must report ran=true")
+	}
+	ran, err = g.ensure(activate)
+	if err != nil {
 		t.Fatalf("second ensure: %v", err)
+	}
+	if ran {
+		t.Error("second ensure must report ran=false (already active)")
 	}
 	if calls != 1 {
 		t.Errorf("activate called %d times, want 1 (state machine must short-circuit)", calls)
@@ -785,9 +794,12 @@ func TestPfimeGateActivatesOnce(t *testing.T) {
 func TestPfimeGateFailurePropagatesAndRetries(t *testing.T) {
 	var g pfimeGate
 	sentinel := fmt.Errorf("adb boom")
-	err := g.ensure(func() error { return sentinel })
+	ran, err := g.ensure(func() error { return sentinel })
 	if err == nil {
 		t.Fatal("ensure returned nil for failed activation")
+	}
+	if ran {
+		t.Error("failed activation must report ran=false")
 	}
 	if !strings.Contains(err.Error(), "pfime set:") {
 		t.Errorf("ensure error = %v, want 'pfime set:' prefix", err)
@@ -797,11 +809,15 @@ func TestPfimeGateFailurePropagatesAndRetries(t *testing.T) {
 	}
 
 	calls := 0
-	if err := g.ensure(func() error {
+	ran, err = g.ensure(func() error {
 		calls++
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("ensure after failure: %v", err)
+	}
+	if !ran {
+		t.Error("activation after failure must report ran=true")
 	}
 	if calls != 1 {
 		t.Errorf("activate called %d times after failure, want 1", calls)
@@ -817,14 +833,126 @@ func TestPfimeGateReset(t *testing.T) {
 		calls++
 		return nil
 	}
-	if err := g.ensure(activate); err != nil {
+	if _, err := g.ensure(activate); err != nil {
 		t.Fatal(err)
 	}
 	g.reset()
-	if err := g.ensure(activate); err != nil {
+	ran, err := g.ensure(activate)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !ran {
+		t.Error("ensure after reset must report ran=true")
 	}
 	if calls != 2 {
 		t.Errorf("activate called %d times after reset, want 2", calls)
+	}
+}
+
+// --- waitPFIMEBound tests ---
+
+// stubPFIMEProbes overrides the device-probe seams for waitPFIMEBound and
+// shrinks its timing vars. Returns a restore func.
+func stubPFIMEProbes(t *testing.T, which func(serial string) (string, error), pidOf func(serial string) (string, error)) func() {
+	t.Helper()
+	oldWhich, oldPidOf := pfimeWhich, pfimePidOf
+	oldTimeout, oldPoll, oldGrace, oldFallback := pfimeWaitTimeout, pfimeWaitPoll, pfimeBindGrace, pfimeFallbackWait
+	pfimeWhich, pfimePidOf = which, pidOf
+	pfimeWaitTimeout, pfimeWaitPoll, pfimeBindGrace, pfimeFallbackWait = 50*time.Millisecond, time.Millisecond, time.Millisecond, time.Millisecond
+	return func() {
+		pfimeWhich, pfimePidOf = oldWhich, oldPidOf
+		pfimeWaitTimeout, pfimeWaitPoll, pfimeBindGrace, pfimeFallbackWait = oldTimeout, oldPoll, oldGrace, oldFallback
+	}
+}
+
+// TestWaitPFIMEBoundFallsBackWithoutPidof: devices without pidof keep the old
+// fixed settle and never error — the subsequent broadcast surfaces any
+// transport problem.
+func TestWaitPFIMEBoundFallsBackWithoutPidof(t *testing.T) {
+	defer stubPFIMEProbes(t,
+		func(serial string) (string, error) { return "", nil },
+		nil,
+	)()
+	if err := waitPFIMEBound("test-device"); err != nil {
+		t.Fatalf("fallback wait: %v", err)
+	}
+}
+
+// TestWaitPFIMEBoundWaitsForProcess: pidof reports "no match" (non-zero exit
+// with empty output) first, then the PID — the wait must poll until the
+// process is up and succeed.
+func TestWaitPFIMEBoundWaitsForProcess(t *testing.T) {
+	calls := 0
+	defer stubPFIMEProbes(t,
+		func(serial string) (string, error) { return "/system/bin/pidof", nil },
+		func(serial string) (string, error) {
+			calls++
+			if calls < 2 {
+				return "", fmt.Errorf("exit status 1") // toybox pidof, no match
+			}
+			return "1234", nil
+		},
+	)()
+	if err := waitPFIMEBound("test-device"); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("pidof called %d times, want 2 (poll until up)", calls)
+	}
+}
+
+// TestWaitPFIMEBoundWhichHangSurfaced: a hung `which` probe (DeadlineExceeded)
+// must surface as an error, not be misclassified as "device has no pidof" —
+// misclassification would silently fall back to the fixed settle and leave
+// the transport hang to surface only at the broadcast, one step later.
+func TestWaitPFIMEBoundWhichHangSurfaced(t *testing.T) {
+	defer stubPFIMEProbes(t,
+		func(serial string) (string, error) {
+			return "", fmt.Errorf("adb shell which: timed out: %w", context.DeadlineExceeded)
+		},
+		nil,
+	)()
+	err := waitPFIMEBound("test-device")
+	if err == nil {
+		t.Fatal("expected error for hung which probe, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait pfime") {
+		t.Errorf("error = %v, want 'wait pfime' context", err)
+	}
+}
+
+// TestWaitPFIMEBoundPropagatesHang: a hung pidof probe (DeadlineExceeded)
+// must surface immediately — the caller must know the text was NOT sent,
+// because a silent drop + caller retype can double the input.
+func TestWaitPFIMEBoundPropagatesHang(t *testing.T) {
+	defer stubPFIMEProbes(t,
+		func(serial string) (string, error) { return "/system/bin/pidof", nil },
+		func(serial string) (string, error) {
+			return "", fmt.Errorf("adb shell pidof: timed out: %w", context.DeadlineExceeded)
+		},
+	)()
+	err := waitPFIMEBound("test-device")
+	if err == nil {
+		t.Fatal("expected error for hung probe, got nil")
+	}
+	if !strings.Contains(err.Error(), "wait pfime") {
+		t.Errorf("error = %v, want 'wait pfime' context", err)
+	}
+}
+
+// TestWaitPFIMEBoundFailsClosed: if the process never comes up, the wait
+// returns an error and no broadcast is sent — safe for the caller to retry
+// (nothing was delivered), unlike the old silent-drop behavior.
+func TestWaitPFIMEBoundFailsClosed(t *testing.T) {
+	defer stubPFIMEProbes(t,
+		func(serial string) (string, error) { return "/system/bin/pidof", nil },
+		func(serial string) (string, error) { return "", fmt.Errorf("exit status 1") },
+	)()
+	err := waitPFIMEBound("test-device")
+	if err == nil {
+		t.Fatal("expected error when pfime never starts, got nil")
+	}
+	if !strings.Contains(err.Error(), "retry type") {
+		t.Errorf("error = %v, want a retry hint", err)
 	}
 }

@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -19,8 +21,13 @@ func (s *Session) getUIConn() (net.Conn, error) {
 	if s.uiConn != nil {
 		return s.uiConn, nil
 	}
+	// Dial the loopback address directly. "localhost" would go through the
+	// system resolver (mDNSResponder on macOS under CGO builds), which has
+	// transiently failed for minutes under daemon restart churn — NXDOMAIN
+	// for a name that never needs resolving. The adb forward binds
+	// 127.0.0.1, so the literal IP removes the failure class entirely.
 	conn, err := net.DialTimeout("tcp",
-		fmt.Sprintf("localhost:%d", s.uiPort), 2*time.Second)
+		fmt.Sprintf("127.0.0.1:%d", s.uiPort), 2*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("connect ui socket: %w", err)
 	}
@@ -133,15 +140,46 @@ func (s *Session) GetUIElementsFallbackADB(maxElements int) ([]protocol.UIElemen
 	return elements, nil
 }
 
+// uiFallbackBudget bounds the WHOLE adb uiautomator fallback chain (dump +
+// retry + cat). The daemon's actor executes requests synchronously with a
+// 60s reply window and does not cancel the work when the reply timer fires,
+// so the chain's worst case must stay well under that window: the fast-path
+// retries burn up to ~10s first, leaving ~40s for the fallback. Per-command
+// adbShellTimeout (30s) is too coarse alone — three 30s commands would
+// exceed the window.
+const uiFallbackBudget = 40 * time.Second
+
 // dumpUIXML runs uiautomator dump via ADB and returns the XML content.
+// Each command is bounded by the remaining fallback budget, so the whole
+// chain fits the daemon's actor reply window (see uiFallbackBudget).
 func dumpUIXML(serial string) (string, error) {
 	dumpPath := "/sdcard/phonefast_ui_dump.xml"
+	deadline := time.Now().Add(uiFallbackBudget)
+	run := func(args ...string) (string, error) {
+		remain := time.Until(deadline)
+		if remain <= 0 {
+			return "", context.DeadlineExceeded
+		}
+		return adb.ADBShellTimeout(serial, remain, args...)
+	}
 
 	// Run uiautomator dump
-	_, err := adb.ADBShell(serial, "uiautomator", "dump", dumpPath)
+	_, err := run("uiautomator", "dump", dumpPath)
 	if err != nil {
-		// Fallback: try with --window-animation-disabled
-		_, err = adb.ADBShell(serial, "uiautomator", "dump", "--window-animation-disabled", dumpPath)
+		// Fallback: try with --window-animation-disabled. A hang
+		// (DeadlineExceeded) is NOT a transient uiautomator failure —
+		// retrying it with a fresh bound just doubles the wait. Only retry
+		// real errors, per the "surface hangs, don't retry" policy.
+		//
+		// Before retrying, give the device a beat to settle: during daemon
+		// (re)start churn the device-side lmkd SIGKILLs uiautomator dumps
+		// (observed as exit 137 for the first minutes of a stress run); an
+		// immediate retry lands in the same kill window and fails the same
+		// way. The settle delay is negligible next to the dump's own cost.
+		if !errors.Is(err, context.DeadlineExceeded) {
+			time.Sleep(500 * time.Millisecond)
+			_, err = run("uiautomator", "dump", "--window-animation-disabled", dumpPath)
+		}
 		if err != nil {
 			return "", fmt.Errorf("uiautomator dump: %w", err)
 		}
@@ -150,7 +188,7 @@ func dumpUIXML(serial string) (string, error) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Read the dumped XML
-	xmlContent, err := adb.ADBShell(serial, "cat", dumpPath)
+	xmlContent, err := run("cat", dumpPath)
 	if err != nil {
 		return "", fmt.Errorf("read ui dump: %w", err)
 	}

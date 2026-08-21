@@ -468,11 +468,12 @@ flatref is a hierarchical format designed specifically for LLMs. Each line repre
 #0 (FrameLayout) | bounds=[0,0][1080,2400] | | depth=0 parent=#-1
 #19 id="back_btn" (ImageButton) | bounds=[0,0][96,96] | [clickable] | depth=3 parent=#18
 #21 text="安装" (TextView) | bounds=[899,432][975,491] | | depth=4 parent=#20
+#22 hint="First name" (Input) | bounds=[0,96][540,192] | | depth=5 parent=#20
 ```
 
 | Column | Content | Description |
 |--------|---------|-------------|
-| Identity | `#N text="..." desc="..." id="..." (Class)` | What the element is |
+| Identity | `#N text="..." desc="..." hint="..." id="..." (Class)` | What the element is |
 | Position | `bounds=[l,t][r,b]` | Where the element is |
 | State | `[clickable] [focused] [selected] [disabled]` | Whether it is interactive |
 | Hierarchy | `depth=N parent=#M` | Where it is in the tree |
@@ -494,6 +495,7 @@ flatref is a hierarchical format designed specifically for LLMs. Each line repre
 | `#N` | Element ID (used for `parent=#N` references) |
 | `text="..."` | Element text |
 | `desc="..."` | Accessibility description (content-desc) |
+| `hint="..."` | Placeholder text of empty input fields (API 26+) — how to locate empty EditTexts |
 | `id="..."` | Resource ID (last segment only) |
 | `(ClassName)` | Element class name (simplified) |
 | `[clickable]` | Clickable flag |
@@ -733,6 +735,7 @@ phonefast run '[
 | `launch_app` | `package` (or `app`) | Launch app |
 | `screenshot` | — | Take screenshot |
 | `get_ui_elements` | — | UI elements |
+| `get_clipboard` | — | Clipboard text (device→host; `observed` flag separates "unknown" from "empty") |
 | `observe` | — | Screenshot + UI |
 | `list_devices` | — | List devices |
 | `wait` | `duration_ms` | Wait |

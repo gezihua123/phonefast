@@ -1,22 +1,36 @@
 package adb
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gezihua123/phonefast/assets"
 )
 
 const (
-	pfimePackage      = "com.phonefast.ime"
+	// PFIMEPackage is the PhoneFast IME application ID. Exported for
+	// callers that probe the device (e.g. session's post-switch pidof poll).
+	PFIMEPackage      = "com.phonefast.ime"
 	pfimeService      = "com.phonefast.ime/.PFIME"
 	pfimeDevicePath   = "/data/local/tmp/pfime.apk"
 	pfimeBroadcastB64 = "com.phonefast.ime.INPUT_B64"
 )
+
+// imeShellTimeout bounds the quick IME/settings/broadcast commands on the
+// type path. Each of these normally completes in well under a second; the
+// 10s bound exists purely so a hung adb server fails fast instead of
+// wedging the daemon's device actor past its 60s reply window.
+const imeShellTimeout = 10 * time.Second
+
+// installShellTimeout bounds the pm install of the PFIME APK. Install is the
+// one legitimately slow command on this path (cold pm on low-end devices).
+const installShellTimeout = 60 * time.Second
 
 // EnsurePFIME checks whether the PhoneFast IME is installed and enabled.
 // If not, it pushes and installs the embedded APK, then enables the IME.
@@ -27,7 +41,14 @@ func EnsurePFIME(serial string) (originalIME string, err error) {
 		return "", err
 	}
 
-	installed, _ := isPackageInstalled(serial, pfimePackage)
+	installed, err := isPackageInstalled(serial, PFIMEPackage)
+	if err != nil {
+		// A hung/slow pm must not be misread as "not installed": installing
+		// on a hung transport routes into an unbounded push and wedges the
+		// actor (see installPfimeApk). Fail closed — connect treats this as
+		// non-fatal, and the type path surfaces it if PFIME is truly missing.
+		return originalIME, fmt.Errorf("check pfime installed: %w", err)
+	}
 	if !installed {
 		if err := installPfimeApk(serial); err != nil {
 			return originalIME, err
@@ -35,7 +56,7 @@ func EnsurePFIME(serial string) (originalIME string, err error) {
 	}
 
 	// Enable (idempotent)
-	_, err = ADBShell(serial, "ime", "enable", pfimeService)
+	_, err = ADBShellTimeout(serial, imeShellTimeout, "ime", "enable", pfimeService)
 	if err != nil && !strings.Contains(err.Error(), "already enabled") {
 		return originalIME, fmt.Errorf("ime enable: %w", err)
 	}
@@ -52,16 +73,16 @@ func SetPFIME(serial string) error {
 	}
 
 	// Enable (idempotent, ignore errors)
-	ADBShell(serial, "ime", "enable", pfimeService)
+	ADBShellTimeout(serial, imeShellTimeout, "ime", "enable", pfimeService)
 
 	// Try ime set
-	_, err = ADBShell(serial, "ime", "set", pfimeService)
+	_, err = ADBShellTimeout(serial, imeShellTimeout, "ime", "set", pfimeService)
 	if err == nil {
 		return nil
 	}
 
 	// Fallback: force-set via settings (Android 14 sometimes needs this)
-	_, err2 := ADBShell(serial, "settings", "put", "secure", "default_input_method", pfimeService)
+	_, err2 := ADBShellTimeout(serial, imeShellTimeout, "settings", "put", "secure", "default_input_method", pfimeService)
 	if err2 != nil {
 		return fmt.Errorf("ime set pfime: %v / %v", err, err2)
 	}
@@ -73,14 +94,19 @@ func RestoreIME(serial, ime string) error {
 	if ime == "" || ime == pfimeService {
 		return nil
 	}
-	ADBShell(serial, "ime", "set", ime) // best-effort
+	ADBShellTimeout(serial, imeShellTimeout, "ime", "set", ime) // best-effort
 	return nil
 }
 
 // TypeTextB64 sends text through the PFIME via base64 broadcast.
+//
+// The 10s bound is the anti-wedge measure: a broadcast that hangs is the one
+// scenario where the request may still have been delivered (timeout kills
+// adb after the device processed the broadcast), so callers must not retry
+// blindly. The error wraps context.DeadlineExceeded on timeout.
 func TypeTextB64(serial, text string) error {
 	b64 := base64.StdEncoding.EncodeToString([]byte(text))
-	_, err := ADBShell(serial, "am", "broadcast", "-a", pfimeBroadcastB64, "--es", "msg", b64)
+	_, err := ADBShellTimeout(serial, imeShellTimeout, "am", "broadcast", "-a", pfimeBroadcastB64, "--es", "msg", b64)
 	if err != nil {
 		return fmt.Errorf("pfime broadcast: %w", err)
 	}
@@ -90,7 +116,7 @@ func TypeTextB64(serial, text string) error {
 // ── helpers ──
 
 func getCurrentIME(serial string) (string, error) {
-	out, err := ADBShell(serial, "settings", "get", "secure", "default_input_method")
+	out, err := ADBShellTimeout(serial, imeShellTimeout, "settings", "get", "secure", "default_input_method")
 	if err != nil {
 		return "", fmt.Errorf("get current ime: %w", err)
 	}
@@ -98,9 +124,12 @@ func getCurrentIME(serial string) (string, error) {
 }
 
 func isPackageInstalled(serial, pkg string) (bool, error) {
-	out, err := ADBShell(serial, "pm", "list", "packages", pkg)
+	out, err := ADBShellTimeout(serial, imeShellTimeout, "pm", "list", "packages", pkg)
 	if err != nil {
-		return false, nil
+		// Propagate instead of swallowing: a DeadlineExceeded here means a
+		// hung transport, and "not installed" would trigger a re-push/reinstall
+		// on every Connect — or worse, route the hang into the push.
+		return false, fmt.Errorf("pm list packages: %w", err)
 	}
 	return strings.Contains(out, pkg), nil
 }
@@ -133,14 +162,24 @@ func installPfimeApk(serial string) error {
 		return err
 	}
 
-	// Push to device (adb push is not an adb shell command)
-	pushCmd := exec.Command(adbPath, "-s", serial, "push", apkPath, pfimeDevicePath)
+	// Push to device (adb push is not an adb shell command). Bounded like
+	// every other quick command on this path: an unbounded push on a hung
+	// adb server wedges the daemon's device actor synchronously (connect),
+	// which violates the anti-wedge invariant ADBShellTimeout provides.
+	pushCtx, cancel := context.WithTimeout(context.Background(), imeShellTimeout)
+	defer cancel()
+	pushCmd := exec.CommandContext(pushCtx, adbPath, "-s", serial, "push", apkPath, pfimeDevicePath)
 	if out, err := pushCmd.CombinedOutput(); err != nil {
+		if pushCtx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("push pfime: %w", context.DeadlineExceeded)
+		}
 		return fmt.Errorf("push pfime: %s: %w", string(out), err)
 	}
 
-	// Install (use -r to replace, -t for test sign)
-	_, err = ADBShell(serial, "pm", "install", "-r", "-t", pfimeDevicePath)
+	// Install (use -r to replace, -t for test sign). The only command on the
+	// IME path that may legitimately run long (cold pm on low-end devices),
+	// hence its own generous bound.
+	_, err = ADBShellTimeout(serial, installShellTimeout, "pm", "install", "-r", "-t", pfimeDevicePath)
 	if err != nil {
 		return fmt.Errorf("install pfime: %w", err)
 	}

@@ -36,14 +36,25 @@ git clone --depth 1 --branch v3.3.4 https://github.com/Genymobile/scrcpy.git
 cd scrcpy
 git apply /path/to/android/patches/0001-phonefast-uisocket.patch
 
-# 3. Build
+# 3. OVERLAY the canonical UISocketHandler — REQUIRED.
+#    patches/ carries a BASELINE copy; the live source of truth is
+#    android/phonefast-agent/UISocketHandler.java (protocol fixes such as
+#    the 4-byte bulk read and hint_text collection live only there).
+#    Skipping this step ships a server without hint_text.
+cp /path/to/android/phonefast-agent/UISocketHandler.java \
+   server/src/main/java/com/genymobile/scrcpy/control/UISocketHandler.java
+
+# 4. Build
 cd server
 ./gradlew assembleRelease
 
-# 4. Copy result
+# 5. Copy result
 cp build/outputs/apk/release/server-release-unsigned.apk \
    /path/to/android/scrcpy-server.jar
 ```
+
+> `bash scripts/build-server.sh` performs the overlay automatically —
+> prefer it over the manual path.
 
 ## What the patch adds
 

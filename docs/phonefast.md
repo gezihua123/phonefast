@@ -494,3 +494,117 @@ All 9 failures were transient (TCP broken pipe under 12-16 ops/s burst, UI socke
 | **Stability Under Load** | 99.99% @ 16 ops/s | Unknown (uiautomator 30s timeout) | Unknown (7s cold start) |
 
 **Why phonefast is more stable**: a resident scrcpy server + TCP long connection (vs per-command `adb shell` fork with ~50ms overhead), an in-memory daemon session (vs disk session file / 7s cold start), and three-level keepalive — TCP keepalive (control 15s / video 30s), 10s healthLoop, and write-failure-driven reconnect.
+
+## 10. fastaget AndroidWorld Alignment Gap Fixes (Implemented)
+
+> Source: fastaget batch-4 audit (2026-08-19). Two gaps in the phonefast → AndroidWorld
+> verification pipeline cost 2 permanently-unpassable cases on the AW 116 benchmark.
+> Both fixes landed on the phonefast side (2026-08-20); the fastaget shim still needs
+> its consumer-side switch (§10.1 #4, §10.2 consumer).
+
+### 10.1 Gap A: `hint_text` not exposed → `ContactsNewContactDraft` can never pass
+
+**Root cause (4-layer broken chain, verified against source):**
+
+1. **On-device agent (origin)**: `android/phonefast-agent/UISocketHandler.java` `collectNodes()`
+   reads only `getText()` / `getContentDescription()` / `getViewIdResourceName()` /
+   `getClassName()` — **`AccessibilityNodeInfo.getHintText()` (API 26+) is never called**.
+2. **Protocol**: `pkg/protocol/ui.go` `UIElement` / `UIFullElement` have no hint field.
+3. **Output formatter**: `internal/format/format_jsonl.go` emits only
+   text / content_desc / resource_id.
+4. **Consumer**: fastaget's AW shim builds `UIElement` without `hint_text`.
+
+AW's contact verification (`_contact_info_is_entered`) requires elements with
+`hint_text == "First name" / "Last name" / "Phone"` — always False today,
+so the case fails regardless of agent behavior.
+
+**Changes (top-down; ✅ = landed):**
+
+| # | Location | Change | Status |
+|---|---|---|---|
+| 1 | `UISocketHandler.java` — `readHint()` helper + both `collectNodes()` (summary) and `collectFullNodes()` (full) | `node.getHintText()` guarded by `Build.VERSION.SDK_INT >= 26` (`VERSION_CODES.O`), same 80-char truncation as text; emits `"hint_text"` only when non-empty; emit condition extended to `hasText\|\|hasDesc\|\|clickable\|\|hasHint` so hint-only EditTexts survive filtering (image-skip and layout-skip conditions extended too) | ✅ |
+| 2 | `pkg/protocol/ui.go` | `HintText string \`json:"hint_text,omitempty"\`` on `UIElement` and `UIFullElement`; wire-format pinned by `TestUIElementHintTextWireCompat` | ✅ |
+| 3 | `internal/format/` (jsonl, flatref, yml, legacy flat) | jsonl emits `"hint_text"`; flatref emits `hint="..."`; yml emits `hint_text:`; the legacy flat `formatted` output emits `hint="..."`, and the Go-side layout-skip/CompactElements/off-screen filters honor HintText exactly like the Java filters. **simplexml only remains unchanged**: it mirrors the uiautomator XML vocabulary, which has no hint attribute | ✅ |
+| 4 | fastaget `aw_native/shim/android_world_controller.py` | `hint_text=d.get("hint_text") or None` | ⏳ fastaget side |
+
+**Deploy note**: `scripts/build-server.sh` overlays `android/phonefast-agent/UISocketHandler.java`
+(the canonical source) onto the patch baseline, then rebuilds the jar. ✅ Rebuilt
+2026-08-20 — both `android/scrcpy-server.jar` and the `go:embed` copy in `assets/`
+contain `hint_text`. No version bump needed — `adb.Deploy` always re-pushes the jar
+on connect, so the next daemon connect deploys the new server.
+
+### 10.2 Gap B: clipboard read channel → `SystemCopyToClipboard` verification unreachable
+
+**Root cause:**
+
+- The AW verification shim reads the clipboard via `am broadcast -a clipper.get`
+  (AW's original approach); on API 33 background clipboard access is restricted —
+  measured `result=0, data=""`.
+- phonefast **reserved but never wired** the scrcpy clipboard-sync path: the daemon
+  only wrote the control socket, never read it, so the device's clipboard pushes
+  were discarded.
+- The scrcpy server natively registers a `ClipboardManager.OnPrimaryClipChangedListener`
+  (when control + `clipboard_autosync` are on — both are defaults, verified against
+  scrcpy v3.3.4 `Controller.java` / `Options.java`) and pushes the clipboard text
+  on every device-side change.
+
+**Fix implemented (the audit's Option A, with two protocol corrections):**
+
+- `pkg/protocol/control.go` — the old `ReadControlMessage` stub (read 1 type byte,
+  no payload) is replaced by **`ReadDeviceMessage`**: full parsing of every device→client
+  message per scrcpy v3.3.4 `DeviceMessageWriter` — `TYPE_CLIPBOARD (0)`: u32 len + utf8;
+  `TYPE_ACK_CLIPBOARD (1)`: u64 sequence; `TYPE_UHID_OUTPUT (2)`: u16 id + u16 len + bytes.
+  Consuming each payload fully is what keeps the byte stream from desyncing
+  (covered by `TestReadDeviceMessageStreamNoDesync`).
+  ⚠️ Note the type numbering: device→client clipboard pushes are `DeviceMsgClipboard = 0`
+  (`DeviceMessage.TYPE_CLIPBOARD`), **not** `TypeGetClipboard = 8` — 8 is the
+  client→device *request* type. The audit's original wording conflated the two directions.
+- `internal/session/session.go` — `readDeviceMessages()` goroutine started when the
+  control socket connects; caches the latest `DeviceMsgClipboard` text (mutex-guarded,
+  emptied implicitly on reconnect since scrcpy re-pushes on change). A read/parse
+  failure on a LIVE session marks the control connection broken
+  (`markControlBroken`) so the actor's healthCheck reconnects with a fresh reader;
+  teardown by `Close()` exits silently (no goroutine leak across reconnects).
+- `internal/daemon` — `get_clipboard` RPC (`protocol.MethodGetClipboard`) returning
+  `{"clipboard": "...", "observed": bool}` — `observed=false` means "no change
+  observed since connect" (unknown), NOT an empty clipboard; `Client.GetClipboard()`
+  returns `(text, observed, err)`; routed in `dispatch.go`, `Device` interface
+  extended with `GetClipboard() (string, bool)`.
+- `pkg/protocol` — `ReadDeviceMessage` fails closed on unknown message types: a
+  version-skewed scrcpy server cannot silently desync the stream (the reader error
+  triggers the reconnect above).
+- **Option B (Java-side listener) not needed** — Option A already sidesteps the API 33
+  restriction because the *change event carries the data* (the scrcpy server reads the
+  clipboard in the foreground-server process, not the AW shim). Also, the audit's claim
+  that Option B "needs a Context" was wrong: scrcpy's own server obtains the
+  ClipboardManager via `ServiceManager.getClipboardManager()` with no Context.
+- **Consumer side (remaining)**: fastaget's shim `get_clipboard_contents` switches
+  from the Clipper broadcast to the new `get_clipboard` RPC, honoring the
+  `observed` flag (false = "no change observed since connect", not an empty
+  clipboard) — safe for AW because verification always runs after the agent's copy.
+
+**Caveat**: scrcpy syncs plain text only (URI/image clips are skipped server-side);
+the cache starts unknown on daemon (re)start (`observed=false`) and fills on the
+next device-side copy. The consumer must treat `observed=false` as "unknown" —
+the AW verification flow is safe because it always copies first.
+
+### 10.3 Gap C (proposed): file-input OCR — the only vision channel for text-bearing images
+
+> Source: fastaget batch-4 blind-spot audit (2026-08-20). deepseek-v4-pro/flash accept NO
+> image input via the Anthropic-compatible endpoint (probe-verified), so OCR is the only
+> "textual vision" channel. Current phonefast OCR reads the SCREEN viewport only, which
+> fragments multi-line text-block images (recipes.jpg/expenses.jpg in AW evals lose the
+> ingredients/directions/category fields) and can never read off-screen content.
+
+**Proposed change (small, high value):** extend the `ocr` command/RPC with an optional
+file-path argument — `phonefast ocr --file /sdcard/Pictures/x.jpg` — running the existing
+OCR engine over the full image instead of the screen viewport. Notes:
+- Pull path: the device-side image is accessible via `adb pull` (or decode in place);
+  engine-side it is the same decode → recognize pipeline, only the frame source changes.
+- A multi-line text-block post-process (merge same-column adjacent regions, restore line
+  order) further reduces fragmentation for tall wrapped text blocks.
+- Consumer side (fastaget): a generic `ocr_file` tool lets the agent read full image
+  content when a task references an image file — no task-specific knowledge required.
+
+**Expected effect:** converts the "OCR partial capture" failure class (ingredients /
+directions / category fields dropped by viewport clipping) without any model change.

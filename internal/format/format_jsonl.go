@@ -44,6 +44,10 @@ func (f *jsonlFormatter) Format(elements []protocol.UIFullElement) string {
 			b.WriteString(`,"content_desc":`)
 			writeJSONString(&b, el.ContentDesc)
 		}
+		if el.HintText != "" {
+			b.WriteString(`,"hint_text":`)
+			writeJSONString(&b, el.HintText)
+		}
 		if el.ResourceID != "" {
 			b.WriteString(`,"resource_id":`)
 			writeJSONString(&b, el.ResourceID)

@@ -451,11 +451,12 @@ flatref 是专为 LLM 设计的层级格式，每行一个元素，用 `|` 分�
 #0 (FrameLayout) | bounds=[0,0][1080,2400] | | depth=0 parent=#-1
 #19 id="back_btn" (ImageButton) | bounds=[0,0][96,96] | [clickable] | depth=3 parent=#18
 #21 text="安装" (TextView) | bounds=[899,432][975,491] | | depth=4 parent=#20
+#22 hint="First name" (Input) | bounds=[0,96][540,192] | | depth=5 parent=#20
 ```
 
 | 列 | 内容 | 说明 |
 |----|------|------|
-| 身份 | `#N text="..." desc="..." id="..." (Class)` | 元素是什么 |
+| 身份 | `#N text="..." desc="..." hint="..." id="..." (Class)` | 元素是什么 |
 | 位置 | `bounds=[l,t][r,b]` | 元素在哪 |
 | 状态 | `[clickable] [focused] [selected] [disabled]` | 可否交互 |
 | 层级 | `depth=N parent=#M` | 在树中的位置 |
@@ -477,6 +478,7 @@ flatref 是专为 LLM 设计的层级格式，每行一个元素，用 `|` 分�
 | `#N` | 元素 ID（用于 `parent=#N` 引用） |
 | `text="..."` | 元素文本 |
 | `desc="..."` | 无障碍描述（content-desc） |
+| `hint="..."` | 空输入框的占位文本（API 26+）——定位空 EditText 的方式 |
 | `id="..."` | 资源 ID（仅显示最后一段） |
 | `(ClassName)` | 元素类名（简化） |
 | `[clickable]` | 可点击标记 |
@@ -714,6 +716,7 @@ phonefast run '[
 | `launch_app` | `package`（或 `app`） | 启动应用 |
 | `screenshot` | — | 截图 |
 | `get_ui_elements` | — | UI 元素 |
+| `get_clipboard` | — | 剪贴板文本（设备→主机；`observed` 标志区分“未知”与“为空”） |
 | `observe` | — | 截图 + UI |
 | `list_devices` | — | 设备列表 |
 | `wait` | `duration_ms` | 等待 |

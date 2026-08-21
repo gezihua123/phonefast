@@ -5,6 +5,7 @@
 #   bash scripts/clean.sh --light      # 安全: 构建产物 + 缓存 + 运行时
 #   bash scripts/clean.sh --deep       # + Go modcache + IDE 目录
 #   bash scripts/clean.sh --purge      # + git clean -Xdf (所有 git-ignored 文件)
+#   bash scripts/clean.sh --kill-daemon # 同时停止运行中的 daemon（默认不动 daemon）
 #   bash scripts/clean.sh -n           # dry-run, 只预览不删除
 #   bash scripts/clean.sh -f           # 跳过交互确认
 set -euo pipefail
@@ -17,6 +18,7 @@ cd "$ROOT"
 LEVEL="light"
 DRY=false
 FORCE=false
+KILL_DAEMON=false
 TOTAL_FREED=0  # KB
 
 usage() {
@@ -31,6 +33,9 @@ Levels:
   --purge     追加: git clean -Xdf (所有 git-ignored 文件)
 
 Options:
+  --kill-daemon  同时停止运行中的 daemon（默认: daemon 保持运行，
+                 其 pid/sock/log 也一并保留——删掉 pid 而 daemon 还在跑
+                 会让 CLI 误判"未运行"再拉起第二个 daemon）
   -n, --dry    预览模式，只显示将要删除的内容
   -f, --force  跳过所有交互确认
   -h, --help   显示此帮助
@@ -44,6 +49,7 @@ for arg in "$@"; do
         --light) LEVEL="light" ;;
         --deep)  LEVEL="deep" ;;
         --purge) LEVEL="purge" ;;
+        --kill-daemon) KILL_DAEMON=true ;;
         -n|--dry) DRY=true ;;
         -f|--force) FORCE=true ;;
         -h|--help) usage ;;
@@ -90,10 +96,11 @@ _rmpath() {
 }
 
 # _rmglob — 删除匹配 glob 的文件（支持任意 base 目录）
-# Usage: _rmglob "label" "/base/dir" "*.pattern"
+# Usage: _rmglob "label" "/base/dir" "*.pattern" [find-exclusions]
 #          _rmglob "label" "."          "path/to/glob*"
+# 第 4 参数为可选 find 排除表达式（如 '! -name *.pid'），未加引号地传给 find。
 _rmglob() {
-    local desc="$1" base="$2" pat="$3"
+    local desc="$1" base="$2" pat="$3" excl="${4:-}"
     local count=0
     local total_kb=0
     while IFS= read -r -d '' f; do
@@ -106,7 +113,7 @@ _rmglob() {
                 rm -rf "$f" && ((count++)) || true
             fi
         fi
-    done < <(find "$base" -path "$pat" -print0 2>/dev/null)
+    done < <(find "$base" -path "$pat" $excl -print0 2>/dev/null)
     TOTAL_FREED=$((TOTAL_FREED + total_kb))
     if [[ "$count" -gt 0 ]]; then
         local mb; mb=$(echo "scale=1; $total_kb/1024" | bc 2>/dev/null || echo 0)
@@ -125,36 +132,41 @@ _findrm() {
     _rmglob "$desc" "$ROOT" "*/$name"
 }
 
-# ── 1. 停止 daemon ────────────────────────────────────────────────────────────
+# ── 1. 停止 daemon（仅 --kill-daemon；默认保持 daemon 运行）────────────────────
 echo ""
 echo "=== Daemon ==="
 
 my_uid=$(id -u)
 
-shopt -s nullglob
-for pf in "$TMPDIR"/phonefast-${my_uid}-*.pid; do
-    [[ -f "$pf" ]] || continue
-    pid=$(cat "$pf" 2>/dev/null || true)
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-        if $DRY; then
-            echo "  would kill: daemon pid=$pid"
-        else
-            printf "  stopping daemon pid=%s ... " "$pid"
-            kill "$pid" 2>/dev/null || true
-            sleep 0.3
-            kill -0 "$pid" 2>/dev/null && { kill -9 "$pid" 2>/dev/null; echo "force-killed"; } || echo "stopped"
+if $KILL_DAEMON; then
+    shopt -s nullglob
+    # 实际命名是 phonefast-<uid>.pid（无连字符），见 internal/daemon/client.go
+    for pf in "$TMPDIR"/phonefast-${my_uid}.pid; do
+        [[ -f "$pf" ]] || continue
+        pid=$(cat "$pf" 2>/dev/null || true)
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            if $DRY; then
+                echo "  would kill: daemon pid=$pid"
+            else
+                printf "  stopping daemon pid=%s ... " "$pid"
+                kill "$pid" 2>/dev/null || true
+                sleep 0.3
+                kill -0 "$pid" 2>/dev/null && { kill -9 "$pid" 2>/dev/null; echo "force-killed"; } || echo "stopped"
+            fi
         fi
-    fi
-done
-shopt -u nullglob
-
-# 兜底: kill 所有 daemon_worker orphan 进程
-if ! $DRY; then
-    orphan=$(pgrep -f "phonefast.*daemon_worker" 2>/dev/null || true)
-    for p in $orphan; do
-        printf "  killing orphan daemon pid=%s ... " "$p"
-        kill "$p" 2>/dev/null && echo "ok" || echo "skip"
     done
+    shopt -u nullglob
+
+    # 兜底: kill 所有 daemon_worker orphan 进程
+    if ! $DRY; then
+        orphan=$(pgrep -f "phonefast.*daemon_worker" 2>/dev/null || true)
+        for p in $orphan; do
+            printf "  killing orphan daemon pid=%s ... " "$p"
+            kill "$p" 2>/dev/null && echo "ok" || echo "skip"
+        done
+    fi
+else
+    echo "  skipping (daemon 保持运行；如需停止请用 --kill-daemon)"
 fi
 
 # ── 2. 构建产物 ───────────────────────────────────────────────────────────────
@@ -226,18 +238,29 @@ fi
 echo ""
 echo "=== Runtime files ==="
 
-# PID / socket / log
-_rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-${my_uid}-*.pid"
-_rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-${my_uid}-*.sock"
-_rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-${my_uid}*.log"
-_rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast.log"
+# PID / socket / log — 属于存活 daemon 的状态文件，不杀 daemon 时保留，
+# 否则 CLI 会因找不到 socket/pid 误判 daemon 未运行而重复拉起。
+if $KILL_DAEMON; then
+    # 实际命名是 phonefast-<uid>.pid/.sock/.log/.env（无连字符），
+    # 见 internal/daemon/client.go、supervisor.go、internal/log/log.go
+    _rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-${my_uid}.pid"
+    _rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-${my_uid}.sock"
+    _rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-${my_uid}.log"
+    _rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-daemon-${my_uid}.log"
+    _rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast-${my_uid}.env"
+    _rmglob "pid/sock/log" "$TMPDIR" "$TMPDIR/phonefast.log"
+else
+    echo "  pid/sock/log: 保留（daemon 仍在运行）"
+fi
 
 # 截图（/tmp 零散截图）
 _rmglob "screenshots"  "$TMPDIR" "$TMPDIR/phonefast-screenshot-*.png"
 _rmglob "screenshots"  "$TMPDIR" "$TMPDIR/phonefast-screenshot-*.jpg"
 
 # 临时构建二进制（/tmp 下各种 test build）
-_rmglob "tmp binaries" "$TMPDIR" "$TMPDIR/phonefast-*"
+# 排除 daemon 状态文件（pid/sock/log 由上一节统一管理）——phonefast-501.sock
+# 被误删会让存活 daemon 失联、CLI 误判未运行而重复拉起第二个 daemon。
+_rmglob "tmp binaries" "$TMPDIR" "$TMPDIR/phonefast-*" '! -name *.pid ! -name *.sock ! -name *.log'
 _rmglob "tmp binaries" "$TMPDIR" "$TMPDIR/pf-*"
 
 # 打包测试目录

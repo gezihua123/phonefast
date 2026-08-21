@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/gezihua123/phonefast/pkg/protocol"
 )
 
 // ErrDaemonUnreachable is returned by Client.Call when the daemon's Unix socket
@@ -60,7 +62,13 @@ func NewClient(serial string, opts ...ClientOption) *Client {
 	c := &Client{
 		socketPath: SocketName(),
 		serial:     serial,
-		timeout:    30 * time.Second,
+		// The read deadline must exceed the daemon's actorReplyTimeout (60s)
+		// plus write/read slop: when a request runs long, the daemon itself
+		// answers with "request timed out", and the client must wait for that
+		// answer rather than give up first. A client that gives up first
+		// leaves the request executing — and for non-idempotent methods like
+		// type_text, an agent-level retry then replays it (typed twice).
+		timeout: 90 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -159,4 +167,22 @@ func (c *Client) Ping() (map[string]any, error) {
 		return nil, fmt.Errorf("unmarshal status: %w", err)
 	}
 	return status, nil
+}
+
+// GetClipboard returns the device clipboard cached by the daemon. observed is
+// false when no clipboard change has been observed since the daemon connected
+// — the text is then unknown, not empty.
+func (c *Client) GetClipboard() (clipboard string, observed bool, err error) {
+	result, err := c.Call(protocol.MethodGetClipboard, nil)
+	if err != nil {
+		return "", false, err
+	}
+	var res struct {
+		Clipboard string `json:"clipboard"`
+		Observed  bool   `json:"observed"`
+	}
+	if err := json.Unmarshal(result, &res); err != nil {
+		return "", false, fmt.Errorf("unmarshal clipboard: %w", err)
+	}
+	return res.Clipboard, res.Observed, nil
 }

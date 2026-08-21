@@ -20,6 +20,7 @@ const (
 	MethodListDevices   = "list_devices"
 	MethodScreenshot    = "screenshot"
 	MethodGetUIElements = "get_ui_elements"
+	MethodGetClipboard  = "get_clipboard"
 	MethodObserve       = "observe"
 	MethodOCR           = "ocr"
 	MethodTap           = "tap"

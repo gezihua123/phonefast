@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -208,7 +209,12 @@ func (a *DeviceActor) handleRequest(req actorRequest) {
 	// request, try reconnect + retry once. This prevents a temporary
 	// disconnect from failing every request until the next health tick.
 	dead := a.device == nil || !a.device.IsAlive()
-	if resp.Error != nil && dead {
+	if resp.Error != nil && dead && !isDeadlineExceeded(resp.Error.Message) {
+		// Skip replay for timed-out bounded calls: a DeadlineExceeded means
+		// the request MAY already have been delivered (e.g. the type_text
+		// broadcast processed before adb was killed). Replaying it after a
+		// reconnect can deliver it twice — the exact doubled-input failure
+		// the PFIME design documents (adb.TypeTextB64).
 		if a.tryReconnect() {
 			resp = a.dispatch.Dispatch(a.device, req.req)
 		}
@@ -216,6 +222,14 @@ func (a *DeviceActor) handleRequest(req actorRequest) {
 	}
 
 	req.replyCh <- resp
+}
+
+// isDeadlineExceeded reports whether an RPC error message carries a
+// context.DeadlineExceeded. RPC errors cross the handler boundary as
+// strings (RPCError.Message), so the check matches the wrapped error's
+// Error() text ("context deadline exceeded").
+func isDeadlineExceeded(msg string) bool {
+	return strings.Contains(msg, context.DeadlineExceeded.Error())
 }
 
 // tryReconnect attempts a reconnect unless one was tried very recently (to

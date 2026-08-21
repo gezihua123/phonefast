@@ -297,6 +297,20 @@ public final class UISocketHandler {
     }
 
     /**
+     * Reads the node's hint text (API 26+) — the placeholder shown by empty
+     * EditText fields (e.g. "First name"). Truncated to 80 chars like text.
+     * Returns "" below API 26 or when the node has no hint.
+     */
+    private static String readHint(AccessibilityNodeInfo node) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return "";
+        CharSequence hint = node.getHintText();
+        if (hint == null) return "";
+        String s = hint.toString();
+        if (s.length() > 80) s = s.substring(0, 77) + "...";
+        return s;
+    }
+
+    /**
      * Shortens common Android widget class names for summary mode.
      * e.g. "android.widget.TextView" → "Text", "android.widget.ImageView" → "Image".
      * Handles both fully-qualified and simple (already-stripped) names.
@@ -534,21 +548,23 @@ public final class UISocketHandler {
                 String descStr = desc != null ? desc.toString() : "";
                 if (descStr.length() > 80) descStr = descStr.substring(0, 77) + "...";
                 String clsStr = cls != null ? cls.toString() : "";
+                String hintStr = readHint(node);
 
                 boolean hasText = textStr.length() > 0;
                 boolean hasDesc = descStr.length() > 0;
+                boolean hasHint = hintStr.length() > 0;
                 boolean hasResId = resId != null && !resId.isEmpty();
                 boolean clickable = node.isClickable();
 
                 // Only emit elements that have useful attributes
             // Skip pure images (ImageView without text/desc/clickable) — reduces JSON output
             boolean isImageOnly = summaryMode && clsStr.endsWith("ImageView")
-                && !hasText && !hasDesc && !clickable;
+                && !hasText && !hasDesc && !hasHint && !clickable;
             if (isImageOnly) {
                 // Don't write JSON, but continue recursing into children
-            } else if (hasText || hasDesc || clickable) {
+            } else if (hasText || hasDesc || clickable || hasHint) {
                     // In summary mode, skip pure layout containers
-                    if (summaryMode && isLayoutClass(clsStr) && !clickable && !hasText && !hasDesc) {
+                    if (summaryMode && isLayoutClass(clsStr) && !clickable && !hasText && !hasDesc && !hasHint) {
                         // Still recurse into children — layout might contain useful widgets
                     } else {
 
@@ -556,6 +572,9 @@ public final class UISocketHandler {
                         jw.name("index").value(counter[0]++);
                         jw.name("text").value(textStr);
                         jw.name("content_desc").value(descStr);
+                        if (hasHint) {
+                            jw.name("hint_text").value(hintStr);
+                        }
                         jw.name("resource_id").value(resId != null ? resId : "");
                         jw.name("class_name").value(simplifyClassName(clsStr));
 
@@ -717,6 +736,10 @@ public final class UISocketHandler {
             if (descStr.length() > 80) descStr = descStr.substring(0, 77) + "...";
             jw.name("text").value(textStr);
             jw.name("content_desc").value(descStr);
+            String hintStr = readHint(node);
+            if (hintStr.length() > 0) {
+                jw.name("hint_text").value(hintStr);
+            }
             jw.name("resource_id").value(resId != null ? resId : "");
             jw.name("class_name").value(cls != null ? simplifyClassName(cls.toString()) : "");
 

@@ -30,6 +30,43 @@ func TestUISummaryRequest(t *testing.T) {
 	})
 }
 
+// TestUIElementHintTextWireCompat pins the wire format of hint_text against
+// what UISocketHandler.java emits: present as "hint_text" for hint-bearing
+// nodes, absent for the rest. AndroidWorld locates input fields by hint, so
+// a rename here would silently break the AW verification pipeline.
+func TestUIElementHintTextWireCompat(t *testing.T) {
+	// Exactly the JSON UISocketHandler.collectNodes/collectFullNodes produce.
+	wire := []byte(`{"elements":[
+		{"index":0,"text":"","content_desc":"","hint_text":"First name",
+		 "resource_id":"com.android.contacts:id/first_name","class_name":"Input",
+		 "bounds":[0,0,100,80],"center":[50,40],"clickable":true,"enabled":true},
+		{"index":1,"text":"Done","content_desc":"","resource_id":"",
+		 "class_name":"Button","bounds":[0,80,100,120],"center":[50,100],
+		 "clickable":true,"enabled":true}
+	]}`)
+
+	var resp UIDumpResponse
+	if err := json.Unmarshal(wire, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Elements[0].HintText != "First name" {
+		t.Errorf("expected hint 'First name', got %q", resp.Elements[0].HintText)
+	}
+	if resp.Elements[1].HintText != "" {
+		t.Errorf("expected empty hint when key absent, got %q", resp.Elements[1].HintText)
+	}
+
+	// Marshal side: hint omitted when empty, emitted when set.
+	b, _ := json.Marshal(UIElement{Index: 0})
+	if bytes.Contains(b, []byte("hint_text")) {
+		t.Errorf("empty hint should be omitted, got %s", b)
+	}
+	b, _ = json.Marshal(UIElement{Index: 0, HintText: "Phone"})
+	if !bytes.Contains(b, []byte(`"hint_text":"Phone"`)) {
+		t.Errorf("hint should marshal as hint_text, got %s", b)
+	}
+}
+
 func TestReadUIDumpResponse(t *testing.T) {
 	resp := UIDumpResponse{
 		Elements: []UIElement{

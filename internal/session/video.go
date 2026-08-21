@@ -35,6 +35,126 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 		s.mu.Unlock()
 		return nil, 0, 0, "", fmt.Errorf("session closed")
 	}
+	s.mu.Unlock()
+
+	// CGO stream-decode path: drainFrames keeps the stream decoder's cached
+	// frame tracking the screen continuously (scrcpy emits frames ~10fps
+	// even on a static screen), so a screenshot is just "encode the latest
+	// frame" — no RESET_VIDEO, no device pipeline recreation. This also
+	// captures screen changes from ANY source (physical touches included),
+	// unlike keyframe-based capture which only sees agent actions.
+	if s.streamDec != nil {
+		return s.screenshotStream(format)
+	}
+
+	// Pure-Go / no stream decoder: keyframe reset path (see below).
+	return s.screenshotLegacy(format)
+}
+
+// streamStaleCap is the max age of a directly-served cached frame. Measured
+// on this device: while the encoder is only lightly asleep (≤60s idle),
+// EXTERNAL input (physical touch, adb shell input) still wakes it and frames
+// flow within ~100-300ms — the cache self-heals, so no cap is needed there.
+// After minutes of idle the encoder deep-sleeps: external operations change
+// the screen WITHOUT producing any frame (measured: zero frames after ~5min
+// idle), so the cache would go stale silently forever. A RESET_VIDEO
+// recreates the device pipeline and forces a fresh frame regardless of sleep
+// depth — so beyond this age correctness wins and the screenshot pays the
+// ~350ms reset instead of serving instantly.
+const streamStaleCap = 60 * time.Second
+
+// screenshotStream serves a screenshot from the stream decoder's latest
+// decoded frame. Falls back to reset+wait when the frame is stale, and to
+// the stale frame (with a warning) when even that fails — a stale image
+// beats a failed call (same degrade-gracefully contract as the legacy path).
+//
+// Freshness rule: the cached frame is usable only if it arrived AFTER the
+// most recent device action AND is younger than streamStaleCap:
+//   - right after an action the encoder has a ~100-300ms wake gap (frames
+//     still show the pre-action screen), so a frame predating the action
+//     may be stale → reset path;
+//   - when the screen is idle the encoder stops sending frames (~0.5-1s
+//     after the animation settles), so age grows while the screen hasn't
+//     changed — a post-action frame stays correct → served directly;
+//   - the age cap bounds the deep-sleep hole: an encoder asleep for minutes
+//     stops producing frames even for EXTERNAL screen changes, which no
+//     lastActionAt update can detect → reset+wait after streamStaleCap.
+//
+// A wedged encoder (action produced no frames) also trips the first case
+// (frame predates the action) and falls into the reset+wait loop.
+func (s *Session) screenshotStream(format avcodec.ImageFormat) ([]byte, int, int, string, error) {
+	t0 := time.Now()
+	dec := s.streamDec
+
+	tryEncode := func() ([]byte, int, int, string, bool) {
+		at, ok := dec.LatestFrameAt()
+		if !ok {
+			return nil, 0, 0, "", false
+		}
+		s.resetMu.Lock()
+		lastAction := s.lastActionAt
+		s.resetMu.Unlock()
+		if !at.After(lastAction) || time.Since(at) > streamStaleCap {
+			return nil, 0, 0, "", false
+		}
+		// EncodeLatest works on the cache in place (no snapshot copy) and
+		// may encode a NEWER frame than the one validated above — strictly
+		// fresher, so the freshness decision stays conservative.
+		return dec.EncodeLatest(format)
+	}
+
+	// Fast path: the cached frame is fresh.
+	if data, w, h, mime, ok := tryEncode(); ok {
+		phonelog.Default().Write("screenshot: stream total=%v %dx%d %s",
+			time.Since(t0), w, h, mime)
+		return data, w, h, mime, nil
+	}
+
+	// Stale: wake the encoder with a RESET_VIDEO (deduped against an
+	// in-flight reset) and wait for fresh frames to flow.
+	if s.IsControlAvailable() {
+		if _, ok := dec.LatestFrameAt(); !ok {
+			// Never decoded a frame yet (fresh connect): the stream's first
+			// config+IDR is already on its way — wait passively for it.
+			// A RESET_VIDEO here would recreate the just-built pipeline and
+			// only DELAY that first frame.
+			firstDeadline := time.Now().Add(2 * time.Second)
+			for time.Now().Before(firstDeadline) {
+				if data, w, h, mime, ok := tryEncode(); ok {
+					phonelog.Default().Write("screenshot: stream total=%v (first frame) %dx%d %s",
+						time.Since(t0), w, h, mime)
+					return data, w, h, mime, nil
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+		if !s.resetInFlight() {
+			s.forceRequestKeyframe()
+		}
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if data, w, h, mime, ok := tryEncode(); ok {
+				phonelog.Default().Write("screenshot: stream total=%v (reset) %dx%d %s",
+					time.Since(t0), w, h, mime)
+				return data, w, h, mime, nil
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		phonelog.Default().Write("screenshot: WARN no fresh stream frame after reset — serving stale")
+	}
+
+	// Last resort: serve whatever we have, however old.
+	if data, w, h, mime, ok := dec.EncodeLatest(format); ok {
+		return data, w, h, mime, nil
+	}
+	return nil, 0, 0, "", fmt.Errorf("no video frame available")
+}
+
+// screenshotLegacy captures via the keyframe reset path: force a fresh
+// keyframe, wait for its IDR, decode. Used on pure-Go builds (no stream
+// decoder) and when the stream decoder is unavailable.
+func (s *Session) screenshotLegacy(format avcodec.ImageFormat) ([]byte, int, int, string, error) {
+	s.mu.Lock()
 	devW, devH := s.deviceW, s.deviceH
 	s.mu.Unlock()
 
@@ -64,14 +184,20 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 		// (consumeReset → prepare → MediaCodec configure → start) — repeating
 		// the reset mid-recreation restarts it and pushes the wait to the 3s
 		// deadline. The throttle is bypassed here (correctness over rate).
-		s.forceRequestKeyframe()
+		//
+		// 在途去重: 若 preheat(动作后)刚在 keyframeResetInFlightWindow 内
+		// 发出过 reset, 设备管线重建正在进行中——再发一个会把重建重启、
+		// 把等待推到 3s。此时直接等那个在途 keyframe 到达即可。
+		if !s.resetInFlight() {
+			s.forceRequestKeyframe()
+		}
 
 		deadline := time.Now().Add(3 * time.Second)
 		for time.Now().Before(deadline) {
 			if s.decoder.LatestKeyframePTS() > beforePTS {
 				break
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond)
 		}
 		// Degrade gracefully instead of failing: if the reset never produced
 		// a fresh keyframe (control socket died mid-wait), return the last
@@ -95,7 +221,7 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 	if err != nil {
 		return nil, 0, 0, "", fmt.Errorf("decode keyframe: %w", err)
 	}
-	phonelog.Default().Write("screenshot: total=%v keyframe=%dKB format=%s",
+	phonelog.Default().Write("screenshot: legacy total=%v keyframe=%dKB format=%s",
 		elapsed, len(keyframe)/1024, mime)
 	// NOTE: no post-capture pipelining reset here. Each RESET_VIDEO recreates
 	// the whole device encode pipeline (~350ms warm, up to 3s cold) and a
@@ -106,9 +232,24 @@ func (s *Session) ScreenshotFormat(format avcodec.ImageFormat) ([]byte, int, int
 }
 
 // freshKeyframeWindow is the freshness fast-path window: a keyframe this
-// young (~2-3 frame periods at 30fps) is considered "as good as live" and
-// skips the reset+wait round trip.
-const freshKeyframeWindow = 60 * time.Millisecond
+// young is considered "as good as live" and skips the reset+wait round trip.
+// 100ms ≈ 3 frame periods at 30fps: 仍能覆盖"动作后 preheat 刚送达"的窗口,
+// 比原 60ms 更宽容, 更多动作→截图序列命中快路径(压测显示 94% 截图走冷路径)。
+const freshKeyframeWindow = 100 * time.Millisecond
+
+// keyframeResetInFlightWindow 是"reset 在途"判定窗口: 最近一次 RESET_VIDEO
+// 在此窗口内发出时, 设备管线重建仍在进行, 截图冷路径不再补发 reset(见
+// ScreenshotFormat 在途去重)。窗口取值略小于实测重建耗时(~350ms), 只去重
+// 明确在途的, 不吞掉真正的冷启动 reset。
+const keyframeResetInFlightWindow = 300 * time.Millisecond
+
+// resetInFlight reports whether a RESET_VIDEO was sent within
+// keyframeResetInFlightWindow (device pipeline recreation likely in progress).
+func (s *Session) resetInFlight() bool {
+	s.resetMu.Lock()
+	defer s.resetMu.Unlock()
+	return time.Since(s.lastResetAt) < keyframeResetInFlightWindow
+}
 
 // requestKeyframe sends a RESET_VIDEO message to trigger a new keyframe.
 // Rate-limited: each reset recreates the device's whole encode pipeline
@@ -172,9 +313,23 @@ func (s *Session) tryMarkReset() bool {
 // active stream). The follow-up screenshot then hits ScreenshotFormat's
 // freshness fast path instead of paying the ~350ms pipeline recreation.
 // Best-effort: throttled, no-op on a dead control conn.
+//
+// On the CGO stream-decode path the RESET_VIDEO itself is skipped: the
+// stream decoder tracks every frame, so screenshots don't need a fresh IDR —
+// and a reset recreates the device encode pipeline (~350ms during which
+// frames pause), which would stall the cached frame right after the action.
+// lastActionAt is still recorded: screenshotStream serves the cached frame
+// only if it arrived after the most recent action (see screenshotStream).
+// The legacy keyframe path (pure-Go builds) keeps the preheat reset.
 func (s *Session) preheatKeyframe() {
 	if s.preheatKeyframeFn != nil { // test seam - see Session fields
 		s.preheatKeyframeFn()
+		return
+	}
+	s.resetMu.Lock()
+	s.lastActionAt = time.Now()
+	s.resetMu.Unlock()
+	if s.streamDec != nil {
 		return
 	}
 	s.requestKeyframe()

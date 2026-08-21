@@ -344,8 +344,9 @@ After screen-changing actions, run `observe` again to verify the result and get 
 
 ## Output interpretation
 
-- **`observe`** → Image + structured UI tree. Analyze for screen context, find elements by `text`, `bounds`, `clickable`, `resource-id`.
-- **`ui`** → Elements with `bounds=[l,t,r,b]`, `text`, `content-desc`, `clickable`, `class`.
+- **`observe`** → Image + structured UI tree. Analyze for screen context, find elements by `text`, `bounds`, `clickable`, `resource-id`, `hint`.
+- **`ui`** → Elements with `bounds=[l,t,r,b]`, `text`, `content-desc`, `hint`, `clickable`, `class`.
+- **Empty input fields** (e.g. a contacts form) have no `text` — locate them by `hint` (flatref: `hint="..."`, jsonl/yml: `hint_text`), the placeholder shown by the field. Example: hint="First name" is the first-name input.
 - **`screenshot [file]`** → Saved to file. `screenshot` (no args) → base64 data URI to stdout.
 
 ### Hierarchical UI formats (--format flag)
@@ -411,7 +412,7 @@ Each element is a single valid JSON line — highest parse accuracy for LLMs:
 {"id":20,"parent":19,"depth":3,"content_desc":"安装","class":"View","bounds":"[899,432][975,491]","clickable":false}
 ```
 
-Fields: `id`, `parent`, `depth`, `text`, `content_desc`, `resource_id`, `class`, `bounds`, `clickable`, `enabled`, `focused`, `selected`.
+Fields: `id`, `parent`, `depth`, `text`, `content_desc`, `hint_text`, `resource_id`, `class`, `bounds`, `clickable`, `enabled`, `focused`, `selected`.
 
 #### Choosing a format
 

@@ -424,8 +424,10 @@ class StressTest:
         subprocess.run([self.binary, "daemon", "--stop"],
                        capture_output=True, timeout=5)
         time.sleep(1)
-        # Kill any lingering phonefast processes
-        subprocess.run(["pkill", "-f", "phonefast-darwin"],
+        # Kill any lingering phonefast daemon processes. The pattern targets
+        # "phonefast<variant> daemon[ ...]" command lines only — NOT this
+        # script itself, whose argv contains the binary path via --binary.
+        subprocess.run(["pkill", "-f", "phonefast.*daemon"],
                        capture_output=True, timeout=3)
         time.sleep(0.5)
         # Kill scrcpy server on device

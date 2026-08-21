@@ -78,7 +78,7 @@ func ElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) 
 			break
 		}
 
-		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
+		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" && el.HintText == "" {
 			maxShow++ // don't count this filtered element
 			continue
 		}
@@ -89,6 +89,9 @@ func ElementsForLLM(elements []protocol.UIElement, maxShow int, isSummary bool) 
 		}
 		if el.ContentDesc != "" {
 			parts = append(parts, fmt.Sprintf(`desc="%s"`, CollapseWS(el.ContentDesc)))
+		}
+		if el.HintText != "" {
+			parts = append(parts, fmt.Sprintf(`hint="%s"`, CollapseWS(el.HintText)))
 		}
 		if el.ResourceID != "" && !isObfuscatedID(el.ResourceID) {
 			simpleID := el.ResourceID
@@ -153,7 +156,7 @@ func ElementsForLLMWithViewport(elements []protocol.UIElement, maxShow int, isSu
 			offScreen = isOffScreen(el.Bounds, screenW, screenH)
 		}
 		if offScreen {
-			if el.Text != "" || el.ContentDesc != "" || el.Clickable {
+			if el.Text != "" || el.ContentDesc != "" || el.HintText != "" || el.Clickable {
 				offScreenInteractive = append(offScreenInteractive, el)
 			}
 			continue
@@ -183,7 +186,7 @@ func ElementsForLLMWithViewport(elements []protocol.UIElement, maxShow int, isSu
 			lines = append(lines, fmt.Sprintf("... and %d more visible elements", visibleCount-maxShow))
 			break
 		}
-		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" {
+		if isSummary && protocol.IsLayoutClass(el.ClassName) && !el.Clickable && el.Text == "" && el.ContentDesc == "" && el.HintText == "" {
 			continue
 		}
 		line := formatElementLine(el, isSummary)
@@ -222,6 +225,9 @@ func formatElementLine(el protocol.UIElement, isSummary bool) string {
 	if el.ContentDesc != "" {
 		parts = append(parts, fmt.Sprintf(`desc="%s"`, CollapseWS(el.ContentDesc)))
 	}
+	if el.HintText != "" {
+		parts = append(parts, fmt.Sprintf(`hint="%s"`, CollapseWS(el.HintText)))
+	}
 	if el.ResourceID != "" && !isObfuscatedID(el.ResourceID) {
 		parts = append(parts, fmt.Sprintf(`id="%s"`, simplifyResourceID(el.ResourceID)))
 	}
@@ -255,6 +261,9 @@ func formatOffScreenSummary(elems []protocol.UIElement) string {
 		if lbl == "" {
 			lbl = el.ContentDesc
 		}
+		if lbl == "" {
+			lbl = el.HintText
+		}
 		if lbl != "" {
 			labels = append(labels, fmt.Sprintf("%q", CollapseWS(lbl)))
 			if len(labels) >= 5 {
@@ -271,7 +280,7 @@ func formatOffScreenSummary(elems []protocol.UIElement) string {
 
 // CompactElements filters out redundant layout containers from the element list.
 // A container is redundant if it's a known layout class AND has no semantic
-// properties (no text, content-desc, resource-id, and not clickable/focused/selected/disabled).
+// properties (no text, content-desc, hint, resource-id, and not clickable/focused/selected/disabled).
 // Children of removed nodes are re-parented to their nearest surviving ancestor.
 // Root elements (parent < 0) are never removed.
 func CompactElements(elements []protocol.UIFullElement) []protocol.UIFullElement {
@@ -298,7 +307,7 @@ func CompactElements(elements []protocol.UIFullElement) []protocol.UIFullElement
 			continue
 		}
 		// Must have no semantic properties
-		if el.Text != "" || el.ContentDesc != "" || el.ResourceID != "" {
+		if el.Text != "" || el.ContentDesc != "" || el.HintText != "" || el.ResourceID != "" {
 			continue
 		}
 		if el.Clickable || el.Focused || el.Selected || !el.Enabled {

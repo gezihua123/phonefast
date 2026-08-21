@@ -254,3 +254,109 @@ func TestBackOrScreenOnEncode(t *testing.T) {
 		t.Errorf("expected action 0, got %d", data[1])
 	}
 }
+
+// ── device → client messages ─────────────────────────────────────────────────
+
+// buildDeviceMsg encodes a device message the way scrcpy's DeviceMessageWriter
+// does (v3.3.4): type(1) + type-specific payload, big-endian.
+func buildDeviceMsg(t *testing.T, msgType byte, payload []byte) []byte {
+	t.Helper()
+	buf := []byte{msgType}
+	buf = append(buf, payload...)
+	return buf
+}
+
+func TestReadDeviceMessageClipboard(t *testing.T) {
+	text := "hello 剪贴板"
+	raw := []byte(text)
+	var payload []byte
+	payload = binary.BigEndian.AppendUint32(payload, uint32(len(raw)))
+	payload = append(payload, raw...)
+
+	msg, err := ReadDeviceMessage(bytes.NewReader(buildDeviceMsg(t, DeviceMsgClipboard, payload)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Type != DeviceMsgClipboard {
+		t.Errorf("type: got %d want %d", msg.Type, DeviceMsgClipboard)
+	}
+	if msg.Text != text {
+		t.Errorf("text: got %q want %q", msg.Text, text)
+	}
+}
+
+// TestReadDeviceMessageStreamNoDesync is the critical property: an ignored
+// message's payload must be fully consumed so the NEXT message still parses.
+// A reader that stops after the type byte would desync the stream.
+func TestReadDeviceMessageStreamNoDesync(t *testing.T) {
+	var stream []byte
+
+	// 1. ACK_CLIPBOARD: type(1) + u64 sequence (ignored by phonefast)
+	stream = append(stream, byte(DeviceMsgAckClipboard))
+	stream = binary.BigEndian.AppendUint64(stream, 42)
+
+	// 2. UHID_OUTPUT: type(1) + u16 id + u16 len + data (ignored)
+	stream = append(stream, byte(DeviceMsgUhidOutput))
+	stream = binary.BigEndian.AppendUint16(stream, 3)
+	stream = binary.BigEndian.AppendUint16(stream, 4)
+	stream = append(stream, 1, 2, 3, 4)
+
+	// 3. CLIPBOARD: type(1) + u32 len + utf8
+	text := "copied!"
+	stream = append(stream, byte(DeviceMsgClipboard))
+	stream = binary.BigEndian.AppendUint32(stream, uint32(len(text)))
+	stream = append(stream, text...)
+
+	r := bytes.NewReader(stream)
+	msg1, err := ReadDeviceMessage(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg1.Type != DeviceMsgAckClipboard {
+		t.Errorf("msg1 type: got %d want ack", msg1.Type)
+	}
+	msg2, err := ReadDeviceMessage(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg2.Type != DeviceMsgUhidOutput {
+		t.Errorf("msg2 type: got %d want uhid", msg2.Type)
+	}
+	msg3, err := ReadDeviceMessage(r)
+	if err != nil {
+		t.Fatalf("msg3 (after ignored payloads) failed — stream desync: %v", err)
+	}
+	if msg3.Type != DeviceMsgClipboard || msg3.Text != text {
+		t.Errorf("msg3: got type=%d text=%q, want clipboard %q", msg3.Type, msg3.Text, text)
+	}
+
+	// Stream fully consumed.
+	if r.Len() != 0 {
+		t.Errorf("%d bytes left unread — payload not fully consumed", r.Len())
+	}
+}
+
+func TestReadDeviceMessageInvalidClipboardLength(t *testing.T) {
+	var payload []byte
+	payload = binary.BigEndian.AppendUint32(payload, deviceMsgMaxClipboard+1)
+	_, err := ReadDeviceMessage(bytes.NewReader(buildDeviceMsg(t, DeviceMsgClipboard, payload)))
+	if err == nil {
+		t.Error("expected error for oversized clipboard length")
+	}
+}
+
+func TestReadDeviceMessageEOF(t *testing.T) {
+	if _, err := ReadDeviceMessage(bytes.NewReader(nil)); err == nil {
+		t.Error("expected error on empty stream")
+	}
+}
+
+func TestReadDeviceMessageUnknownTypeFailsClosed(t *testing.T) {
+	// A matching scrcpy server never sends an unknown type (its writer
+	// throws); guessing a payload shape would desync the stream, so the
+	// reader must error and let the session mark the control broken.
+	_, err := ReadDeviceMessage(bytes.NewReader([]byte{0x7f}))
+	if err == nil {
+		t.Fatal("expected error for unknown device message type")
+	}
+}

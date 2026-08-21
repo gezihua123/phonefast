@@ -154,6 +154,21 @@ func handleGetUIElements(dev Device, req *Request) *Response {
 	})
 }
 
+// handleGetClipboard returns the latest clipboard text pushed by the device
+// (scrcpy clipboard_autosync) plus an observed flag. observed=false means
+// "no change observed since connect" — callers must treat the text as
+// unknown, not as an empty clipboard.
+func handleGetClipboard(dev Device, req *Request) *Response {
+	if dev == nil {
+		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")
+	}
+	text, observed := dev.GetClipboard()
+	return newResultResponse(req.ID, map[string]any{
+		"clipboard": text,
+		"observed":  observed,
+	})
+}
+
 func handleObserve(dev Device, req *Request) *Response {
 	if dev == nil {
 		return newErrorResponse(req.ID, ErrNoDevice, "no device connected")

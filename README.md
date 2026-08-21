@@ -408,7 +408,7 @@ phonefast run '{"action":"back"}'
 phonefast run '{"action":"list_devices"}'
 ```
 
-Supported actions: `tap`, `tap_element`, `swipe`, `back`, `home`, `type_text`, `press_key`, `launch_app`, `screenshot`, `get_ui_elements`, `observe`, `list_devices`, `wait`.
+Supported actions: `tap`, `tap_element`, `swipe`, `back`, `home`, `type_text`, `press_key`, `launch_app`, `screenshot`, `get_ui_elements`, `get_clipboard`, `observe`, `list_devices`, `wait`.
 
 ---
 
