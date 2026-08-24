@@ -239,13 +239,16 @@ jobs:
       # ── 运行测试 ──
       # Windows 交叉编译产物是 PE 格式，无法在 Linux runner 上运行，
       # 故跳过测试，仅验证二进制存在（见后续 Verify binary 步骤）。
+      # 超时对齐 ci.yml 的 darwin 配置 (300s)：TestOCRBenchmarkAccuracy 在
+      # 慢速 runner 上跑真实 ONNX 模型 >2min，120s 上限会在 darwin-arm64
+      # 稳定超时（v1.0.20 首跑即因此失败）。
       - name: Run tests
         if: matrix.goos != 'windows'
         env:
           CGO_ENABLED: 1
           PKG_CONFIG_PATH: ${{ github.workspace }}/build/cross-ffmpeg/${{ matrix.ffmpeg-target }}/lib/pkgconfig
         run: |
-          go test -count=1 -timeout 120s $(go list ./... | grep -v tests/ocr-benchmark)
+          go test -count=1 -timeout 300s $(go list ./... | grep -v tests/ocr-benchmark)
 
       # Windows 交叉编译产物为 PE 格式，无法在 Linux runner 上运行测试，
       # 改为验证二进制文件完整性。
