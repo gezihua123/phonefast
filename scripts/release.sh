@@ -72,8 +72,11 @@ update_version_files() {
         "$SCRIPT_DIR/install_pkg.sh"
     info "  scripts/install_pkg.sh"
 
-    # docs/CLI.md — 只替换 "版本: X.X.X" 头
-    sed -i '' "s/\(版本: \)${old_ver}/\1${new_ver}/" "$ROOT_DIR/docs/CLI.md"
+    # docs/CLI.md — 只替换 "版本: X.X.X" / "Version: X.X.X" 头
+    sed -i '' \
+        -e "s/\(版本: \)${old_ver}/\1${new_ver}/" \
+        -e "s/\(Version: \)${old_ver}/\1${new_ver}/" \
+        "$ROOT_DIR/docs/CLI.md"
     info "  docs/CLI.md"
 
     # 提交版本升级

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.20 (2026-08-24)
 
 ### ⚡ Performance (screenshot/observe cold path — stream decode pipeline)
 

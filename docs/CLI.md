@@ -1,6 +1,6 @@
 # phonefast CLI Manual
 
-> Version: 1.0.16 | License: MIT | Platform: macOS / Linux / Windows
+> Version: 1.0.20 | License: MIT | Platform: macOS / Linux / Windows
 
 phonefast is a high-performance Android device control CLI tool, built with Go and the scrcpy protocol. Designed for high-frequency AI Agent interaction scenarios, it achieves sub-10ms per-command latency and supports a background daemon mode as well as MCP protocol integration.
 
