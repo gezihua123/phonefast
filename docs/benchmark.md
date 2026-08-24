@@ -102,7 +102,7 @@
 | 7/27 | v1.0.14 (leak) | Multi-device daemon refactor | 60min | 12,436 | **86.5MB 💀** | 31ms |
 | 7/27 | dev | Concurrency fix + streaming + lock | 60min | 12,458 | **39.5MB ✅** | 35ms |
 | 8/14 | dev | **OCR 桥接形态(模型磁盘加载)+ daemon 重构复测** | 60min | 12,182 | **11.5MB ✅** | 286ms ⚠️ |
-| 8/21 | **dev (current)** | **持续流式解码管线(StreamDecoder)替代 RESET_VIDEO 冷路径 + 127.0.0.1 启动修复 + 零拷贝编码** | 60min | 12,314 | **26.3MB ✅** | **26ms** 🚀 |
+| 8/21 | **v1.0.20** | **持续流式解码管线(StreamDecoder)替代 RESET_VIDEO 冷路径 + 127.0.0.1 启动修复 + 零拷贝编码** | 60min | 12,314 | **26.3MB ✅** | **26ms** 🚀 |
 
 ---
 
